@@ -64,37 +64,37 @@ enum {	//leadership AA indexes
 #define MAX_LEADERSHIP_TIERS 6
 //each progression should be 0 terminated to mark it as the end.
 static const uint8 LeadershipAACosts[_maxLeaderAA][MAX_LEADERSHIP_TIERS] = {
-{ 1, 2, 3, 0, 0, 0 },	//groupAAMarkNPC
-{ 2, 0, 0, 0, 0, 0 },	//groupAANPCHealth
-{ 4, 0, 0, 0, 0, 0 },	//groupAADelegateMainAssist - Have seen DelegateMainAssist come in with two different codes.
-{ 4, 0, 0, 0, 0, 0 },	//groupAADelegateMainAssist
-{ 4, 0, 0, 0, 0, 0 },	//groupAADelegateMarkNPC
+{ 99, 2, 3, 0, 0, 0 },	//groupAAMarkNPC
+{ 99, 0, 0, 0, 0, 0 },	//groupAANPCHealth
+{ 99, 0, 0, 0, 0, 0 },	//groupAADelegateMainAssist - Have seen DelegateMainAssist come in with two different codes.
+{ 99, 0, 0, 0, 0, 0 },	//groupAADelegateMainAssist
+{ 99, 0, 0, 0, 0, 0 },	//groupAADelegateMarkNPC
 { 0, 0, 0, 0, 0, 0 },	//groupAA5
-{ 4, 6, 0, 0, 0, 0 },	//groupAAInspectBuffs
+{ 99, 6, 0, 0, 0, 0 },	//groupAAInspectBuffs
 { 0, 0, 0, 0, 0, 0 },	//groupAA7
-{ 6, 0, 0, 0, 0, 0 },	//groupAASpellAwareness
-{ 4, 5, 6, 7, 8, 0 },	//groupAAOffenseEnhancement
-{ 4, 6, 8, 0, 0, 0 },	//groupAAManaEnhancement
-{ 4, 6, 8, 0, 0, 0 },	//groupAAHealthEnhancement
-{ 4, 6, 8, 0, 0, 0 },	//groupAAHealthRegeneration
-{ 4, 0, 0, 0, 0, 0 },	//groupAAFindPathToPC
-{ 7, 0, 0, 0, 0, 0 },	//groupAAHealthOfTargetsTarget
+{ 99, 0, 0, 0, 0, 0 },	//groupAASpellAwareness
+{ 99, 5, 6, 7, 8, 0 },	//groupAAOffenseEnhancement
+{ 99, 6, 8, 0, 0, 0 },	//groupAAManaEnhancement
+{ 99, 6, 8, 0, 0, 0 },	//groupAAHealthEnhancement
+{ 99, 6, 8, 0, 0, 0 },	//groupAAHealthRegeneration
+{ 99, 0, 0, 0, 0, 0 },	//groupAAFindPathToPC
+{ 99, 0, 0, 0, 0, 0 },	//groupAAHealthOfTargetsTarget
 { 0, 0, 0, 0, 0, 0 },	//groupAA15
 
-{ 5, 6, 7, 0, 0, 0 },	//raidAAMarkNPC	//0x10
-{ 4, 0, 0, 0, 0, 0 },	//raidAANPCHealth
-{ 6, 7, 8, 0, 0, 0 },	//raidAADelegateMainAssist
-{ 6, 6, 6, 0, 0, 0 },	//raidAADelegateMarkNPC
-{ 6, 6, 6, 0, 0, 0 },	//raidAADelegateMarkNPC (works for SoD and Titanium)
+{ 99, 6, 7, 0, 0, 0 },	//raidAAMarkNPC	//0x10
+{ 99, 0, 0, 0, 0, 0 },	//raidAANPCHealth
+{ 99, 7, 8, 0, 0, 0 },	//raidAADelegateMainAssist
+{ 99, 6, 6, 0, 0, 0 },	//raidAADelegateMarkNPC
+{ 99, 6, 6, 0, 0, 0 },	//raidAADelegateMarkNPC (works for SoD and Titanium)
 { 0, 0, 0, 0, 0, 0 },	//raidAA5
 { 0, 0, 0, 0, 0, 0 },	//raidAA6
-{ 8, 0, 0, 0, 0, 0 },	//raidAASpellAwareness
-{ 6, 7, 8, 9, 10, 0 },	//raidAAOffenseEnhancement
-{ 6, 8, 10, 0, 0, 0 },	//raidAAManaEnhancement
-{ 6, 8, 10, 0, 0, 0 },	//raidAAHealthEnhancement
-{ 6, 8, 10, 0, 0, 0 },	//raidAAHealthRegeneration
-{ 5, 0, 0, 0, 0, 0 },	//raidAAFindPathToPC
-{ 9, 0, 0, 0, 0, 0 },	//raidAAHealthOfTargetsTarget
+{ 99, 0, 0, 0, 0, 0 },	//raidAASpellAwareness
+{ 99, 7, 8, 9, 10, 0 },	//raidAAOffenseEnhancement
+{ 99, 8, 10, 0, 0, 0 },	//raidAAManaEnhancement
+{ 99, 8, 10, 0, 0, 0 },	//raidAAHealthEnhancement
+{ 99, 8, 10, 0, 0, 0 },	//raidAAHealthRegeneration
+{ 99, 0, 0, 0, 0, 0 },	//raidAAFindPathToPC
+{ 99, 0, 0, 0, 0, 0 },	//raidAAHealthOfTargetsTarget
 { 0, 0, 0, 0, 0, 0 },	//raidAA14
 { 0, 0, 0, 0, 0, 0 },	//raidAA15
 };
