@@ -129,6 +129,8 @@
 #define SPELL_SPIRITUAL_ECHO 1248
 #define SPELL_BRISTLING_ARMAMENT 1249
 #define SPELL_WATON_DESTRUCTION 1250
+#define SPELL_TRANSLOCATE_GROUP 1334
+#define SPELL_TRANSLOCATE 1422
 #define SPELL_ACTING_MAGIC_RESIST_I 1900
 #define SPELL_ACTING_FIRE_RESIST_I 1901
 #define SPELL_ACTING_COLD_RESIST_I 1902
@@ -153,8 +155,11 @@
 #define SPELL_ACTING_SPIRIT_I 1921
 #define SPELL_ACTING_SPIRIT_II 1922
 #define SPELL_RESURRECTION_SICKNESS 756
+#define SPELL_RESURRECTION_SICKNESS4 757
+#define SPELL_TELEPORT 3243
 #define SPELL_RESURRECTION_SICKNESS2 5249
 #define SPELL_REVIVAL_SICKNESS 13087
+#define SPELL_RESURRECTION_SICKNESS3 37624
 #define SPELL_PACT_OF_HATE_RECOURSE 40375
 #define SPELL_INCENDIARY_OOZE_BUFF 32513
 
@@ -175,7 +180,7 @@
 #define MaxLimitInclude 16 //Number(x 0.5) of focus Limiters that have inclusive checks used when calcing focus effects
 #define MAX_SKILL_PROCS 4 //Number of spells to check skill procs from. (This is arbitrary) [Single spell can have multiple proc checks]
 #define MAX_SYMPATHETIC_PROCS 10 // Number of sympathetic procs a client can have (This is arbitrary)
-
+#define MAX_FOCUS_PROC_LIMIT_TIMERS 20 //Number of proc limiting timers that can be going at same time (This is arbitrary)
 
 
 const int Z_AGGRO=10;
@@ -499,7 +504,25 @@ enum SpellRestriction
 	UNKNOWN_99999                                                             = 99999, // | caster restriction | works will spell 27672 Strike of Ire
 };
 
-
+enum NegateSpellEffectType
+{
+	NEGATE_SPA_ALL_BONUSES                = 0,
+	NEGATE_SPA_SPELLBONUS                 = 1,
+	NEGATE_SPA_ITEMBONUS                  = 2,
+	NEGATE_SPA_SPELLBONUS_AND_ITEMBONUS   = 3,
+	NEGATE_SPA_AABONUS                    = 4,
+	NEGATE_SPA_SPELLBONUS_AND_AABONUS     = 5,
+	NEGATE_SPA_ITEMBONUS_AND_AABONUS      = 6,
+};
+//Used for rule RuleI(Spells, ReflectType))
+enum ReflectSpellType
+{
+	REFLECT_DISABLED                  = 0,
+	REFLECT_SINGLE_TARGET_SPELLS_ONLY = 1,
+	REFLECT_ALL_PLAYER_SPELLS         = 2,
+	RELFECT_ALL_SINGLE_TARGET_SPELLS  = 3,
+	REFLECT_ALL_SPELLS                = 4,
+};
 
 enum SpellTypes : uint32
 {
@@ -737,7 +760,7 @@ typedef enum {
 //#define SE_TransferItem				60	// not used
 #define SE_Identify						61	// implemented
 //#define SE_ItemID						62	// not used
-#define SE_WipeHateList					63	// implemented
+#define SE_WipeHateList					63	// implemented, @Memblur, chance to wipe hate list of target, base: pct chance, limit: none, max: ? (not implemented), Note: caster level and CHA add to pct chance
 #define SE_SpinTarget					64	// implemented - TO DO: Not sure stun portion is working correctly
 #define SE_InfraVision					65	// implemented
 #define SE_UltraVision					66	// implemented
@@ -792,7 +815,7 @@ typedef enum {
 #define SE_Hunger						115	// implemented - Song of Sustenance
 #define SE_CurseCounter					116	// implemented
 #define SE_MagicWeapon					117	// implemented - makes weapon magical
-#define SE_Amplification				118	// implemented - Harmonize/Amplification (stacks with other singing mods)
+#define SE_Amplification				118	// implemented, @Song, stackable singing mod, base: mod%, limit: none, max: none, Note: Can focus itself.
 #define SE_AttackSpeed3					119	// implemented
 #define SE_HealRate						120	// implemented - reduces healing by a %
 #define SE_ReverseDS					121 // implemented
@@ -828,11 +851,11 @@ typedef enum {
 #define SE_SuspendPet					151	// implemented, @Pet, allow caster to have an extra suspended pet, base: 0=no buffs/items 1=buffs+items, limit: none, max: none
 #define SE_TemporaryPets				152	// implemented
 #define SE_BalanceHP					153 // implemented
-#define SE_DispelDetrimental			154 // implemented
+#define SE_DispelDetrimental			154 // implemented, @Dispel, removes only detrimental effects on a target, base: pct chance (950=95%), limit: none, max: none
 #define SE_SpellCritDmgIncrease			155 // implemented - no known live spells use this currently
 #define SE_IllusionCopy					156	// implemented - Deception
-#define SE_SpellDamageShield			157	// implemented - Petrad's Protection
-#define SE_Reflect						158 // implemented
+#define SE_SpellDamageShield			157	// implemented, @DS, causes non-melee damage on caster of a spell, base: Amt DS (negative), limit: none, max: unknown (same as base but +)
+#define SE_Reflect						158 // implemented, @SpellMisc, reflect casted detrimental spell back at caster, base: chance pct, limit: resist modifier (positive value reduces resists), max: pct of base dmg mod (50=50pct of base)
 #define SE_AllStats						159	// implemented
 //#define SE_MakeDrunk					160 // *not implemented - Effect works entirely client side (Should check against tolerance)
 #define SE_MitigateSpellDamage			161	// implemented - rune with max value
@@ -853,7 +876,7 @@ typedef enum {
 #define SE_DualWieldChance				176	// implemented
 #define SE_DoubleAttackChance			177	// implemented
 #define SE_MeleeLifetap					178	// implemented
-#define SE_AllInstrumentMod				179	// implemented
+#define SE_AllInstrumentMod				179	// implemented, @Song, set mod for ALL instrument/singing skills that will be used if higher then item mods, base: mod%, limit: none, max: none
 #define SE_ResistSpellChance			180	// implemented
 #define SE_ResistFearChance				181	// implemented
 #define SE_HundredHands					182	// implemented
@@ -883,7 +906,7 @@ typedef enum {
 #define SE_AETaunt						206	// implemented
 #define SE_FleshToBone					207	// implemented
 //#define SE_PurgePoison				208	// not used
-#define SE_DispelBeneficial				209 // implemented
+#define SE_DispelBeneficial				209 // implemented, @Dispel, removes only beneficial effects on a target, base: pct chance (950=95%), limit: none, max: none
 #define SE_PetShield					210	// implmented, @ShieldAbility, allows pet to 'shield' owner for 50 pct of damage taken for a duration, base: Time multiplier 1=12 seconds, 2=24 ect, limit: mitigation on pet owner override (not on live), max: mitigation on pet overide (not on live) 
 #define SE_AEMelee						211	// implemented TO DO: Implement to allow NPC use (client only atm).
 #define SE_FrenziedDevastation			212	// implemented - increase spell criticals + all DD spells cast 2x mana.
@@ -916,7 +939,7 @@ typedef enum {
 #define SE_FeignedCastOnChance			239	// implemented - ability gives you an increasing chance for your feigned deaths to not be revealed by spells cast upon you.
 //#define SE_StringUnbreakable			240	// not used [Likely related to above - you become immune to feign breaking on a resisted spell and have a good chance of feigning through a spell that successfully lands upon you.]
 #define SE_ImprovedReclaimEnergy		241	// implemented - increase the amount of mana returned to you when reclaiming your pet.
-#define SE_IncreaseChanceMemwipe		242	// implemented - increases the chance to wipe hate with memory blurr
+#define SE_IncreaseChanceMemwipe		242	// implemented - @Memblur, increases the chance to wipe hate with memory blurr, base: chance pct, limit: none, max: none, Note: Mods final blur chance after other bonuses added.
 #define SE_CharmBreakChance				243	// implemented - Total Domination
 #define	SE_RootBreakChance				244	// implemented[AA] reduce the chance that your root will break.
 #define SE_TrapCircumvention			245	// *not implemented[AA] - decreases the chance that you will set off a trap when opening a chest
@@ -934,8 +957,8 @@ typedef enum {
 #define SE_PetDiscipline				257 // not implemented as bonus - /pet hold - official name is GivePetHold
 #define SE_TripleBackstab				258 // implemented[AA] - chance to perform a triple backstab
 #define SE_CombatStability				259 // implemented[AA] - damage mitigation
-#define SE_AddSingingMod				260 // implemented[AA] - Instrument/Singing Mastery, base1 is the mod, base2 is the ItemType
-#define SE_SongModCap					261	// implemented[AA] - Song Mod cap increase (no longer used on live)
+#define SE_AddSingingMod				260 // implemented, @Song, set mod for specific instrument/singing skills that will be used if higher then item mods, base: mod%, limit: ItemType ID, max: none
+#define SE_SongModCap					261	// implemented, @Song, raise max song modifier cap, base: amt, limit: none, max: none, Note: No longer used on live
 #define SE_RaiseStatCap					262 // implemented
 #define SE_TradeSkillMastery			263	// implemented - lets you raise more than one tradeskill above master.
 #define SE_HastenedAASkill			    264 // implemented
@@ -944,7 +967,7 @@ typedef enum {
 #define SE_AddPetCommand				267 // implemented - sets command base2 to base1
 #define SE_ReduceTradeskillFail			268 // implemented - reduces chance to fail with given tradeskill by a percent chance
 #define SE_MaxBindWound					269	// implemented[AA] - Increase max HP you can bind wound.
-#define SE_BardSongRange				270	// implemented[AA] - increase range of beneficial bard songs (Sionachie's Crescendo)
+#define SE_BardSongRange				270	// implemented, @Song, increase range of beneficial bard songs, base: mod%, limit: none, max: none , Note: example Sionachie's Crescendo
 #define SE_BaseMovementSpeed			271 // implemented[AA] - mods basemove speed, doesn't stack with other move mods
 #define SE_CastingLevel2				272 // implemented
 #define SE_CriticalDoTChance			273	// implemented
@@ -965,7 +988,7 @@ typedef enum {
 #define SE_SkillAttackProc				288	// implemented[AA] - Chance to proc spell on skill attack usage (ex. Dragon Punch)
 #define SE_CastOnFadeEffect				289 // implemented - Triggers only if fades after natural duration.
 #define SE_IncreaseRunSpeedCap			290	// implemented[AA] - increases run speed over the hard cap
-#define SE_Purify						291 // implemented - Removes determental effects
+#define SE_Purify						291 // implemented, @Dispel, remove up specified amount of detiremental spells, base: amt removed, limit: none, max: none, Note: excluding charm, fear, resurrection, and revival sickness  
 #define SE_StrikeThrough2				292	// implemented[AA] - increasing chance of bypassing an opponent's special defenses, such as dodge, block, parry, and riposte.
 #define SE_FrontalStunResist			293	// implemented[AA] - Reduce chance to be stunned from front. -- live descriptions sounds like this isn't limited to frontal anymore
 #define SE_CriticalSpellChance			294 // implemented - increase chance to critical hit and critical damage modifier.
@@ -1056,7 +1079,7 @@ typedef enum {
 #define SE_ShadowStepDirectional		379 // implemented - handled by client
 #define SE_Knockdown					380 // implemented - small knock back(handled by client)
 //#define SE_KnockTowardCaster			381	// *not implemented (Call of Hither) knocks you back to caster (value) distance units infront
-#define SE_NegateSpellEffect			382 // implemented - negates specific spell bonuses for duration of the debuff.
+#define SE_NegateSpellEffect			382 // implemented, @Debuff, negates specific spell effect benefits for the duration of the debuff and prevent non-duration spell effect from working, base: see NegateSpellEffecttype Enum, limit: SPA id, max: none
 #define SE_SympatheticProc				383 // implemented, @Fc, On Caster, cast on spell use, base: variable proc chance on cast time, limit: spellid
 #define SE_Leap							384	// implemented - Leap effect, ie stomping leap
 #define SE_LimitSpellGroup				385	// implemented, @Ff, Spell group(s) that a spell focus can require or exclude, base1: spellgroup id, Include: Positive Exclude: Negative
@@ -1067,9 +1090,9 @@ typedef enum {
 #define SE_FcTimerLockout				390 // implemented, @Fc, On Caster, set a spell to be on recast timer, base: recast duration milliseconds, Note: Applied from casted spells only
 #define SE_LimitManaMax					391	// implemented, @Ff, Mininum mana of spell that can be focused, base1: mana amt
 #define SE_FcHealAmt					392 // implemented, @Fc, On Caster, spell healing mod flat amt, base: amt
-#define SE_FcHealPctIncoming			393 // implemented, @Fc, On Target, heal received critical chance mod, base: chance pct
+#define SE_FcHealPctIncoming			393 // implemented, @Fc, On Target, heal received mod pct, base: pct, limit: random max pct
 #define SE_FcHealAmtIncoming			394 // implemented, @Fc, On Target, heal received mod flat amt, base: amt
-#define SE_FcHealPctCritIncoming		395 // implemented, @Fc, On Target, heal received mod pct, base: pct
+#define SE_FcHealPctCritIncoming		395 // implemented, @Fc, On Target, heal received mod pct, base: pct, limit: random max pct
 #define SE_FcHealAmtCrit				396 // implemented, @Fc, On Caster, spell healing mod flat amt, base: amt
 #define SE_PetMeleeMitigation			397 // implemented[AA] - additional mitigation to your pets. Adds AC
 #define SE_SwarmPetDuration				398 // implemented - Affects the duration of swarm pets
@@ -1116,8 +1139,8 @@ typedef enum {
 #define SE_Assassinate					439 // implemented[AA] - Assassinate damage
 #define SE_FinishingBlowLvl				440 // implemented[AA] - Sets the level Finishing blow can be triggered on an NPC
 #define SE_DistanceRemoval				441 // implemented - Buff is removed from target when target moves X amount of distance away from where initially hit.
-#define SE_TriggerOnReqTarget			442 // implemented - triggers a spell which a certain criteria are met (below X amount of hp,mana,end, number of pets on hatelist)
-#define SE_TriggerOnReqCaster			443 // implemented - triggers a spell which a certain criteria are met (below X amount of hp,mana,end, number of pets on hatelist)
+#define SE_TriggerOnReqTarget			442 // implemented, @SpellTrigger, triggers a spell when Target Requirement conditions are met (see enum SpellRestriction for IDs), base: spellid, limit: SpellRestriction ID, max: none, Note: Usually cast on a target
+#define SE_TriggerOnReqCaster			443 // implemented, @SpellTrigger, triggers a spell when Caster Requirement conditions are met (see enum SpellRestriction for IDs), base: spellid, limit: SpellRestriction ID, max: none, Note: Usually self only
 #define SE_ImprovedTaunt				444 // implemented - Locks Aggro On Caster and Decrease other Players Aggro by X% on NPC targets below level Y
 //#define SE_AddMercSlot				445 // *not implemented[AA] - [Hero's Barracks] Allows you to conscript additional mercs.
 #define SE_AStacker						446 // implementet - bufff stacking blocker (26219 | Qirik's Watch)
@@ -1185,8 +1208,8 @@ typedef enum {
 #define SE_Fc_Amplify_Amt				508 // implemented, @Fc, On Caster, damage-heal-dot mod flat amt, base: amt
 #define SE_Health_Transfer				509 // implemented - exchange health for damage or healing on a target. ie Lifeburn/Act of Valor
 #define SE_Fc_ResistIncoming			510 // implemented, @Fc, On Target, resist modifier, base: amt
-//#define SE_Ff_FocusTimerMin			511 //
-#define SE_Proc_Timer_Modifier 			512 // implemented - spell trigger limiter used currently with SPA 481, ie. limit to 1 proc every 1.5 seconds (base=1 base2=1500).
+#define SE_Ff_FocusTimerMin				511 // implemented, @Ff, sets a recast time until focus can be used again, base: 1, limit: time ms, Note:  ie. limit to 1 trigger every 1.5 seconds 
+#define SE_Proc_Timer_Modifier 			512 // not implemented - limits procs per amount of a time based on timer value (ie limit to 1 proc every 55 seconds)
 //#define SE_Mana_Max_Percent			513 //
 //#define SE_Endurance_Max_Percent		514 //
 #define SE_AC_Avoidance_Max_Percent		515 // implemented - stackable avoidance modifier
@@ -1291,7 +1314,7 @@ struct SPDat_Spell_Struct
 /* 157 */	int effectdescnum; // eqstr of effect description -- SECONDARY_CATEGORY_1
 /* 158 */	//int secondary_category_2;   //Category Desc ID 3 -- SECONDARY_CATEGORY_2
 /* 159 */	bool npc_no_los; // -- NO_NPC_LOS
-/* 160 */	//bool feedbackable; // -- FEEDBACKABLE
+/* 160 */	bool feedbackable; // -- FEEDBACKABLE
 /* 161 */	bool reflectable; // -- REFLECTABLE
 /* 162 */	int bonushate; // -- HATE_MOD
 /* 163 */	//int resist_per_level; // -- RESIST_PER_LEVEL
@@ -1309,8 +1332,8 @@ struct SPDat_Spell_Struct
 /* 178 */	int pvpresistcalc; // -- PVP_RESIST_PER_LEVEL
 /* 179 */	int pvpresistcap; // -- PVP_RESIST_CAP
 /* 180 */	int spell_category; // -- GLOBAL_GROUP
-/* 181 */	//int pvp_duration; // buffdurationformula for PvP -- PVP_DURATION
-/* 182 */	//int pvp_duration_cap; // buffduration for PvP -- PVP_DURATION_CAP
+/* 181 */	int pvp_duration; // buffdurationformula for PvP -- PVP_DURATION
+/* 182 */	int pvp_duration_cap; // buffduration for PvP -- PVP_DURATION_CAP
 /* 183 */	int pcnpc_only_flag; // valid values are 0, 1 = PCs (and mercs), and 2 = NPCs (and not mercs) -- PCNPC_ONLY_FLAG
 /* 184 */	bool cast_not_standing; // this is checked in the client's EQ_Spell::IsCastWhileInvisSpell, this also blocks SE_InterruptCasting from affecting this spell -- CAST_NOT_STANDING
 /* 185 */	bool can_mgb; // 0=no, -1 or 1 = yes -- CAN_MGB
@@ -1319,8 +1342,8 @@ struct SPDat_Spell_Struct
 /* 188 */	//int npc_usefulness; // -- NPC_USEFULNESS
 /* 189 */	int MinResist; // -- MIN_RESIST
 /* 190 */	int MaxResist; // -- MAX_RESIST
-/* 191 */	uint8 viral_targets; // -- MIN_SPREAD_TIME
-/* 192 */	uint8 viral_timer; // -- MAX_SPREAD_TIME
+/* 191 */	int viral_targets; // -- MIN_SPREAD_TIME
+/* 192 */	int viral_timer; // -- MAX_SPREAD_TIME
 /* 193 */	int NimbusEffect; // -- DURATION_PARTICLE_EFFECT
 /* 194 */	float directional_start; //Cone Start Angle: -- CONE_START_ANGLE
 /* 195 */	float directional_end; // Cone End Angle: -- CONE_END_ANGLE
@@ -1452,6 +1475,7 @@ bool IsPartialDeathSaveSpell(uint16 spell_id);
 bool IsShadowStepSpell(uint16 spell_id);
 bool IsSuccorSpell(uint16 spell_id);
 bool IsTeleportSpell(uint16 spell_id);
+bool IsTranslocateSpell(uint16 spell_id);
 bool IsGateSpell(uint16 spell_id);
 bool IsPlayerIllusionSpell(uint16 spell_id); // seveian 2008-09-23
 bool IsLDoNObjectSpell(uint16 spell_id);
@@ -1485,6 +1509,11 @@ bool IsCastWhileInvis(uint16 spell_id);
 bool IsEffectIgnoredInStacking(int spa);
 bool IsFocusLimit(int spa);
 bool SpellRequiresTarget(int targettype);
+bool IsVirusSpell(int32 spell_id);
+int GetViralMinSpreadTime(int32 spell_id);
+int GetViralMaxSpreadTime(int32 spell_id);
+int GetViralSpreadRange(int32 spell_id);
+bool IsInstrumentModAppliedToSpellEffect(int32 spell_id, int effect);
 
 int CalcPetHp(int levelb, int classb, int STA = 75);
 int GetSpellEffectDescNum(uint16 spell_id);

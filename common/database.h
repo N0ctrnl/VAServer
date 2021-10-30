@@ -176,7 +176,7 @@ public:
 
 	/* Adventure related. */
 
-	void UpdateAdventureStatsEntry(uint32 char_id, uint8 theme, bool win);
+	void UpdateAdventureStatsEntry(uint32 char_id, uint8 theme, bool win = false, bool remove = false);
 	bool GetAdventureStats(uint32 char_id, AdventureStats_Struct *as);
 
 	/* Account Related */
@@ -198,7 +198,8 @@ public:
 	void	GetAccountFromID(uint32 id, char* oAccountName, int16* oStatus);
 	void	SetAgreementFlag(uint32 acctid);
 
-	int		GetIPExemption(std::string account_ip);
+	int  GetIPExemption(std::string account_ip);
+	void SetIPExemption(std::string account_ip, int exemption_amount);
 
 	int		GetInstanceID(uint32 char_id, uint32 zone_id);
 
@@ -268,6 +269,8 @@ public:
 
 	int		CountInvSnapshots();
 	void	ClearInvSnapshots(bool from_now = false);
+
+	void SourceDatabaseTableFromUrl(std::string table_name, std::string url);
 
 
 private:

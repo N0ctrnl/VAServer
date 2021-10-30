@@ -134,7 +134,7 @@ typedef enum {	//focus types
 	focusSwarmPetDuration,				//@Fc, SPA: 398, SE_SwarmPetDuration,				On Caster, swarm pet duration mod, base: milliseconds
 	focusReduceRecastTime,				//@Fc, SPA: 310, SE_ReduceReuseTimer,				On Caster, disc reuse time mod, base: milliseconds
 	focusBlockNextSpell,				//@Fc, SPA: 335, SE_BlockNextSpellFocus,			On Caster, chance to block next spell, base: chance
-	focusFcHealPctIncoming,				//@Fc, SPA: 395, SE_FcHealPctCritIncoming,			On Target, heal received mod pct, base: pct
+	focusFcHealPctIncoming,				//@Fc, SPA: 393, SE_FcHealPctIncoming,   			On Target, heal received mod pct, base: pct
 	focusFcDamageAmtIncoming,			//@Fc, SPA: 297, SE_FcDamageAmtIncoming,			On Target, damage taken flat amt, base: amt
 	focusFcSpellDamageAmtIncomingPC,	//@Fc, SPA: 484, SE_Fc_Spell_Damage_Amt_IncomingPC,	On Target, damage taken flat amt, base: amt	
 	focusFcCastSpellOnLand,				//@Fc, SPA: 481, SE_Fc_Cast_Spell_On_Land,			On Target, cast spell if hit by spell, base: chance pct, limit: spellid
@@ -151,7 +151,7 @@ typedef enum {	//focus types
 	focusFcAmplifyAmt,					//@Fc, SPA: 508, SE_Fc_Amplify_Amt,					On Caster, damage-heal-dot mod flat amt, base: amt
 	focusFcCastTimeMod2,				//@Fc, SPA: 500, SE_Fc_CastTimeMod2,				On Caster, cast time mod pct, base: pct
 	focusFcCastTimeAmt,					//@Fc, SPA: 501, SE_Fc_CastTimeAmt,					On Caster, cast time mod flat amt, base: milliseconds
-	focusFcHealPctCritIncoming,			//@Fc, SPA: 393, SE_FcHealPctCritIncoming,			On Target, heal received critical chance mod, base: chance pct
+	focusFcHealPctCritIncoming,			//@Fc, SPA: 395, SE_FcHealPctCritIncoming,			On Target, spell healing mod pct, base: pct
 	focusFcHealAmt,						//@Fc, SPA: 392, SE_FcHealAmt,						On Caster, spell healing mod flat amt, base: amt
 	focusFcHealAmtCrit,					//@Fc, SPA: 396, SE_FcHealAmtCrit,					On Caster, spell healing mod flat amt, base: amt
 } focusType; //Any new FocusType needs to be added to the Mob::IsFocus function
@@ -328,8 +328,7 @@ struct Buffs_Struct {
 	int32	ExtraDIChance;
 	int16	RootBreakChance; //Not saved to dbase
 	uint32	instrument_mod;
-	int16   focusproclimit_time;	//timer to limit number of procs from focus effects 
-	int16   focusproclimit_procamt; //amount of procs that can be cast before timer limiter is set
+	int32	virus_spread_time; //time till next attempted viral spread
 	bool	persistant_buff;
 	bool	client; //True if the caster is a client
 	bool	UpdateClient;
@@ -404,7 +403,7 @@ struct StatBonuses {
 	int32	skillmodmax[EQ::skills::HIGHEST_SKILL + 1];
 	int		effective_casting_level;
 	int		adjusted_casting_skill;				// SPA 112 for fizzles
-	int		reflect_chance;						// chance to reflect incoming spell
+	int		reflect[3];					// chance to reflect incoming spell [0]=Chance [1]=Resist Mod [2]= % of Base Dmg
 	uint32	singingMod;
 	uint32	Amplification;						// stacks with singingMod
 	uint32	brassMod;
@@ -554,6 +553,7 @@ struct StatBonuses {
 	int32	ItemEnduranceRegenCap;				// modify endurance regen cap
 	int32   WeaponStance[WEAPON_STANCE_TYPE_MAX +1];// base = trigger spell id, base2 = 0 is 2h, 1 is shield, 2 is dual wield, [0]spid 2h, [1]spid shield, [2]spid DW
 	bool	ZoneSuspendMinion;					// base 1 allows suspended minions to zone
+	bool	CompleteHealBuffBlocker;			// Use in SPA 101 to prevent recast of complete heal from this effect till blocker buff is removed.
 
 	// AAs
 	uint16  SecondaryForte;						// allow a second skill to be specialized with a cap of this value.
@@ -602,7 +602,7 @@ struct StatBonuses {
 	int32	FinishingBlow[2];					// Chance to do a finishing blow for specified damage amount.
 	uint32	FinishingBlowLvl[2];				// Sets max level an NPC can be affected by FB. (base1 = lv, base2= ???)
 	int32	ShieldEquipDmgMod;					// Increases weapon's base damage by base1 % when shield is equipped (indirectly increasing hate)
-	bool	TriggerOnValueAmount;				// Triggers off various different conditions, bool to check if client has effect.
+	bool	TriggerOnCastRequirement;			// Triggers off various different conditions defined as emum SpellRestrictions
 	int8	StunBashChance;						// chance to stun with bash.
 	int8	IncreaseChanceMemwipe;				// increases chance to memory wipe
 	int8	CriticalMend;						// chance critical monk mend
@@ -679,6 +679,9 @@ namespace SBIndex {
 	constexpr uint16 FINISHING_EFFECT_LEVEL_CHANCE_BONUS    = 1; // SPA 440, 345, 346
 	constexpr uint16 DOUBLE_MELEE_ROUND_CHANCE              = 0; // SPA 471
 	constexpr uint16 DOUBLE_MELEE_ROUND_DMG_BONUS			= 1; // SPA 471
+	constexpr uint16 REFLECT_CHANCE                         = 0; // SPA 158
+	constexpr uint16 REFLECT_RESISTANCE_MOD                 = 1; // SPA 158
+	constexpr uint16 REFLECT_DMG_EFFECTIVENESS              = 2; // SPA 158
 };
 
 

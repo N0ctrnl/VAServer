@@ -167,7 +167,9 @@ bool ZoneDatabase::GetZoneCFG(
 		"fast_regen_endurance, "		// 59
 		"npc_max_aggro_dist, "			// 60
 		"max_movement_update_range, "	// 61
-		"underworld_teleport_index "	// 62
+		"underworld_teleport_index, "	// 62
+		"lava_damage, "					// 63
+		"min_lava_damage "				// 64
 		"FROM zone WHERE zoneidnumber = %i AND version = %i %s",
 		zoneid,
 		instance_id,
@@ -220,6 +222,8 @@ bool ZoneDatabase::GetZoneCFG(
 	zone_data->FastRegenEndurance = atoi(row[59]);
 	zone_data->NPCAggroMaxDist = atoi(row[60]);
 	zone_data->underworld_teleport_index = atoi(row[62]);
+	zone_data->LavaDamage = atoi(row[63]);
+	zone_data->MinLavaDamage = atoi(row[64]);
 
 	int bindable = 0;
 	bindable = atoi(row[31]);
@@ -3666,8 +3670,7 @@ void ZoneDatabase::LoadBuffs(Client *client)
 		buffs[slot_id].caston_z = caston_z;
 		buffs[slot_id].ExtraDIChance = ExtraDIChance;
 		buffs[slot_id].RootBreakChance = 0;
-		buffs[slot_id].focusproclimit_time = 0;
-		buffs[slot_id].focusproclimit_procamt = 0;
+		buffs[slot_id].virus_spread_time = 0;
 		buffs[slot_id].UpdateClient = false;
 		buffs[slot_id].instrument_mod = instrument_mod;
 	}

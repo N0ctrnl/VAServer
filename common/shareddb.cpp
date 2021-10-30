@@ -1118,7 +1118,7 @@ void SharedDatabase::LoadItems(void *data, uint32 size, int32 items, uint32 max_
 		item.Haste = (uint32)atoul(row[ItemField::haste]);
 		item.DamageShield = (uint32)atoul(row[ItemField::damageshield]);
 		item.RecastDelay = (uint32)atoul(row[ItemField::recastdelay]);
-		item.RecastType = (uint32)atoul(row[ItemField::recasttype]);
+		item.RecastType = (int)atoi(row[ItemField::recasttype]);
 		item.GuildFavor = (uint32)atoul(row[ItemField::guildfavor]);
 		item.AugDistiller = (uint32)atoul(row[ItemField::augdistiller]);
 		item.Attuneable = (atoi(row[ItemField::attuneable]) == 0) ? false : true;
@@ -1840,6 +1840,7 @@ void SharedDatabase::LoadSpells(void *data, int max_spells) {
 		sp[tempid].effectdescnum = atoi(row[157]);
 
 		sp[tempid].npc_no_los = atoi(row[159]) != 0;
+		sp[tempid].feedbackable = atoi(row[160]) != 0;
 		sp[tempid].reflectable = atoi(row[161]) != 0;
 		sp[tempid].bonushate=atoi(row[162]);
 
@@ -1855,6 +1856,8 @@ void SharedDatabase::LoadSpells(void *data, int max_spells) {
 		sp[tempid].pvpresistcalc=atoi(row[178]);
 		sp[tempid].pvpresistcap=atoi(row[179]);
 		sp[tempid].spell_category=atoi(row[180]);
+		sp[tempid].pvp_duration = atoi(row[181]);
+		sp[tempid].pvp_duration_cap = atoi(row[182]);
 		sp[tempid].pcnpc_only_flag=atoi(row[183]);
 		sp[tempid].cast_not_standing = atoi(row[184]) != 0;
 		sp[tempid].can_mgb=atoi(row[185]);

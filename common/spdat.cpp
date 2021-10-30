@@ -833,6 +833,14 @@ bool IsTeleportSpell(uint16 spell_id)
 	return false;
 }
 
+bool IsTranslocateSpell(uint16 spell_id)
+{
+	if (IsEffectInSpell(spell_id, SE_Translocate))
+		return true;
+
+	return false;
+}
+
 bool IsGateSpell(uint16 spell_id)
 {
 	if (IsEffectInSpell(spell_id, SE_Gate))
@@ -1247,6 +1255,7 @@ bool IsEffectIgnoredInStacking(int spa)
 	case SE_Ff_ReuseTimeMax:
 	case SE_Ff_Value_Min:
 	case SE_Ff_Value_Max:
+	case SE_Ff_FocusTimerMin:
 		return true;
 	default:
 		return false;
@@ -1288,6 +1297,7 @@ bool IsFocusLimit(int spa)
 	case SE_Ff_ReuseTimeMax:
 	case SE_Ff_Value_Min:
 	case SE_Ff_Value_Max:
+	case SE_Ff_FocusTimerMin:
 		return true;
 	default:
 		return false;
@@ -1358,6 +1368,99 @@ bool SpellRequiresTarget(int spell_id)
 	return true;
 }
 
+bool IsInstrumentModAppliedToSpellEffect(int32 spell_id, int effect)
+{
+
+	//Effects that are verified modifiable by bard instrument/singing mods, or highly likely due to similiar type of effect.
+	switch (effect) {
+
+		//Only modify instant endurance or mana effects (Ie. Mana drain, Crescendo line)
+		case SE_CurrentEndurance:
+		case SE_CurrentMana: {
+			if (spells[spell_id].buffduration == 0) {
+				return true;
+			}
+			//Mana regen is not modified.
+			return false;
+		}
+
+		case SE_CurrentHP:
+		case SE_ArmorClass:
+		case SE_ACv2:
+		case SE_MovementSpeed:
+		case SE_ATK:
+		case SE_STR:
+		case SE_DEX:
+		case SE_AGI:
+		case SE_STA:
+		case SE_INT:
+		case SE_WIS:
+		case SE_CHA:
+		case SE_AllStats:
+		case SE_ResistFire:
+		case SE_ResistCold:
+		case SE_ResistPoison:
+		case SE_ResistDisease:
+		case SE_ResistMagic:
+		case SE_ResistAll:
+		case SE_ResistCorruption:
+		case SE_Rune:
+		case SE_AbsorbMagicAtt:
+		case SE_DamageShield:
+		case SE_MitigateDamageShield:
+		case SE_Amplification: //On live Amplification is modified by singing mods, including itself.
+		case SE_TripleAttackChance:
+		case SE_Flurry:
+		case SE_DamageModifier:
+		case SE_DamageModifier2:
+		case SE_MinDamageModifier:
+		case SE_ProcChance:
+		case SE_PetFlurry: // ? Need verified
+		case SE_DiseaseCounter:			
+		case SE_PoisonCounter: 
+		case SE_CurseCounter:
+		case SE_CorruptionCounter:
+			return true;
+
+		/*
+			Following are confirmed NOT modifiable by instrument/singing mods.
+			Focus Effects, Proc Effects, Spell Triggers are not modified but handled elsewhere, not neccessary to checked here.
+		*/
+
+		case SE_AttackSpeed: //(Haste AND Slow not modifiable)
+		case SE_AttackSpeed2:
+		case SE_AttackSpeed3:
+		case SE_Lull:
+		case SE_ChangeFrenzyRad:
+		case SE_Harmony:
+		case SE_AddFaction:
+		//case SE_CurrentMana: // duration only
+		case SE_ManaRegen_v2:
+		//case SE_CurrentEndurance: // duration only
+		case SE_PersistentEffect:
+		case SE_ReduceReuseTimer:
+		case SE_Stun:
+		case SE_Mez:
+		case SE_WipeHateList: //?
+		case SE_CancelMagic:
+		case SE_ManaAbsorbPercentDamage:
+		case SE_ResistSpellChance:
+		case SE_Reflect:
+		case SE_MitigateSpellDamage:
+		case SE_MitigateMeleeDamage:
+		case SE_AllInstrumentMod:
+		case SE_AddSingingMod:
+		case SE_SongModCap:
+		case SE_BardSongRange:
+		case SE_TemporaryPets:
+		case SE_SpellOnDeath:
+			return false;
+		default:
+			return true;
+	}
+	//Allowing anything not confirmed to be restricted / allowed to receive modifiers, as to not inhbit anyone making custom bard songs.
+}
+
 int GetSpellStatValue(uint32 spell_id, const char* stat_identifier, uint8 slot)
 {
 	if (!IsValidSpell(spell_id))
@@ -1390,7 +1493,7 @@ int GetSpellStatValue(uint32 spell_id, const char* stat_identifier, uint8 slot)
 	if (slot < 4) {
 		if (id == "components") { return spells[spell_id].components[slot]; }
 		else if (id == "component_counts") { return spells[spell_id].component_counts[slot]; }
-		else if (id == "NoexpendReagent") { return spells[spell_id].NoexpendReagent[slot]; }
+		else if (id == "noexpendreagent") { return spells[spell_id].NoexpendReagent[slot]; }
 	}
 
 	if (id == "range") { return static_cast<int32>(spells[spell_id].range); }
@@ -1402,38 +1505,39 @@ int GetSpellStatValue(uint32 spell_id, const char* stat_identifier, uint8 slot)
 	else if (id == "recast_time") { return spells[spell_id].recast_time; }
 	else if (id == "buffdurationformula") { return spells[spell_id].buffdurationformula; }
 	else if (id == "buffduration") { return spells[spell_id].buffduration; }
-	else if (id == "AEDuration") { return spells[spell_id].AEDuration; }
+	else if (id == "aeduration") { return spells[spell_id].AEDuration; }
 	else if (id == "mana") { return spells[spell_id].mana; }
 	//else if (id == "LightType") {stat = spells[spell_id].LightType; } - Not implemented
-	else if (id == "goodEffect") { return spells[spell_id].goodEffect; }
-	else if (id == "Activated") { return spells[spell_id].Activated; }
+	else if (id == "goodeffect") { return spells[spell_id].goodEffect; }
+	else if (id == "activated") { return spells[spell_id].Activated; }
 	else if (id == "resisttype") { return spells[spell_id].resisttype; }
 	else if (id == "targettype") { return spells[spell_id].targettype; }
 	else if (id == "basediff") { return spells[spell_id].basediff; }
 	else if (id == "skill") { return spells[spell_id].skill; }
 	else if (id == "zonetype") { return spells[spell_id].zonetype; }
-	else if (id == "EnvironmentType") { return spells[spell_id].EnvironmentType; }
-	else if (id == "TimeOfDay") { return spells[spell_id].TimeOfDay; }
-	else if (id == "CastingAnim") { return spells[spell_id].CastingAnim; }
-	else if (id == "SpellAffectIndex") { return spells[spell_id].SpellAffectIndex; }
+	else if (id == "environmenttype") { return spells[spell_id].EnvironmentType; }
+	else if (id == "timeofday") { return spells[spell_id].TimeOfDay; }
+	else if (id == "castinganim") { return spells[spell_id].CastingAnim; }
+	else if (id == "spellaffectindex") { return spells[spell_id].SpellAffectIndex; }
 	else if (id == "disallow_sit") { return spells[spell_id].disallow_sit; }
 	//else if (id == "spellanim") {stat = spells[spell_id].spellanim; } - Not implemented
 	else if (id == "uninterruptable") { return spells[spell_id].uninterruptable; }
-	else if (id == "ResistDiff") { return spells[spell_id].ResistDiff; }
+	else if (id == "resistdiff") { return spells[spell_id].ResistDiff; }
 	else if (id == "dot_stacking_exempt") { return spells[spell_id].dot_stacking_exempt; }
-	else if (id == "RecourseLink") { return spells[spell_id].RecourseLink; }
+	else if (id == "recourselink") { return spells[spell_id].RecourseLink; }
 	else if (id == "no_partial_resist") { return spells[spell_id].no_partial_resist; }
 	else if (id == "short_buff_box") { return spells[spell_id].short_buff_box; }
 	else if (id == "descnum") { return spells[spell_id].descnum; }
 	else if (id == "effectdescnum") { return spells[spell_id].effectdescnum; }
 	else if (id == "npc_no_los") { return spells[spell_id].npc_no_los; }
+	else if (id == "feedbackable") { return spells[spell_id].feedbackable; }
 	else if (id == "reflectable") { return spells[spell_id].reflectable; }
 	else if (id == "bonushate") { return spells[spell_id].bonushate; }
-	else if (id == "EndurCost") { return spells[spell_id].EndurCost; }
-	else if (id == "EndurTimerIndex") { return spells[spell_id].EndurTimerIndex; }
-	else if (id == "IsDisciplineBuff") { return spells[spell_id].IsDisciplineBuff; }
-	else if (id == "HateAdded") { return spells[spell_id].HateAdded; }
-	else if (id == "EndurUpkeep") { return spells[spell_id].EndurUpkeep; }
+	else if (id == "endurcost") { return spells[spell_id].EndurCost; }
+	else if (id == "endurtimerindex") { return spells[spell_id].EndurTimerIndex; }
+	else if (id == "isdisciplinebuff") { return spells[spell_id].IsDisciplineBuff; }
+	else if (id == "hateadded") { return spells[spell_id].HateAdded; }
+	else if (id == "endurupkeep") { return spells[spell_id].EndurUpkeep; }
 	else if (id == "numhitstype") { return spells[spell_id].numhitstype; }
 	else if (id == "numhits") { return spells[spell_id].numhits; }
 	else if (id == "pvpresistbase") { return spells[spell_id].pvpresistbase; }
@@ -1442,11 +1546,11 @@ int GetSpellStatValue(uint32 spell_id, const char* stat_identifier, uint8 slot)
 	else if (id == "spell_category") { return spells[spell_id].spell_category; }
 	else if (id == "can_mgb") { return spells[spell_id].can_mgb; }
 	else if (id == "dispel_flag") { return spells[spell_id].dispel_flag; }
-	else if (id == "MinResist") { return spells[spell_id].MinResist; }
-	else if (id == "MaxResist") { return spells[spell_id].MaxResist; }
+	else if (id == "minresist") { return spells[spell_id].MinResist; }
+	else if (id == "maxresist") { return spells[spell_id].MaxResist; }
 	else if (id == "viral_targets") { return spells[spell_id].viral_targets; }
 	else if (id == "viral_timer") { return spells[spell_id].viral_timer; }
-	else if (id == "NimbusEffect") { return spells[spell_id].NimbusEffect; }
+	else if (id == "nimbuseffect") { return spells[spell_id].NimbusEffect; }
 	else if (id == "directional_start") { return static_cast<int32>(spells[spell_id].directional_start); }
 	else if (id == "directional_end") { return static_cast<int32>(spells[spell_id].directional_end); }
 	else if (id == "not_focusable") { return spells[spell_id].not_focusable; }
@@ -1455,10 +1559,10 @@ int GetSpellStatValue(uint32 spell_id, const char* stat_identifier, uint8 slot)
 	else if (id == "spellgroup") { return spells[spell_id].spellgroup; }
 	else if (id == "rank") { return spells[spell_id].rank; }
 	else if (id == "no_resist") { return spells[spell_id].no_resist; }
-	else if (id == "CastRestriction") { return spells[spell_id].CastRestriction; }
-	else if (id == "AllowRest") { return spells[spell_id].AllowRest; }
-	else if (id == "InCombat") { return spells[spell_id].InCombat; }
-	else if (id == "OutofCombat") { return spells[spell_id].OutofCombat; }
+	else if (id == "castrestriction") { return spells[spell_id].CastRestriction; }
+	else if (id == "allowrest") { return spells[spell_id].AllowRest; }
+	else if (id == "incombat") { return spells[spell_id].InCombat; }
+	else if (id == "outofcombat") { return spells[spell_id].OutofCombat; }
 	else if (id == "aemaxtargets") { return spells[spell_id].aemaxtargets; }
 	else if (id == "no_heal_damage_item_mod") { return spells[spell_id].no_heal_damage_item_mod; }
 	else if (id == "persistdeath") { return spells[spell_id].persistdeath; }
@@ -1466,7 +1570,30 @@ int GetSpellStatValue(uint32 spell_id, const char* stat_identifier, uint8 slot)
 	else if (id == "min_dist_mod") { return static_cast<int32>(spells[spell_id].min_dist_mod); }
 	else if (id == "max_dist") { return static_cast<int32>(spells[spell_id].max_dist); }
 	else if (id == "min_range") { return static_cast<int32>(spells[spell_id].min_range); }
-	else if (id == "DamageShieldType") { return spells[spell_id].DamageShieldType; }
+	else if (id == "damageshieldtype") { return spells[spell_id].DamageShieldType; }
 
 	return 0;
+}
+
+bool IsVirusSpell(int32 spell_id) 
+{
+	if (GetViralMinSpreadTime(spell_id) && GetViralMaxSpreadTime(spell_id) && GetViralSpreadRange(spell_id)){
+		return true;
+	}
+	return false;
+}
+
+int32 GetViralMinSpreadTime(int32 spell_id) 
+{
+	return spells[spell_id].viral_targets;
+}
+
+int32 GetViralMaxSpreadTime(int32 spell_id) 
+{
+	return spells[spell_id].viral_timer;
+}
+
+int32 GetViralSpreadRange(int32 spell_id) 
+{
+	return spells[spell_id].viral_range;
 }

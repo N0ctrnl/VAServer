@@ -43,6 +43,7 @@
 #include "water_map.h"
 #include "npc_scale_manager.h"
 #include "../common/say_link.h"
+#include "dialogue_window.h"
 
 #ifdef _WINDOWS
 	#define snprintf	_snprintf
@@ -722,10 +723,10 @@ void EntityList::AddNPC(NPC *npc, bool SendSpawnPacket, bool dontqueue)
 
 	/* Zone controller process EVENT_SPAWN_ZONE */
 	if (RuleB(Zone, UseZoneController)) {
-		if (entity_list.GetNPCByNPCTypeID(ZONE_CONTROLLER_NPC_ID) && npc->GetNPCTypeID() != ZONE_CONTROLLER_NPC_ID){
-			char data_pass[100] = { 0 };
-			snprintf(data_pass, 99, "%d %d", npc->GetID(), npc->GetNPCTypeID());
-			parse->EventNPC(EVENT_SPAWN_ZONE, entity_list.GetNPCByNPCTypeID(ZONE_CONTROLLER_NPC_ID)->CastToNPC(), nullptr, data_pass, 0);
+		auto controller = entity_list.GetNPCByNPCTypeID(ZONE_CONTROLLER_NPC_ID);
+		if (controller && npc->GetNPCTypeID() != ZONE_CONTROLLER_NPC_ID){
+			std::string data_pass = fmt::format("{} {}", npc->GetID(), npc->GetNPCTypeID());
+			parse->EventNPC(EVENT_SPAWN_ZONE, controller, nullptr, data_pass.c_str(), 0);
 		}
 	}
 
@@ -1198,6 +1199,34 @@ bool EntityList::IsMobSpawnedByNpcTypeID(uint32 get_id)
 	}
 
 	return false;
+}
+
+bool EntityList::IsNPCSpawned(std::vector<uint32> npc_ids)
+{
+	return CountSpawnedNPCs(npc_ids) != 0;
+}
+
+uint32 EntityList::CountSpawnedNPCs(std::vector<uint32> npc_ids)
+{
+	uint32 npc_count = 0;
+	if (npc_list.empty() || npc_ids.empty()) {
+		return npc_count;
+	}
+
+	for (auto current_npc : npc_list) {
+		if (
+			std::find(
+				npc_ids.begin(),
+				npc_ids.end(),
+				current_npc.second->GetNPCTypeID()
+			) != npc_ids.end() &&
+			current_npc.second->GetID() != 0
+		) {
+			npc_count++;
+		}
+	}
+
+	return npc_count;
 }
 
 Object *EntityList::GetObjectByDBID(uint32 id)
@@ -4185,8 +4214,10 @@ bool Entity::CheckCoordLosNoZLeaps(float cur_x, float cur_y, float cur_z,
 	return false;
 }
 
-void EntityList::QuestJournalledSayClose(Mob *sender, float dist, const char *mobname, const char *message,
-					 Journal::Options &opts)
+void EntityList::QuestJournalledSayClose(
+	Mob *sender, float dist, const char *mobname, const char *message,
+	Journal::Options &opts
+)
 {
 	SerializeBuffer buf(sizeof(SpecialMesgHeader_Struct) + 12 + 64 + 64);
 
@@ -4199,7 +4230,32 @@ void EntityList::QuestJournalledSayClose(Mob *sender, float dist, const char *mo
 	buf.WriteInt32(0); // location, client doesn't seem to do anything with this
 	buf.WriteInt32(0);
 	buf.WriteInt32(0);
-	buf.WriteString(message);
+
+	if (RuleB(Chat, QuestDialogueUsesDialogueWindow)) {
+		for (auto &e : GetCloseMobList(sender, (dist * dist))) {
+			Mob *mob = e.second;
+
+			if (!mob->IsClient()) {
+				continue;
+			}
+
+			Client *client = mob->CastToClient();
+
+			if (client->GetTarget() && client->GetTarget()->IsMob() && client->GetTarget()->CastToMob() == sender) {
+				std::string window_markdown = message;
+				DialogueWindow::Render(client, window_markdown);
+			}
+		}
+
+		return;
+	}
+	else if (RuleB(Chat, AutoInjectSaylinksToSay)) {
+		std::string new_message = EQ::SayLinkEngine::InjectSaylinksIfNotExist(message);
+		buf.WriteString(new_message);
+	}
+	else {
+		buf.WriteString(message);
+	}
 
 	auto outapp = new EQApplicationPacket(OP_SpecialMesg, buf);
 
@@ -5090,7 +5146,7 @@ void EntityList::ExpeditionWarning(uint32 minutes_left)
 	safe_delete(outapp);
 }
 
-Mob *EntityList::GetClosestMobByBodyType(Mob *sender, bodyType BodyType)
+Mob *EntityList::GetClosestMobByBodyType(Mob *sender, bodyType BodyType, bool skip_client_pets)
 {
 
 	if (!sender)
@@ -5105,6 +5161,10 @@ Mob *EntityList::GetClosestMobByBodyType(Mob *sender, bodyType BodyType)
 		++it;
 
 		if (CurrentMob->GetBodyType() != BodyType)
+			continue;
+
+		// Do not detect client pets
+		if (skip_client_pets && CurrentMob->IsPet() && CurrentMob->IsPetOwnerClient())
 			continue;
 
 		CurrentDistance = ((CurrentMob->GetY() - sender->GetY()) * (CurrentMob->GetY() - sender->GetY())) +
@@ -5162,59 +5222,94 @@ Client *EntityList::FindCorpseDragger(uint16 CorpseID)
 	return nullptr;
 }
 
-Mob *EntityList::GetTargetForVirus(Mob *spreader, int range)
+std::vector<Mob*> EntityList::GetTargetsForVirusEffect(Mob *spreader, Mob *original_caster, int range, int pcnpc, int32 spell_id)
 {
-	int max_spread_range = RuleI(Spells, VirusSpreadDistance);
+	/*
+		Live Mechanics
+		Virus spreader does NOT need LOS
+		There is no max target limit
+	*/
+	if (!spreader) {
+		return {};
+	}
 
-	if (range)
-		max_spread_range = range;
+	std::vector<Mob *> spreader_list        = {};
+	bool               is_detrimental_spell = IsDetrimentalSpell(spell_id);
+	for (auto          &it : entity_list.GetCloseMobList(spreader, range)) {
+		Mob *mob = it.second;
+		if (mob == spreader) {
+			continue;
+		}
 
-	std::vector<Mob *> TargetsInRange;
+		// check PC/NPC only flag 1 = PCs, 2 = NPCs
+		if (pcnpc == 1 && !mob->IsClient() && !mob->IsMerc() && !mob->IsBot()) {
+			continue;
+		}
+		else if (pcnpc == 2 && (mob->IsClient() || mob->IsMerc() || mob->IsBot())) {
+			continue;
+		}
+		if (mob->IsClient() && !mob->CastToClient()->ClientFinishedLoading()) {
+			continue;
+		}
 
-	auto it = mob_list.begin();
-	while (it != mob_list.end()) {
-		Mob *cur = it->second;
-		// Make sure the target is in range, has los and is not the mob doing the spreading
-		if ((cur->GetID() != spreader->GetID()) &&
-				(cur->CalculateDistance(spreader->GetX(), spreader->GetY(),
-					spreader->GetZ()) <= max_spread_range) &&
-				(spreader->CheckLosFN(cur))) {
-			// If the spreader is an npc it can only spread to other npc controlled mobs
-			if (spreader->IsNPC() && !spreader->IsPet() && !spreader->CastToNPC()->GetSwarmOwner() && cur->IsNPC()) {
-				TargetsInRange.push_back(cur);
+		if (mob->IsAura() || mob->IsTrap()) {
+			continue;
+		}
+
+		// Make sure the target is in range
+		if (mob->CalculateDistance(spreader->GetX(), spreader->GetY(), spreader->GetZ()) <= range) {
+
+			//Do not allow detrimental spread to anything the original caster couldn't normally attack.
+			if (is_detrimental_spell && !original_caster->IsAttackAllowed(mob, true)) {
+				continue;
 			}
-			// If the spreader is an npc controlled pet it can spread to any other npc or an npc controlled pet
-			else if (spreader->IsNPC() && spreader->IsPet() && spreader->GetOwner()->IsNPC()) {
-				if (cur->IsNPC() && !cur->IsPet()) {
-					TargetsInRange.push_back(cur);
-				} else if (cur->IsNPC() && cur->IsPet() && cur->GetOwner()->IsNPC()) {
-					TargetsInRange.push_back(cur);
+
+			//For non-NPCs, do not allow beneficial spread to anything the original caster could normally attack.
+			if (!is_detrimental_spell && !original_caster->IsNPC() && original_caster->IsAttackAllowed(mob, true)) {
+				continue;
+			}
+
+			// If the spreader is an npc and NOT a PET, then spread to other npc controlled mobs that are not pets
+			if (spreader->IsNPC() && !spreader->IsPet() && !spreader->IsTempPet() && mob->IsNPC() && !mob->IsPet() && !mob->IsTempPet()) {
+				spreader_list.push_back(mob);
+			}
+			// If the spreader is an npc and NOT a PET, then spread to npc controlled pet
+			else if (spreader->IsNPC() && !spreader->IsPet() && !spreader->IsTempPet() && mob->IsNPC() && (mob->IsPet() || mob->IsTempPet()) && mob->IsPetOwnerNPC()) {
+				spreader_list.push_back(mob);
+			}
+			// If the spreader is an npc controlled PET it can spread to any other npc or an npc controlled pet
+			else if (spreader->IsNPC() && (spreader->IsPet() || spreader->IsTempPet()) && spreader->IsPetOwnerNPC()) {
+				if (mob->IsNPC() && (!mob->IsPet() || !mob->IsTempPet())) {
+					spreader_list.push_back(mob);
 				}
-				else if (cur->IsNPC() && cur->CastToNPC()->GetSwarmOwner() && cur->GetOwner()->IsNPC()) {
-					TargetsInRange.push_back(cur);
+				else if (mob->IsNPC() && (mob->IsPet() || mob->IsTempPet()) && mob->IsPetOwnerNPC()) {
+					spreader_list.push_back(mob);
 				}
 			}
 			// if the spreader is anything else(bot, pet, etc) then it should spread to everything but non client controlled npcs
-			else if (!spreader->IsNPC() && !cur->IsNPC()) {
-				TargetsInRange.push_back(cur);
+			else if (!spreader->IsNPC() && !mob->IsNPC()) {
+				spreader_list.push_back(mob);
 			}
-			// if its a pet we need to determine appropriate targets(pet to client, pet to pet, pet to bot, etc)
-			else if (spreader->IsNPC() && (spreader->IsPet() || spreader->CastToNPC()->GetSwarmOwner()) && !spreader->GetOwner()->IsNPC()) {
-				if (!cur->IsNPC()) {
-					TargetsInRange.push_back(cur);
+			// if spreader is not an NPC, and Target is an NPC, then spread to non-NPC controlled pets
+			else if (!spreader->IsNPC() && mob->IsNPC() && (mob->IsPet() || mob->IsTempPet()) && !mob->IsPetOwnerNPC()) {
+				spreader_list.push_back(mob);
+			}
+
+			// if spreader is a non-NPC controlled pet we need to determine appropriate targets(pet to client, pet to pet, pet to bot, etc)
+			else if (spreader->IsNPC() && (spreader->IsPet() || spreader->IsTempPet()) && !spreader->IsPetOwnerNPC()) {
+				//Spread to non-NPCs
+				if (!mob->IsNPC()) {
+					spreader_list.push_back(mob);
 				}
-				else if (cur->IsNPC() && (cur->IsPet() || cur->CastToNPC()->GetSwarmOwner()) && !cur->GetOwner()->IsNPC()) {
-					TargetsInRange.push_back(cur);
+				//Spread to other non-NPC Pets
+				else if (mob->IsNPC() && (mob->IsPet() || mob->IsTempPet()) && !mob->IsPetOwnerNPC()) {
+					spreader_list.push_back(mob);
 				}
 			}
 		}
-		++it;
 	}
 
-	if(TargetsInRange.empty())
-		return nullptr;
-
-	return TargetsInRange[zone->random.Int(0, TargetsInRange.size() - 1)];
+	return spreader_list;
 }
 
 void EntityList::StopMobAI()

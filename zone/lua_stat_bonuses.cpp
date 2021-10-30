@@ -342,7 +342,7 @@ int Lua_StatBonuses::Getadjusted_casting_skill() const {
 
 int Lua_StatBonuses::Getreflect_chance() const {
 	Lua_Safe_Call_Int();
-	return self->reflect_chance;
+	return self->reflect[SBIndex::REFLECT_CHANCE];
 }
 
 uint32 Lua_StatBonuses::GetsingingMod() const {
@@ -987,7 +987,7 @@ int32 Lua_StatBonuses::GetShieldEquipDmgMod() const {
 
 bool Lua_StatBonuses::GetTriggerOnValueAmount() const {
 	Lua_Safe_Call_Bool();
-	return self->TriggerOnValueAmount;
+	return self->TriggerOnCastRequirement;
 }
 
 int8 Lua_StatBonuses::GetStunBashChance() const {

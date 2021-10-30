@@ -791,6 +791,45 @@ void Corpse::RemoveItem(ServerLootItem_Struct* item_data)
 	}
 }
 
+void Corpse::RemoveItemByID(uint32 item_id, int quantity) {
+	if (!database.GetItem(item_id)) {
+		return;
+	}
+
+	if (!HasItem(item_id)) {
+		return;
+	}
+
+	int removed_count = 0;
+	for (auto current_item = itemlist.begin(); current_item != itemlist.end(); ++current_item) {
+		ServerLootItem_Struct* sitem = *current_item;
+		if (removed_count == quantity) {
+			break;
+		}
+
+		if (sitem && sitem->item_id == item_id) {
+			int stack_size = sitem->charges > 1 ? sitem->charges : 1;
+			if ((removed_count + stack_size) <= quantity) {
+				removed_count += stack_size;
+				is_corpse_changed = true;
+				itemlist.erase(current_item);
+			} else {
+				int amount_left = (quantity - removed_count);
+				if (amount_left > 0) {
+					if (stack_size > amount_left) {
+						removed_count += amount_left;
+						sitem->charges -= amount_left;
+						is_corpse_changed = true;
+					} else if (stack_size == amount_left) {
+						removed_count += amount_left;
+						itemlist.erase(current_item);
+					}
+				}
+			}
+		}
+	}
+}
+
 void Corpse::SetCash(uint32 in_copper, uint32 in_silver, uint32 in_gold, uint32 in_platinum) {
 	this->copper = in_copper;
 	this->silver = in_silver;
@@ -1244,40 +1283,54 @@ void Corpse::LootItem(Client *client, const EQApplicationPacket *app)
 			}
 		}
 
-		char buf[88];
-		char q_corpse_name[64];
-		strcpy(q_corpse_name, corpse_name);
-		snprintf(buf, 87, "%d %d %s", inst->GetItem()->ID, inst->GetCharges(),
-			EntityList::RemoveNumbers(q_corpse_name));
-		buf[87] = '\0';
+		std::string export_string = fmt::format(
+			"{} {} {} {}",
+			inst->GetItem()->ID,
+			inst->GetCharges(),
+			EntityList::RemoveNumbers(corpse_name),
+			GetID()
+		);
 		std::vector<EQ::Any> args;
 		args.push_back(inst);
 		args.push_back(this);
-		if (parse->EventPlayer(EVENT_LOOT, client, buf, 0, &args) != 0) {
-			lootitem->auto_loot = -1;
-			client->MessageString(Chat::Red, LOOT_NOT_ALLOWED, inst->GetItem()->Name);
-			client->QueuePacket(app);
-			delete inst;
-			return;
+		bool prevent_loot = false;
+		if (RuleB(Zone, UseZoneController)) {
+			auto controller = entity_list.GetNPCByNPCTypeID(ZONE_CONTROLLER_NPC_ID);
+			if (controller){
+				if (parse->EventNPC(EVENT_LOOT_ZONE, controller, client, export_string, 0, &args) != 0) {
+					prevent_loot = true;
+				}
+			}
+		}
+		
+		if (parse->EventPlayer(EVENT_LOOT, client, export_string, 0, &args) != 0) {
+			prevent_loot = true;
 		}
 
-		if (zone && zone->GetInstanceID() != 0)
+		if (!IsPlayerCorpse())
 		{
-			// expeditions may prevent looting based on client's lockouts
-			auto expedition = Expedition::FindCachedExpeditionByZoneInstance(zone->GetZoneID(), zone->GetInstanceID());
-			if (expedition && !expedition->CanClientLootCorpse(client, GetNPCTypeID(), GetID()))
+			// dynamic zones may prevent looting by non-members or based on lockouts
+			auto dz = zone->GetDynamicZone();
+			if (dz && !dz->CanClientLootCorpse(client, GetNPCTypeID(), GetID()))
 			{
-				client->MessageString(Chat::Red, LOOT_NOT_ALLOWED, inst->GetItem()->Name);
-				client->QueuePacket(app);
-				SendEndLootErrorPacket(client);
-				ResetLooter();
-				delete inst;
-				return;
+				prevent_loot = true;
+				// note on live this message is only sent once on the first loot attempt of an open corpse
+				client->MessageString(Chat::Loot, LOOT_NOT_ALLOWED, inst->GetItem()->Name);
 			}
 		}
 
-		// do we want this to have a fail option too?
-		parse->EventItem(EVENT_LOOT, client, inst, this, buf, 0);
+		// do we want this to have a fail option too? Sure?
+		if (parse->EventItem(EVENT_LOOT, client, inst, this, export_string, 0) != 0) {
+			prevent_loot = true;
+		}
+		
+		if (prevent_loot) {
+			lootitem->auto_loot = -1;
+			client->QueuePacket(app);
+			safe_delete(inst);
+			return;
+		}
+		
 
 		// safe to ACK now
 		client->QueuePacket(app);
@@ -1307,7 +1360,7 @@ void Corpse::LootItem(Client *client, const EQApplicationPacket *app)
 
 		/* Update any tasks that have an activity to loot this item */
 		if (RuleB(TaskSystem, EnableTaskSystem))
-			client->UpdateTasksForItem(ActivityLoot, item->ID);
+			client->UpdateTasksForItem(TaskActivityType::Loot, item->ID);
 
 		/* Remove it from Corpse */
 		if (item_data) {
@@ -1462,12 +1515,12 @@ bool Corpse::HasItem(uint32 item_id) {
 	for (auto current_item  = itemlist.begin(); current_item != itemlist.end(); ++current_item) {
 		ServerLootItem_Struct* loot_item = *current_item;
 		if (!loot_item) {
-			LogError("NPC::CountItem() - ItemList error, null item");
+			LogError("Corpse::HasItem() - ItemList error, null item");
 			continue;
 		}
 
 		if (!loot_item->item_id || !database.GetItem(loot_item->item_id)) {
-			LogError("NPC::CountItem() - Database error, invalid item");
+			LogError("Corpse::HasItem() - Database error, invalid item");
 			continue;
 		}
 
@@ -1487,12 +1540,12 @@ uint16 Corpse::CountItem(uint32 item_id) {
 	for (auto current_item  = itemlist.begin(); current_item != itemlist.end(); ++current_item) {
 		ServerLootItem_Struct* loot_item = *current_item;
 		if (!loot_item) {
-			LogError("NPC::CountItem() - ItemList error, null item");
+			LogError("Corpse::CountItem() - ItemList error, null item");
 			continue;
 		}
 
 		if (!loot_item->item_id || !database.GetItem(loot_item->item_id)) {
-			LogError("NPC::CountItem() - Database error, invalid item");
+			LogError("Corpse::CountItem() - Database error, invalid item");
 			continue;
 		}
 
@@ -1746,4 +1799,22 @@ bool Corpse::MovePlayerCorpseToNonInstance()
 	}
 
 	return false;
+}
+
+std::vector<int> Corpse::GetLootList() {
+	std::vector<int> corpse_items;
+	for (auto current_item  = itemlist.begin(); current_item != itemlist.end(); ++current_item) {
+		ServerLootItem_Struct* loot_item = *current_item;
+		if (!loot_item) {
+			LogError("Corpse::GetLootList() - ItemList error, null item");
+			continue;
+		}
+
+		if (std::find(corpse_items.begin(), corpse_items.end(), loot_item->item_id) != corpse_items.end()) {
+			continue;
+		}
+		
+		corpse_items.push_back(loot_item->item_id);
+	}
+	return corpse_items;
 }

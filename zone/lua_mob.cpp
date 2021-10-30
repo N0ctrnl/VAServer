@@ -5,12 +5,17 @@
 
 #include "client.h"
 #include "npc.h"
+#ifdef BOTS
+#include "lua_bot.h"
+#endif
 #include "lua_item.h"
 #include "lua_iteminst.h"
 #include "lua_mob.h"
+#include "lua_npc.h"
 #include "lua_hate_list.h"
 #include "lua_client.h"
 #include "lua_stat_bonuses.h"
+#include "dialogue_window.h"
 
 struct SpecialAbilities { };
 
@@ -755,7 +760,19 @@ double Lua_Mob::GetSize() {
 
 void Lua_Mob::Message(int type, const char *message) {
 	Lua_Safe_Call_Void();
-	self->Message(type, message);
+
+	// auto inject saylinks
+	if (RuleB(Chat, QuestDialogueUsesDialogueWindow) && self->IsClient()) {
+		std::string window_markdown = message;
+		DialogueWindow::Render(self->CastToClient(), window_markdown);
+	}
+	else if (RuleB(Chat, AutoInjectSaylinksToClientMessage)) {
+		std::string new_message = EQ::SayLinkEngine::InjectSaylinksIfNotExist(message);
+		self->Message(type, new_message.c_str());
+	}
+	else {
+		self->Message(type, message);
+	}
 }
 
 void Lua_Mob::MessageString(int type, int string_id, uint32 distance) {
@@ -2181,6 +2198,16 @@ bool Lua_Mob::HasPet() {
 	return self->HasPet();
 }
 
+void Lua_Mob::RemovePet() {
+	Lua_Safe_Call_Void();
+	return self->SetPet(nullptr);
+}
+
+void Lua_Mob::SetPet(Lua_Mob new_pet) {
+	Lua_Safe_Call_Void();
+	return self->SetPet(new_pet);
+}
+
 bool Lua_Mob::IsSilenced() {
 	Lua_Safe_Call_Bool();
 	return self->IsSilenced();
@@ -2377,6 +2404,23 @@ bool Lua_Mob::CanRaceEquipItem(uint32 item_id) {
 void Lua_Mob::RemoveAllNimbusEffects() {
 	Lua_Safe_Call_Void();
 	self->RemoveAllNimbusEffects();
+}
+
+#ifdef BOTS
+Lua_Bot Lua_Mob::GetHateRandomBot() {
+	Lua_Safe_Call_Class(Lua_Bot);
+	return Lua_Bot(self->GetHateRandomBot());
+}
+#endif
+
+Lua_Client Lua_Mob::GetHateRandomClient() {
+	Lua_Safe_Call_Class(Lua_Client);
+	return Lua_Client(self->GetHateRandomClient());
+}
+
+Lua_NPC Lua_Mob::GetHateRandomNPC() {
+	Lua_Safe_Call_Class(Lua_NPC);
+	return Lua_NPC(self->GetHateRandomNPC());
 }
 
 luabind::scope lua_register_mob() {
@@ -2747,7 +2791,7 @@ luabind::scope lua_register_mob() {
 		.def("GetNimbusEffect2", (uint8(Lua_Mob::*)(void))&Lua_Mob::GetNimbusEffect2)
 		.def("GetNimbusEffect3", (uint8(Lua_Mob::*)(void))&Lua_Mob::GetNimbusEffect3)
 		.def("IsTargetable", (bool(Lua_Mob::*)(void))&Lua_Mob::IsTargetable)
-		.def("HasShieldEquiped", (bool(Lua_Mob::*)(void))&Lua_Mob::HasShieldEquiped)		
+		.def("HasShieldEquiped", (bool(Lua_Mob::*)(void))&Lua_Mob::HasShieldEquiped)
 		.def("HasTwoHandBluntEquiped", (bool(Lua_Mob::*)(void))&Lua_Mob::HasTwoHandBluntEquiped)
 		.def("HasTwoHanderEquipped", (bool(Lua_Mob::*)(void))&Lua_Mob::HasTwoHanderEquipped)
 		.def("GetHerosForgeModel", (int32(Lua_Mob::*)(uint8))&Lua_Mob::GetHerosForgeModel)
@@ -2756,6 +2800,8 @@ luabind::scope lua_register_mob() {
 		.def("HasOwner", (bool(Lua_Mob::*)(void))&Lua_Mob::HasOwner)
 		.def("IsPet", (bool(Lua_Mob::*)(void))&Lua_Mob::IsPet)
 		.def("HasPet", (bool(Lua_Mob::*)(void))&Lua_Mob::HasPet)
+		.def("RemovePet", &Lua_Mob::RemovePet)
+		.def("SetPet", &Lua_Mob::SetPet)
 		.def("IsSilenced", (bool(Lua_Mob::*)(void))&Lua_Mob::IsSilenced)
 		.def("IsAmnesiad", (bool(Lua_Mob::*)(void))&Lua_Mob::IsAmnesiad)
 		.def("GetMeleeMitigation", (int32(Lua_Mob::*)(void))&Lua_Mob::GetMeleeMitigation)
@@ -2785,7 +2831,12 @@ luabind::scope lua_register_mob() {
 		.def("GetLastName", &Lua_Mob::GetLastName)
 		.def("CanClassEquipItem", &Lua_Mob::CanClassEquipItem)
 		.def("CanRaceEquipItem", &Lua_Mob::CanRaceEquipItem)
-		.def("RemoveAllNimbusEffects", &Lua_Mob::RemoveAllNimbusEffects);
+		.def("RemoveAllNimbusEffects", &Lua_Mob::RemoveAllNimbusEffects)
+#ifdef BOTS
+		.def("GetHateRandomBot", (Lua_Bot(Lua_Mob::*)(void))&Lua_Mob::GetHateRandomBot)
+#endif
+		.def("GetHateRandomClient", (Lua_Client(Lua_Mob::*)(void))&Lua_Mob::GetHateRandomClient)
+		.def("GetHateRandomNPC", (Lua_NPC(Lua_Mob::*)(void))&Lua_Mob::GetHateRandomNPC);
 }
 
 luabind::scope lua_register_special_abilities() {

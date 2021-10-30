@@ -38,6 +38,9 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "world_store.h"
 #include "dynamic_zone.h"
 #include "expedition_message.h"
+#include "shared_task_world_messaging.h"
+#include "../common/shared_tasks.h"
+#include "shared_task_manager.h"
 
 extern ClientList client_list;
 extern GroupLFPList LFPGroupList;
@@ -48,6 +51,8 @@ extern volatile bool UCSServerAvailable_;
 extern AdventureManager adventure_manager;
 extern UCSConnection UCSLink;
 extern QueryServConnection QSLink;
+extern SharedTaskManager shared_task_manager;
+
 void CatchSignal(int sig_num);
 
 ZoneServer::ZoneServer(std::shared_ptr<EQ::Net::ServertalkServerConnection> connection, EQ::Net::ConsoleServer *console)
@@ -1181,7 +1186,6 @@ void ZoneServer::HandleMessage(uint16 opcode, const EQ::Net::Packet &p) {
 		adventure_manager.IncrementAssassinationCount(*((uint16*)pack->pBuffer));
 		break;
 	}
-
 	case ServerOP_AdventureZoneData:
 	{
 		adventure_manager.GetZoneData(*((uint16*)pack->pBuffer));
@@ -1239,95 +1243,39 @@ void ZoneServer::HandleMessage(uint16 opcode, const EQ::Net::Packet &p) {
 		QSLink.SendPacket(pack);
 		break;
 	}
-	case ServerOP_CZCastSpellPlayer:
-	case ServerOP_CZCastSpellGroup:
-	case ServerOP_CZCastSpellRaid:
-	case ServerOP_CZCastSpellGuild:
-	case ServerOP_CZMarqueePlayer:
-	case ServerOP_CZMarqueeGroup:
-	case ServerOP_CZMarqueeRaid:
-	case ServerOP_CZMarqueeGuild:
-	case ServerOP_CZMessagePlayer:
-	case ServerOP_CZMessageGroup:
-	case ServerOP_CZMessageRaid:
-	case ServerOP_CZMessageGuild:
-	case ServerOP_CZMovePlayer:
-	case ServerOP_CZMoveGroup:
-	case ServerOP_CZMoveRaid:
-	case ServerOP_CZMoveGuild:
-	case ServerOP_CZMoveInstancePlayer:
-	case ServerOP_CZMoveInstanceGroup:
-	case ServerOP_CZMoveInstanceRaid:
-	case ServerOP_CZMoveInstanceGuild:
-	case ServerOP_CZRemoveSpellPlayer:
-	case ServerOP_CZRemoveSpellGroup:
-	case ServerOP_CZRemoveSpellRaid:
-	case ServerOP_CZRemoveSpellGuild:
-	case ServerOP_CZSetEntityVariableByClientName:
-	case ServerOP_CZSetEntityVariableByNPCTypeID:
-	case ServerOP_CZSetEntityVariableByGroupID:
-	case ServerOP_CZSetEntityVariableByRaidID:
-	case ServerOP_CZSetEntityVariableByGuildID:
-	case ServerOP_CZSignalNPC:
-	case ServerOP_CZSignalClient:
-	case ServerOP_CZSignalClientByName:
-	case ServerOP_CZSignalGroup:
-	case ServerOP_CZSignalRaid:
-	case ServerOP_CZSignalGuild:
-	case ServerOP_CZTaskActivityResetPlayer:
-	case ServerOP_CZTaskActivityResetGroup:
-	case ServerOP_CZTaskActivityResetRaid:
-	case ServerOP_CZTaskActivityResetGuild:
-	case ServerOP_CZTaskActivityUpdatePlayer:
-	case ServerOP_CZTaskActivityUpdateGroup:
-	case ServerOP_CZTaskActivityUpdateRaid:
-	case ServerOP_CZTaskActivityUpdateGuild:
-	case ServerOP_CZTaskAssignPlayer:
-	case ServerOP_CZTaskAssignGroup:
-	case ServerOP_CZTaskAssignRaid:
-	case ServerOP_CZTaskAssignGuild:
-	case ServerOP_CZTaskDisablePlayer:
-	case ServerOP_CZTaskDisableGroup:
-	case ServerOP_CZTaskDisableRaid:
-	case ServerOP_CZTaskDisableGuild:
-	case ServerOP_CZTaskEnablePlayer:
-	case ServerOP_CZTaskEnableGroup:
-	case ServerOP_CZTaskEnableRaid:
-	case ServerOP_CZTaskEnableGuild:
-	case ServerOP_CZTaskFailPlayer:
-	case ServerOP_CZTaskFailGroup:
-	case ServerOP_CZTaskFailRaid:
-	case ServerOP_CZTaskFailGuild:
-	case ServerOP_CZTaskRemovePlayer:
-	case ServerOP_CZTaskRemoveGroup:
-	case ServerOP_CZTaskRemoveRaid:
-	case ServerOP_CZTaskRemoveGuild:
+	case ServerOP_CZDialogueWindow:
 	case ServerOP_CZLDoNUpdate:
-	case ServerOP_WWAssignTask:
-	case ServerOP_WWCastSpell:
-	case ServerOP_WWDisableTask:
-	case ServerOP_WWEnableTask:
-	case ServerOP_WWFailTask:
+	case ServerOP_CZMarquee:
+	case ServerOP_CZMessage:
+	case ServerOP_CZMove:
+	case ServerOP_CZSetEntityVariable:
+	case ServerOP_CZSignal:
+	case ServerOP_CZSpell:
+	case ServerOP_CZTaskUpdate:
+	case ServerOP_WWDialogueWindow:
+	case ServerOP_WWLDoNUpdate:
 	case ServerOP_WWMarquee:
 	case ServerOP_WWMessage:
 	case ServerOP_WWMove:
-	case ServerOP_WWMoveInstance:
-	case ServerOP_WWRemoveSpell:
-	case ServerOP_WWRemoveTask:
-	case ServerOP_WWResetActivity:
-	case ServerOP_WWSetEntityVariableClient:
-	case ServerOP_WWSetEntityVariableNPC:
-	case ServerOP_WWSignalClient:
-	case ServerOP_WWSignalNPC:
-	case ServerOP_WWUpdateActivity:
+	case ServerOP_WWSetEntityVariable:
+	case ServerOP_WWSignal:
+	case ServerOP_WWSpell:
+	case ServerOP_WWTaskUpdate:
 	case ServerOP_DepopAllPlayersCorpses:
 	case ServerOP_DepopPlayerCorpse:
 	case ServerOP_ReloadTitles:
 	case ServerOP_SpawnStatusChange:
-	case ServerOP_ReloadTasks:
 	case ServerOP_ReloadWorld:
 	case ServerOP_UpdateSpawn:
 	{
+		zoneserver_list.SendPacket(pack);
+		break;
+	}
+	case ServerOP_ReloadTasks:
+	{
+		// world needs to update its copy of task data as well
+		shared_task_manager.LoadTaskData();
+
 		zoneserver_list.SendPacket(pack);
 		break;
 	}
@@ -1361,24 +1309,35 @@ void ZoneServer::HandleMessage(uint16 opcode, const EQ::Net::Packet &p) {
 	case ServerOP_CZClientMessageString:
 	{
 		auto buf = reinterpret_cast<CZClientMessageString_Struct*>(pack->pBuffer);
-		client_list.SendPacket(buf->character_name, pack);
+		client_list.SendPacket(buf->client_name, pack);
 		break;
 	}
 	case ServerOP_ExpeditionLockout:
 	case ServerOP_ExpeditionLockoutDuration:
 	case ServerOP_ExpeditionLockState:
 	case ServerOP_ExpeditionReplayOnJoin:
-	case ServerOP_ExpeditionExpireWarning:
 	{
 		zoneserver_list.SendPacket(pack);
 		break;
 	}
+	case ServerOP_SharedTaskRequest:
+	case ServerOP_SharedTaskAddPlayer:
+	case ServerOP_SharedTaskAttemptRemove:
+	case ServerOP_SharedTaskUpdate:
+	case ServerOP_SharedTaskRequestMemberlist:
+	case ServerOP_SharedTaskRemovePlayer:
+	case ServerOP_SharedTaskInviteAcceptedPlayer:
+	case ServerOP_SharedTaskMakeLeader:
+	case ServerOP_SharedTaskCreateDynamicZone:
+	case ServerOP_SharedTaskPurgeAllCommand:
+	case ServerOP_SharedTaskPlayerList:
+	case ServerOP_SharedTaskKickPlayers:
+	{
+		SharedTaskWorldMessaging::HandleZoneMessage(pack);
+		break;
+	}
+
 	case ServerOP_ExpeditionCreate:
-	case ServerOP_ExpeditionGetMemberStatuses:
-	case ServerOP_ExpeditionMemberChange:
-	case ServerOP_ExpeditionMemberStatus:
-	case ServerOP_ExpeditionMemberSwap:
-	case ServerOP_ExpeditionMembersRemoved:
 	case ServerOP_ExpeditionDzAddPlayer:
 	case ServerOP_ExpeditionDzMakeLeader:
 	case ServerOP_ExpeditionCharacterLockout:
@@ -1388,12 +1347,16 @@ void ZoneServer::HandleMessage(uint16 opcode, const EQ::Net::Packet &p) {
 		ExpeditionMessage::HandleZoneMessage(pack);
 		break;
 	}
-	case ServerOP_DzAddRemoveCharacter:
-	case ServerOP_DzRemoveAllCharacters:
+	case ServerOP_DzCreated:
+	case ServerOP_DzAddRemoveMember:
+	case ServerOP_DzSwapMembers:
+	case ServerOP_DzRemoveAllMembers:
+	case ServerOP_DzGetMemberStatuses:
 	case ServerOP_DzSetSecondsRemaining:
 	case ServerOP_DzSetCompass:
 	case ServerOP_DzSetSafeReturn:
 	case ServerOP_DzSetZoneIn:
+	case ServerOP_DzUpdateMemberStatus:
 	{
 		DynamicZone::HandleZoneMessage(pack);
 		break;

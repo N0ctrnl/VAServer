@@ -36,6 +36,7 @@
 #include "zone.h"
 #include "zonedb.h"
 #include "zone_store.h"
+#include "dialogue_window.h"
 
 #include <iostream>
 #include <limits.h>
@@ -1118,18 +1119,19 @@ uint16 QuestManager::scribespells(uint8 max_level, uint8 min_level) {
 	int spells_learned = 0;
 	if (spell_count > 0) {
 		for (auto spell_id : spell_ids) {
-			if (book_slot == -1) {			
+			if (book_slot == -1) {
 				initiator->Message(
 					Chat::Red,
 					"Unable to scribe spell %s (%i) to Spell Book: Spell Book is Full.", spells[spell_id].name, spell_id
 				);
 				break;
 			}
-			
+
 			if (initiator->HasSpellScribed(spell_id))
 				continue;
-				
-			initiator->ScribeSpell(spell_id, book_slot);
+
+			// defer saving per spell and bulk save at the end
+			initiator->ScribeSpell(spell_id, book_slot, true, true);
 			book_slot = initiator->GetNextAvailableSpellBookSlot(book_slot);
 			spells_learned++;
 		}
@@ -1138,6 +1140,9 @@ uint16 QuestManager::scribespells(uint8 max_level, uint8 min_level) {
 	if (spells_learned > 0) {
 		std::string spell_message = (spells_learned == 1 ? "a new spell" : fmt::format("{} new spells", spells_learned));
 		initiator->Message(Chat::White, fmt::format("You have learned {}!", spell_message).c_str());
+
+		// bulk insert spells
+		initiator->SaveSpells();
 	}
 	return spells_learned;
 }
@@ -1760,14 +1765,30 @@ void QuestManager::addldonpoints(uint32 theme_id, int points) {
 
 void QuestManager::addldonloss(uint32 theme_id) {
 	QuestManagerCurrentQuestVars();
-	if(initiator)
-		initiator->AddLDoNLoss(theme_id);
+	if(initiator) {
+		initiator->UpdateLDoNWinLoss(theme_id);
+	}
 }
 
 void QuestManager::addldonwin(uint32 theme_id) {
 	QuestManagerCurrentQuestVars();
-	if(initiator)
-		initiator->AddLDoNWin(theme_id);
+	if(initiator) {
+		initiator->UpdateLDoNWinLoss(theme_id, true);
+	}
+}
+
+void QuestManager::removeldonloss(uint32 theme_id) {
+	QuestManagerCurrentQuestVars();
+	if(initiator) {
+		initiator->UpdateLDoNWinLoss(theme_id, false, true);
+	}
+}
+
+void QuestManager::removeldonwin(uint32 theme_id) {
+	QuestManagerCurrentQuestVars();
+	if(initiator) {
+		initiator->UpdateLDoNWinLoss(theme_id, true, true);
+	}
 }
 
 void QuestManager::setnexthpevent(int at) {
@@ -2506,7 +2527,7 @@ void QuestManager::message(int color, const char *message) {
 	QuestManagerCurrentQuestVars();
 	if (!initiator)
 		return;
-	
+
 	initiator->Message(color, message);
 }
 
@@ -3219,872 +3240,6 @@ std::string QuestManager::GetZoneShortName(uint32 zone_id) {
 	return ZoneName(zone_id);
 }
 
-void QuestManager::CrossZoneAssignTaskByCharID(int character_id, uint32 task_id, bool enforce_level_requirement) {
-	QuestManagerCurrentQuestVars();
-	if (initiator && owner) {
-		auto pack = new ServerPacket(ServerOP_CZTaskAssignPlayer, sizeof(CZTaskAssignPlayer_Struct));
-		CZTaskAssignPlayer_Struct* CZTA = (CZTaskAssignPlayer_Struct*) pack->pBuffer;
-		CZTA->npc_entity_id = owner->GetID();
-		CZTA->character_id = character_id;
-		CZTA->task_id = task_id;
-		CZTA->enforce_level_requirement = enforce_level_requirement;
-		worldserver.SendPacket(pack);
-		safe_delete(pack);
-	}
-}
-
-void QuestManager::CrossZoneAssignTaskByGroupID(int group_id, uint32 task_id, bool enforce_level_requirement) {
-	QuestManagerCurrentQuestVars();
-	if (initiator && owner) {
-		auto pack = new ServerPacket(ServerOP_CZTaskAssignGroup, sizeof(CZTaskAssignGroup_Struct));
-		CZTaskAssignGroup_Struct* CZTA = (CZTaskAssignGroup_Struct*) pack->pBuffer;
-		CZTA->npc_entity_id = owner->GetID();
-		CZTA->group_id = group_id;
-		CZTA->task_id = task_id;
-		CZTA->enforce_level_requirement = enforce_level_requirement;
-		worldserver.SendPacket(pack);
-		safe_delete(pack);
-	}
-}
-
-void QuestManager::CrossZoneAssignTaskByRaidID(int raid_id, uint32 task_id, bool enforce_level_requirement) {
-	QuestManagerCurrentQuestVars();
-	if (initiator && owner) {
-		auto pack = new ServerPacket(ServerOP_CZTaskAssignRaid, sizeof(CZTaskAssignRaid_Struct));
-		CZTaskAssignRaid_Struct* CZTA = (CZTaskAssignRaid_Struct*) pack->pBuffer;
-		CZTA->npc_entity_id = owner->GetID();
-		CZTA->raid_id = raid_id;
-		CZTA->task_id = task_id;
-		CZTA->enforce_level_requirement = enforce_level_requirement;
-		worldserver.SendPacket(pack);
-		safe_delete(pack);
-	}
-}
-
-void QuestManager::CrossZoneAssignTaskByGuildID(int guild_id, uint32 task_id, bool enforce_level_requirement) {
-	QuestManagerCurrentQuestVars();
-	if (initiator && owner) {
-		auto pack = new ServerPacket(ServerOP_CZTaskAssignGuild, sizeof(CZTaskAssignGuild_Struct));
-		CZTaskAssignGuild_Struct* CZTA = (CZTaskAssignGuild_Struct*) pack->pBuffer;
-		CZTA->npc_entity_id = owner->GetID();
-		CZTA->guild_id = guild_id;
-		CZTA->task_id = task_id;
-		CZTA->enforce_level_requirement = enforce_level_requirement;
-		worldserver.SendPacket(pack);
-		safe_delete(pack);
-	}
-}
-
-void QuestManager::CrossZoneCastSpellByCharID(int character_id, uint32 spell_id) {
-	auto pack = new ServerPacket(ServerOP_CZCastSpellPlayer, sizeof(CZCastSpellPlayer_Struct));
-	CZCastSpellPlayer_Struct* CZCS = (CZCastSpellPlayer_Struct*) pack->pBuffer;
-	CZCS->character_id = character_id;
-	CZCS->spell_id = spell_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneCastSpellByGroupID(int group_id, uint32 spell_id) {
-	auto pack = new ServerPacket(ServerOP_CZCastSpellGroup, sizeof(CZCastSpellGroup_Struct));
-	CZCastSpellGroup_Struct* CZCS = (CZCastSpellGroup_Struct*) pack->pBuffer;
-	CZCS->group_id = group_id;
-	CZCS->spell_id = spell_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneCastSpellByRaidID(int raid_id, uint32 spell_id) {
-	auto pack = new ServerPacket(ServerOP_CZCastSpellRaid, sizeof(CZCastSpellRaid_Struct));
-	CZCastSpellRaid_Struct* CZCS = (CZCastSpellRaid_Struct*) pack->pBuffer;
-	CZCS->raid_id = raid_id;
-	CZCS->spell_id = spell_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneCastSpellByGuildID(int guild_id, uint32 spell_id) {
-	auto pack = new ServerPacket(ServerOP_CZCastSpellGuild, sizeof(CZCastSpellGuild_Struct));
-	CZCastSpellGuild_Struct* CZCS = (CZCastSpellGuild_Struct*) pack->pBuffer;
-	CZCS->guild_id = guild_id;
-	CZCS->spell_id = spell_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneDisableTaskByCharID(int character_id, uint32 task_id) {
-	auto pack = new ServerPacket(ServerOP_CZTaskDisablePlayer, sizeof(CZTaskDisablePlayer_Struct));
-	CZTaskDisablePlayer_Struct* CZTD = (CZTaskDisablePlayer_Struct*) pack->pBuffer;
-	CZTD->character_id = character_id;
-	CZTD->task_id = task_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneDisableTaskByGroupID(int group_id, uint32 task_id) {
-	auto pack = new ServerPacket(ServerOP_CZTaskDisableGroup, sizeof(CZTaskDisableGroup_Struct));
-	CZTaskDisableGroup_Struct* CZTD = (CZTaskDisableGroup_Struct*) pack->pBuffer;
-	CZTD->group_id = group_id;
-	CZTD->task_id = task_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneDisableTaskByRaidID(int raid_id, uint32 task_id) {
-	auto pack = new ServerPacket(ServerOP_CZTaskDisableRaid, sizeof(CZTaskDisableRaid_Struct));
-	CZTaskDisableRaid_Struct* CZTD = (CZTaskDisableRaid_Struct*) pack->pBuffer;
-	CZTD->raid_id = raid_id;
-	CZTD->task_id = task_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneDisableTaskByGuildID(int guild_id, uint32 task_id) {
-	auto pack = new ServerPacket(ServerOP_CZTaskDisableGuild, sizeof(CZTaskDisableGuild_Struct));
-	CZTaskDisableGuild_Struct* CZTD = (CZTaskDisableGuild_Struct*) pack->pBuffer;
-	CZTD->guild_id = guild_id;
-	CZTD->task_id = task_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneEnableTaskByCharID(int character_id, uint32 task_id) {
-	auto pack = new ServerPacket(ServerOP_CZTaskEnablePlayer, sizeof(CZTaskEnablePlayer_Struct));
-	CZTaskEnablePlayer_Struct* CZTE = (CZTaskEnablePlayer_Struct*) pack->pBuffer;
-	CZTE->character_id = character_id;
-	CZTE->task_id = task_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneEnableTaskByGroupID(int group_id, uint32 task_id) {
-	auto pack = new ServerPacket(ServerOP_CZTaskEnableGroup, sizeof(CZTaskEnableGroup_Struct));
-	CZTaskEnableGroup_Struct* CZTE = (CZTaskEnableGroup_Struct*) pack->pBuffer;
-	CZTE->group_id = group_id;
-	CZTE->task_id = task_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneEnableTaskByRaidID(int raid_id, uint32 task_id) {
-	auto pack = new ServerPacket(ServerOP_CZTaskEnableRaid, sizeof(CZTaskEnableRaid_Struct));
-	CZTaskEnableRaid_Struct* CZTE = (CZTaskEnableRaid_Struct*) pack->pBuffer;
-	CZTE->raid_id = raid_id;
-	CZTE->task_id = task_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneEnableTaskByGuildID(int guild_id, uint32 task_id) {
-	auto pack = new ServerPacket(ServerOP_CZTaskEnableGuild, sizeof(CZTaskEnableGuild_Struct));
-	CZTaskEnableGuild_Struct* CZTE = (CZTaskEnableGuild_Struct*) pack->pBuffer;
-	CZTE->guild_id = guild_id;
-	CZTE->task_id = task_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneFailTaskByCharID(int character_id, uint32 task_id) {
-	auto pack = new ServerPacket(ServerOP_CZTaskFailPlayer, sizeof(CZTaskFailPlayer_Struct));
-	CZTaskFailPlayer_Struct* CZTF = (CZTaskFailPlayer_Struct*) pack->pBuffer;
-	CZTF->character_id = character_id;
-	CZTF->task_id = task_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneFailTaskByGroupID(int group_id, uint32 task_id) {
-	auto pack = new ServerPacket(ServerOP_CZTaskFailGroup, sizeof(CZTaskFailGroup_Struct));
-	CZTaskFailGroup_Struct* CZTF = (CZTaskFailGroup_Struct*) pack->pBuffer;
-	CZTF->group_id = group_id;
-	CZTF->task_id = task_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneFailTaskByRaidID(int raid_id, uint32 task_id) {
-	auto pack = new ServerPacket(ServerOP_CZTaskFailRaid, sizeof(CZTaskFailRaid_Struct));
-	CZTaskFailRaid_Struct* CZTF = (CZTaskFailRaid_Struct*) pack->pBuffer;
-	CZTF->raid_id = raid_id;
-	CZTF->task_id = task_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneFailTaskByGuildID(int guild_id, uint32 task_id) {
-	auto pack = new ServerPacket(ServerOP_CZTaskFailGuild, sizeof(CZTaskFailGuild_Struct));
-	CZTaskFailGuild_Struct* CZTF = (CZTaskFailGuild_Struct*) pack->pBuffer;
-	CZTF->guild_id = guild_id;
-	CZTF->task_id = task_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneMarqueeByCharID(int character_id, uint32 type, uint32 priority, uint32 fade_in, uint32 fade_out, uint32 duration, const char *message) {
-	uint32 message_len = strlen(message) + 1;
-	auto pack = new ServerPacket(ServerOP_CZMarqueePlayer, sizeof(CZMarqueePlayer_Struct) + message_len);
-	CZMarqueePlayer_Struct* CZMS = (CZMarqueePlayer_Struct*) pack->pBuffer;
-	CZMS->character_id = character_id;
-	CZMS->type = type;
-	CZMS->priority = priority;
-	CZMS->fade_in = fade_in;
-	CZMS->fade_out = fade_out;
-	CZMS->duration = duration;
-	strn0cpy(CZMS->message, message, 512);
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneMarqueeByGroupID(int group_id, uint32 type, uint32 priority, uint32 fade_in, uint32 fade_out, uint32 duration, const char *message) {
-	uint32 message_len = strlen(message) + 1;
-	auto pack = new ServerPacket(ServerOP_CZMarqueeGroup, sizeof(CZMarqueeGroup_Struct) + message_len);
-	CZMarqueeGroup_Struct* CZMS = (CZMarqueeGroup_Struct*) pack->pBuffer;
-	CZMS->group_id = group_id;
-	CZMS->type = type;
-	CZMS->priority = priority;
-	CZMS->fade_in = fade_in;
-	CZMS->fade_out = fade_out;
-	CZMS->duration = duration;
-	strn0cpy(CZMS->message, message, 512);
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneMarqueeByRaidID(int raid_id, uint32 type, uint32 priority, uint32 fade_in, uint32 fade_out, uint32 duration, const char *message) {
-	uint32 message_len = strlen(message) + 1;
-	auto pack = new ServerPacket(ServerOP_CZMarqueeRaid, sizeof(CZMarqueeRaid_Struct) + message_len);
-	CZMarqueeRaid_Struct* CZMS = (CZMarqueeRaid_Struct*) pack->pBuffer;
-	CZMS->raid_id = raid_id;
-	CZMS->type = type;
-	CZMS->priority = priority;
-	CZMS->fade_in = fade_in;
-	CZMS->fade_out = fade_out;
-	CZMS->duration = duration;
-	strn0cpy(CZMS->message, message, 512);
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneMarqueeByGuildID(int guild_id, uint32 type, uint32 priority, uint32 fade_in, uint32 fade_out, uint32 duration, const char *message) {
-	uint32 message_len = strlen(message) + 1;
-	auto pack = new ServerPacket(ServerOP_CZMarqueeGuild, sizeof(CZMarqueeGuild_Struct) + message_len);
-	CZMarqueeGuild_Struct* CZMS = (CZMarqueeGuild_Struct*) pack->pBuffer;
-	CZMS->guild_id = guild_id;
-	CZMS->type = type;
-	CZMS->priority = priority;
-	CZMS->fade_in = fade_in;
-	CZMS->fade_out = fade_out;
-	CZMS->duration = duration;
-	strn0cpy(CZMS->message, message, 512);
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneMessagePlayerByName(uint32 type, const char *character_name, const char *message) {
-	uint32 message_len = strlen(character_name) + 1;
-	uint32 message_len2 = strlen(message) + 1;
-	auto pack = new ServerPacket(ServerOP_CZMessagePlayer, sizeof(CZMessagePlayer_Struct) + message_len + message_len2);
-	CZMessagePlayer_Struct* CZSC = (CZMessagePlayer_Struct*) pack->pBuffer;
-	CZSC->type = type;
-	strn0cpy(CZSC->character_name, character_name, 64);
-	strn0cpy(CZSC->message, message, 512);
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneMessagePlayerByGroupID(uint32 type, int group_id, const char *message) {
-	uint32 message_len = strlen(message) + 1;
-	auto pack = new ServerPacket(ServerOP_CZMessageGroup, sizeof(CZMessageGroup_Struct) + message_len);
-	CZMessageGroup_Struct* CZGM = (CZMessageGroup_Struct*) pack->pBuffer;
-	CZGM->type = type;
-	CZGM->group_id = group_id;
-	strn0cpy(CZGM->message, message, 512);
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneMessagePlayerByRaidID(uint32 type, int raid_id, const char *message) {
-	uint32 message_len = strlen(message) + 1;
-	auto pack = new ServerPacket(ServerOP_CZMessageRaid, sizeof(CZMessageRaid_Struct) + message_len);
-	CZMessageRaid_Struct* CZRM = (CZMessageRaid_Struct*) pack->pBuffer;
-	CZRM->type = type;
-	CZRM->raid_id = raid_id;
-	strn0cpy(CZRM->message, message, 512);
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneMessagePlayerByGuildID(uint32 type, int guild_id, const char *message) {
-	uint32 message_len = strlen(message) + 1;
-	auto pack = new ServerPacket(ServerOP_CZMessageGuild, sizeof(CZMessageGuild_Struct) + message_len);
-	CZMessageGuild_Struct* CZGM = (CZMessageGuild_Struct*) pack->pBuffer;
-	CZGM->type = type;
-	CZGM->guild_id = guild_id;
-	strn0cpy(CZGM->message, message, 512);
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneMovePlayerByCharID(int character_id, const char *zone_short_name) {
-	uint32 message_len = strlen(zone_short_name) + 1;
-	auto pack = new ServerPacket(ServerOP_CZMovePlayer, sizeof(CZMovePlayer_Struct) + message_len);
-	CZMovePlayer_Struct* CZGM = (CZMovePlayer_Struct*) pack->pBuffer;
-	CZGM->character_id = character_id;
-	strn0cpy(CZGM->zone_short_name, zone_short_name, 32);
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneMovePlayerByGroupID(int group_id, const char *zone_short_name) {
-	uint32 message_len = strlen(zone_short_name) + 1;
-	auto pack = new ServerPacket(ServerOP_CZMoveGroup, sizeof(CZMoveGroup_Struct) + message_len);
-	CZMoveGroup_Struct* CZGM = (CZMoveGroup_Struct*) pack->pBuffer;
-	CZGM->group_id = group_id;
-	strn0cpy(CZGM->zone_short_name, zone_short_name, 32);
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneMovePlayerByRaidID(int raid_id, const char *zone_short_name) {
-	uint32 message_len = strlen(zone_short_name) + 1;
-	auto pack = new ServerPacket(ServerOP_CZMoveRaid, sizeof(CZMoveRaid_Struct) + message_len);
-	CZMoveRaid_Struct* CZRM = (CZMoveRaid_Struct*) pack->pBuffer;
-	CZRM->raid_id = raid_id;
-	strn0cpy(CZRM->zone_short_name, zone_short_name, 32);
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneMovePlayerByGuildID(int guild_id, const char *zone_short_name) {
-	uint32 message_len = strlen(zone_short_name) + 1;
-	auto pack = new ServerPacket(ServerOP_CZMoveGuild, sizeof(CZMoveGuild_Struct) + message_len);
-	CZMoveGuild_Struct* CZGM = (CZMoveGuild_Struct*) pack->pBuffer;
-	CZGM->guild_id = guild_id;
-	strn0cpy(CZGM->zone_short_name, zone_short_name, 32);
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneMoveInstanceByCharID(int character_id, uint16 instance_id) {
-	auto pack = new ServerPacket(ServerOP_CZMoveInstancePlayer, sizeof(CZMoveInstancePlayer_Struct));
-	CZMoveInstancePlayer_Struct* CZMS = (CZMoveInstancePlayer_Struct*) pack->pBuffer;
-	CZMS->character_id = character_id;
-	CZMS->instance_id = instance_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneMoveInstanceByGroupID(int group_id, uint16 instance_id) {
-	auto pack = new ServerPacket(ServerOP_CZMoveInstanceGroup, sizeof(CZMoveInstanceGroup_Struct));
-	CZMoveInstanceGroup_Struct* CZMS = (CZMoveInstanceGroup_Struct*) pack->pBuffer;
-	CZMS->group_id = group_id;
-	CZMS->instance_id = instance_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneMoveInstanceByRaidID(int raid_id, uint16 instance_id) {
-	auto pack = new ServerPacket(ServerOP_CZMoveInstanceRaid, sizeof(CZMoveInstanceRaid_Struct));
-	CZMoveInstanceRaid_Struct* CZMS = (CZMoveInstanceRaid_Struct*) pack->pBuffer;
-	CZMS->raid_id = raid_id;
-	CZMS->instance_id = instance_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneMoveInstanceByGuildID(int guild_id, uint16 instance_id) {
-	auto pack = new ServerPacket(ServerOP_CZMoveInstanceGuild, sizeof(CZMoveInstanceGuild_Struct));
-	CZMoveInstanceGuild_Struct* CZMS = (CZMoveInstanceGuild_Struct*) pack->pBuffer;
-	CZMS->guild_id = guild_id;
-	CZMS->instance_id = instance_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneRemoveSpellByCharID(int character_id, uint32 spell_id) {
-	auto pack = new ServerPacket(ServerOP_CZRemoveSpellPlayer, sizeof(CZRemoveSpellPlayer_Struct));
-	CZRemoveSpellPlayer_Struct* CZCS = (CZRemoveSpellPlayer_Struct*) pack->pBuffer;
-	CZCS->character_id = character_id;
-	CZCS->spell_id = spell_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneRemoveSpellByGroupID(int group_id, uint32 spell_id) {
-	auto pack = new ServerPacket(ServerOP_CZRemoveSpellGroup, sizeof(CZRemoveSpellGroup_Struct));
-	CZRemoveSpellGroup_Struct* CZCS = (CZRemoveSpellGroup_Struct*) pack->pBuffer;
-	CZCS->group_id = group_id;
-	CZCS->spell_id = spell_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneRemoveSpellByRaidID(int raid_id, uint32 spell_id) {
-	auto pack = new ServerPacket(ServerOP_CZRemoveSpellRaid, sizeof(CZRemoveSpellRaid_Struct));
-	CZRemoveSpellRaid_Struct* CZCS = (CZRemoveSpellRaid_Struct*) pack->pBuffer;
-	CZCS->raid_id = raid_id;
-	CZCS->spell_id = spell_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneRemoveSpellByGuildID(int guild_id, uint32 spell_id) {
-	auto pack = new ServerPacket(ServerOP_CZRemoveSpellGuild, sizeof(CZRemoveSpellGuild_Struct));
-	CZRemoveSpellGuild_Struct* CZCS = (CZRemoveSpellGuild_Struct*) pack->pBuffer;
-	CZCS->guild_id = guild_id;
-	CZCS->spell_id = spell_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneRemoveTaskByCharID(int character_id, uint32 task_id) {
-	auto pack = new ServerPacket(ServerOP_CZTaskRemovePlayer, sizeof(CZTaskRemovePlayer_Struct));
-	CZTaskRemovePlayer_Struct* CZCS = (CZTaskRemovePlayer_Struct*) pack->pBuffer;
-	CZCS->character_id = character_id;
-	CZCS->task_id = task_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneRemoveTaskByGroupID(int group_id, uint32 task_id) {
-	auto pack = new ServerPacket(ServerOP_CZTaskRemoveGroup, sizeof(CZTaskRemoveGroup_Struct));
-	CZTaskRemoveGroup_Struct* CZCS = (CZTaskRemoveGroup_Struct*) pack->pBuffer;
-	CZCS->group_id = group_id;
-	CZCS->task_id = task_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneRemoveTaskByRaidID(int raid_id, uint32 task_id) {
-	auto pack = new ServerPacket(ServerOP_CZTaskRemoveRaid, sizeof(CZTaskRemoveRaid_Struct));
-	CZTaskRemoveRaid_Struct* CZCS = (CZTaskRemoveRaid_Struct*) pack->pBuffer;
-	CZCS->raid_id = raid_id;
-	CZCS->task_id = task_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneRemoveTaskByGuildID(int guild_id, uint32 task_id) {
-	auto pack = new ServerPacket(ServerOP_CZTaskRemoveGuild, sizeof(CZTaskRemoveGuild_Struct));
-	CZTaskRemoveGuild_Struct* CZCS = (CZTaskRemoveGuild_Struct*) pack->pBuffer;
-	CZCS->guild_id = guild_id;
-	CZCS->task_id = task_id;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneResetActivityByCharID(int character_id, uint32 task_id, int activity_id) {
-	QuestManagerCurrentQuestVars();
-	if (initiator && owner) {
-		auto pack = new ServerPacket(ServerOP_CZTaskActivityResetPlayer, sizeof(CZResetActivityPlayer_Struct));
-		CZResetActivityPlayer_Struct* CZCA = (CZResetActivityPlayer_Struct*) pack->pBuffer;
-		CZCA->character_id = character_id;
-		CZCA->task_id = task_id;
-		CZCA->activity_id = activity_id;
-		worldserver.SendPacket(pack);
-		safe_delete(pack);
-	}
-}
-
-void QuestManager::CrossZoneResetActivityByGroupID(int group_id, uint32 task_id, int activity_id) {
-	QuestManagerCurrentQuestVars();
-	if (initiator && owner) {
-		auto pack = new ServerPacket(ServerOP_CZTaskActivityResetGroup, sizeof(CZResetActivityGroup_Struct));
-		CZResetActivityGroup_Struct* CZCA = (CZResetActivityGroup_Struct*) pack->pBuffer;
-		CZCA->group_id = group_id;
-		CZCA->task_id = task_id;
-		CZCA->activity_id = activity_id;
-		worldserver.SendPacket(pack);
-		safe_delete(pack);
-	}
-}
-
-void QuestManager::CrossZoneResetActivityByRaidID(int raid_id, uint32 task_id, int activity_id) {
-	QuestManagerCurrentQuestVars();
-	if (initiator && owner) {
-		auto pack = new ServerPacket(ServerOP_CZTaskActivityResetRaid, sizeof(CZResetActivityRaid_Struct));
-		CZResetActivityRaid_Struct* CZCA = (CZResetActivityRaid_Struct*) pack->pBuffer;
-		CZCA->raid_id = raid_id;
-		CZCA->task_id = task_id;
-		CZCA->activity_id = activity_id;
-		worldserver.SendPacket(pack);
-		safe_delete(pack);
-	}
-}
-
-void QuestManager::CrossZoneResetActivityByGuildID(int guild_id, uint32 task_id, int activity_id) {
-	QuestManagerCurrentQuestVars();
-	if (initiator && owner) {
-		auto pack = new ServerPacket(ServerOP_CZTaskActivityResetGuild, sizeof(CZResetActivityGuild_Struct));
-		CZResetActivityGuild_Struct* CZCA = (CZResetActivityGuild_Struct*) pack->pBuffer;
-		CZCA->guild_id = guild_id;
-		CZCA->task_id = task_id;
-		CZCA->activity_id = activity_id;
-		worldserver.SendPacket(pack);
-		safe_delete(pack);
-	}
-}
-
-void QuestManager::CrossZoneSignalNPCByNPCTypeID(uint32 npctype_id, uint32 signal) {
-	auto pack = new ServerPacket(ServerOP_CZSignalNPC, sizeof(CZNPCSignal_Struct));
-	CZNPCSignal_Struct* CZSN = (CZNPCSignal_Struct*) pack->pBuffer;
-	CZSN->npctype_id = npctype_id;
-	CZSN->signal = signal;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneSignalPlayerByCharID(int character_id, uint32 signal) {
-	auto pack = new ServerPacket(ServerOP_CZSignalClient, sizeof(CZClientSignal_Struct));
-	CZClientSignal_Struct* CZSC = (CZClientSignal_Struct*) pack->pBuffer;
-	CZSC->character_id = character_id;
-	CZSC->signal = signal;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneSetEntityVariableByClientName(const char *character_name, const char *variable_name, const char *variable_value) {
-	uint32 message_len = strlen(variable_name) + 1;
-	uint32 message_len2 = strlen(variable_value) + 1;
-	uint32 message_len3 = strlen(character_name) + 1;
-	auto pack = new ServerPacket(ServerOP_CZSetEntityVariableByClientName, sizeof(CZSetEntVarByClientName_Struct) + message_len + message_len2 + message_len3);
-	CZSetEntVarByClientName_Struct* CZ = (CZSetEntVarByClientName_Struct*) pack->pBuffer;
-	strn0cpy(CZ->character_name, character_name, 64);
-	strn0cpy(CZ->variable_name, variable_name, 256);
-	strn0cpy(CZ->variable_value, variable_value, 256);
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneSetEntityVariableByGroupID(int group_id, const char *variable_name, const char *variable_value) {
-	uint32 message_len = strlen(variable_name) + 1;
-	uint32 message_len2 = strlen(variable_value) + 1;
-	auto pack = new ServerPacket(ServerOP_CZSetEntityVariableByGroupID, sizeof(CZSetEntVarByGroupID_Struct) + message_len + message_len2);
-	CZSetEntVarByGroupID_Struct* CZ = (CZSetEntVarByGroupID_Struct*) pack->pBuffer;
-	CZ->group_id = group_id;
-	strn0cpy(CZ->variable_name, variable_name, 256);
-	strn0cpy(CZ->variable_value, variable_value, 256);
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneSetEntityVariableByRaidID(int raid_id, const char *variable_name, const char *variable_value) {
-	uint32 message_len = strlen(variable_name) + 1;
-	uint32 message_len2 = strlen(variable_value) + 1;
-	auto pack = new ServerPacket(ServerOP_CZSetEntityVariableByRaidID, sizeof(CZSetEntVarByRaidID_Struct) + message_len + message_len2);
-	CZSetEntVarByRaidID_Struct* CZ = (CZSetEntVarByRaidID_Struct*) pack->pBuffer;
-	CZ->raid_id = raid_id;
-	strn0cpy(CZ->variable_name, variable_name, 256);
-	strn0cpy(CZ->variable_value, variable_value, 256);
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneSetEntityVariableByGuildID(int guild_id, const char *variable_name, const char *variable_value) {
-	uint32 message_len = strlen(variable_name) + 1;
-	uint32 message_len2 = strlen(variable_value) + 1;
-	auto pack = new ServerPacket(ServerOP_CZSetEntityVariableByGuildID, sizeof(CZSetEntVarByGuildID_Struct) + message_len + message_len2);
-	CZSetEntVarByGuildID_Struct* CZ = (CZSetEntVarByGuildID_Struct*) pack->pBuffer;
-	CZ->guild_id = guild_id;
-	strn0cpy(CZ->variable_name, variable_name, 256);
-	strn0cpy(CZ->variable_value, variable_value, 256);
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneSetEntityVariableByNPCTypeID(uint32 npctype_id, const char *variable_name, const char *variable_value) {
-	uint32 message_len = strlen(variable_name) + 1;
-	uint32 message_len2 = strlen(variable_value) + 1;
-	auto pack = new ServerPacket(ServerOP_CZSetEntityVariableByNPCTypeID, sizeof(CZSetEntVarByNPCTypeID_Struct) + message_len + message_len2);
-	CZSetEntVarByNPCTypeID_Struct* CZSNBYNID = (CZSetEntVarByNPCTypeID_Struct*) pack->pBuffer;
-	CZSNBYNID->npctype_id = npctype_id;
-	strn0cpy(CZSNBYNID->variable_name, variable_name, 256);
-	strn0cpy(CZSNBYNID->variable_value, variable_value, 256);
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneSignalPlayerByGroupID(int group_id, uint32 signal) {
-	auto pack = new ServerPacket(ServerOP_CZSignalGroup, sizeof(CZGroupSignal_Struct));
-	CZGroupSignal_Struct* CZGS = (CZGroupSignal_Struct*) pack->pBuffer;
-	CZGS->group_id = group_id;
-	CZGS->signal = signal;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneSignalPlayerByRaidID(int raid_id, uint32 signal) {
-	auto pack = new ServerPacket(ServerOP_CZSignalRaid, sizeof(CZRaidSignal_Struct));
-	CZRaidSignal_Struct* CZRS = (CZRaidSignal_Struct*) pack->pBuffer;
-	CZRS->raid_id = raid_id;
-	CZRS->signal = signal;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneSignalPlayerByGuildID(int guild_id, uint32 signal) {
-	auto pack = new ServerPacket(ServerOP_CZSignalGuild, sizeof(CZGuildSignal_Struct));
-	CZGuildSignal_Struct* CZGS = (CZGuildSignal_Struct*) pack->pBuffer;
-	CZGS->guild_id = guild_id;
-	CZGS->signal = signal;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneSignalPlayerByName(const char *character_name, uint32 signal) {
-	uint32 message_len = strlen(character_name) + 1;
-	auto pack = new ServerPacket(ServerOP_CZSignalClientByName, sizeof(CZClientSignalByName_Struct) + message_len);
-	CZClientSignalByName_Struct* CZSC = (CZClientSignalByName_Struct*) pack->pBuffer;
-	strn0cpy(CZSC->character_name, character_name, 64);
-	CZSC->signal = signal;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::CrossZoneUpdateActivityByCharID(int character_id, uint32 task_id, int activity_id, int activity_count) {
-	QuestManagerCurrentQuestVars();
-	if (initiator && owner) {
-		auto pack = new ServerPacket(ServerOP_CZTaskActivityUpdatePlayer, sizeof(CZTaskActivityUpdatePlayer_Struct));
-		CZTaskActivityUpdatePlayer_Struct* CZCA = (CZTaskActivityUpdatePlayer_Struct*) pack->pBuffer;
-		CZCA->character_id = character_id;
-		CZCA->task_id = task_id;
-		CZCA->activity_id = activity_id;
-		CZCA->activity_count = activity_count;
-		worldserver.SendPacket(pack);
-		safe_delete(pack);
-	}
-}
-
-void QuestManager::CrossZoneUpdateActivityByGroupID(int group_id, uint32 task_id, int activity_id, int activity_count) {
-	QuestManagerCurrentQuestVars();
-	if (initiator && owner) {
-		auto pack = new ServerPacket(ServerOP_CZTaskActivityUpdateGroup, sizeof(CZTaskActivityUpdateGroup_Struct));
-		CZTaskActivityUpdateGroup_Struct* CZCA = (CZTaskActivityUpdateGroup_Struct*) pack->pBuffer;
-		CZCA->group_id = group_id;
-		CZCA->task_id = task_id;
-		CZCA->activity_id = activity_id;
-		CZCA->activity_count = activity_count;
-		worldserver.SendPacket(pack);
-		safe_delete(pack);
-	}
-}
-
-void QuestManager::CrossZoneUpdateActivityByRaidID(int raid_id, uint32 task_id, int activity_id, int activity_count) {
-	QuestManagerCurrentQuestVars();
-	if (initiator && owner) {
-		auto pack = new ServerPacket(ServerOP_CZTaskActivityUpdateRaid, sizeof(CZTaskActivityUpdateRaid_Struct));
-		CZTaskActivityUpdateRaid_Struct* CZCA = (CZTaskActivityUpdateRaid_Struct*) pack->pBuffer;
-		CZCA->raid_id = raid_id;
-		CZCA->task_id = task_id;
-		CZCA->activity_id = activity_id;
-		CZCA->activity_count = activity_count;
-		worldserver.SendPacket(pack);
-		safe_delete(pack);
-	}
-}
-
-void QuestManager::CrossZoneUpdateActivityByGuildID(int guild_id, uint32 task_id, int activity_id, int activity_count) {
-	QuestManagerCurrentQuestVars();
-	if (initiator && owner) {
-		auto pack = new ServerPacket(ServerOP_CZTaskActivityUpdateGuild, sizeof(CZTaskActivityUpdateGuild_Struct));
-		CZTaskActivityUpdateGuild_Struct* CZCA = (CZTaskActivityUpdateGuild_Struct*) pack->pBuffer;
-		CZCA->guild_id = guild_id;
-		CZCA->task_id = task_id;
-		CZCA->activity_id = activity_id;
-		CZCA->activity_count = activity_count;
-		worldserver.SendPacket(pack);
-		safe_delete(pack);
-	}
-}
-
-void QuestManager::WorldWideAssignTask(uint32 task_id, bool enforce_level_requirement, uint8 min_status, uint8 max_status) {
-	QuestManagerCurrentQuestVars();
-	if (initiator && owner) {
-		auto pack = new ServerPacket(ServerOP_WWAssignTask, sizeof(WWAssignTask_Struct));
-		WWAssignTask_Struct* WWTA = (WWAssignTask_Struct*) pack->pBuffer;
-		WWTA->npc_entity_id = owner->GetID();
-		WWTA->task_id = task_id;
-		WWTA->enforce_level_requirement = enforce_level_requirement;
-		WWTA->min_status = min_status;
-		WWTA->max_status = max_status;
-		worldserver.SendPacket(pack);
-		safe_delete(pack);
-	}
-}
-
-void QuestManager::WorldWideCastSpell(uint32 spell_id, uint8 min_status, uint8 max_status) {
-	auto pack = new ServerPacket(ServerOP_WWCastSpell, sizeof(WWCastSpell_Struct));
-	WWCastSpell_Struct* WWCS = (WWCastSpell_Struct*) pack->pBuffer;
-	WWCS->spell_id = spell_id;
-	WWCS->min_status = min_status;
-	WWCS->max_status = max_status;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::WorldWideDisableTask(uint32 task_id, uint8 min_status, uint8 max_status) {
-	auto pack = new ServerPacket(ServerOP_WWDisableTask, sizeof(WWDisableTask_Struct));
-	WWDisableTask_Struct* WWDT = (WWDisableTask_Struct*) pack->pBuffer;
-	WWDT->task_id = task_id;
-	WWDT->min_status = min_status;
-	WWDT->max_status = max_status;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::WorldWideEnableTask(uint32 task_id, uint8 min_status, uint8 max_status) {
-	auto pack = new ServerPacket(ServerOP_WWEnableTask, sizeof(WWEnableTask_Struct));
-	WWEnableTask_Struct* WWET = (WWEnableTask_Struct*) pack->pBuffer;
-	WWET->task_id = task_id;
-	WWET->min_status = min_status;
-	WWET->max_status = max_status;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::WorldWideFailTask(uint32 task_id, uint8 min_status, uint8 max_status) {
-	auto pack = new ServerPacket(ServerOP_WWFailTask, sizeof(WWFailTask_Struct));
-	WWFailTask_Struct* WWFT = (WWFailTask_Struct*) pack->pBuffer;
-	WWFT->task_id = task_id;
-	WWFT->min_status = min_status;
-	WWFT->max_status = max_status;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::WorldWideMarquee(uint32 type, uint32 priority, uint32 fade_in, uint32 fade_out, uint32 duration, const char *message, uint8 min_status, uint8 max_status) {
-	uint32 message_len = strlen(message) + 1;
-	auto pack = new ServerPacket(ServerOP_WWMarquee, sizeof(WWMarquee_Struct) + message_len);
-	WWMarquee_Struct* WWMS = (WWMarquee_Struct*) pack->pBuffer;
-	WWMS->type = type;
-	WWMS->priority = priority;
-	WWMS->fade_in = fade_in;
-	WWMS->fade_out = fade_out;
-	WWMS->duration = duration;
-	strn0cpy(WWMS->message, message, 512);
-	WWMS->min_status = min_status;
-	WWMS->max_status = max_status;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::WorldWideMessage(uint32 type, const char *message, uint8 min_status, uint8 max_status) {
-	uint32 message_len = strlen(message) + 1;
-	auto pack = new ServerPacket(ServerOP_WWMessage, sizeof(WWMessage_Struct) + message_len);
-	WWMessage_Struct* WWMS = (WWMessage_Struct*) pack->pBuffer;
-	WWMS->type = type;
-	strn0cpy(WWMS->message, message, 512);
-	WWMS->min_status = min_status;
-	WWMS->max_status = max_status;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::WorldWideMove(const char *zone_short_name, uint8 min_status, uint8 max_status) {
-	uint32 message_len = strlen(zone_short_name) + 1;
-	auto pack = new ServerPacket(ServerOP_WWMove, sizeof(WWMove_Struct) + message_len);
-	WWMove_Struct* WWMS = (WWMove_Struct*) pack->pBuffer;;
-	strn0cpy(WWMS->zone_short_name, zone_short_name, 32);
-	WWMS->min_status = min_status;
-	WWMS->max_status = max_status;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::WorldWideMoveInstance(uint16 instance_id, uint8 min_status, uint8 max_status) {
-	auto pack = new ServerPacket(ServerOP_WWMoveInstance, sizeof(WWMoveInstance_Struct));
-	WWMoveInstance_Struct* WWMS = (WWMoveInstance_Struct*) pack->pBuffer;
-	WWMS->instance_id = instance_id;
-	WWMS->min_status = min_status;
-	WWMS->max_status = max_status;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::WorldWideRemoveSpell(uint32 spell_id, uint8 min_status, uint8 max_status) {
-	auto pack = new ServerPacket(ServerOP_WWRemoveSpell, sizeof(WWRemoveSpell_Struct));
-	WWRemoveSpell_Struct* WWRS = (WWRemoveSpell_Struct*) pack->pBuffer;
-	WWRS->spell_id = spell_id;
-	WWRS->min_status = min_status;
-	WWRS->max_status = max_status;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::WorldWideRemoveTask(uint32 task_id, uint8 min_status, uint8 max_status) {
-	auto pack = new ServerPacket(ServerOP_WWRemoveTask, sizeof(WWRemoveTask_Struct));
-	WWRemoveTask_Struct* WWRT = (WWRemoveTask_Struct*) pack->pBuffer;
-	WWRT->task_id = task_id;
-	WWRT->min_status = min_status;
-	WWRT->max_status = max_status;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::WorldWideResetActivity(uint32 task_id, int activity_id, uint8 min_status, uint8 max_status) {
-	auto pack = new ServerPacket(ServerOP_WWResetActivity, sizeof(WWResetActivity_Struct));
-	WWResetActivity_Struct* WWRA = (WWResetActivity_Struct*) pack->pBuffer;
-	WWRA->task_id = task_id;
-	WWRA->activity_id = activity_id;
-	WWRA->min_status = min_status;
-	WWRA->max_status = max_status;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::WorldWideSetEntityVariableClient(const char *variable_name, const char *variable_value, uint8 min_status, uint8 max_status) {
-	uint32 message_len = strlen(variable_name) + 1;
-	uint32 message_len2 = strlen(variable_value) + 1;
-	auto pack = new ServerPacket(ServerOP_WWSetEntityVariableClient, sizeof(WWSetEntVarClient_Struct) + message_len + message_len2);
-	WWSetEntVarClient_Struct* WWSC = (WWSetEntVarClient_Struct*) pack->pBuffer;
-	strn0cpy(WWSC->variable_name, variable_name, 256);
-	strn0cpy(WWSC->variable_value, variable_value, 256);
-	WWSC->min_status = min_status;
-	WWSC->max_status = max_status;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::WorldWideSetEntityVariableNPC(const char *variable_name, const char *variable_value) {
-	uint32 message_len = strlen(variable_name) + 1;
-	uint32 message_len2 = strlen(variable_value) + 1;
-	auto pack = new ServerPacket(ServerOP_WWSetEntityVariableNPC, sizeof(WWSetEntVarNPC_Struct) + message_len + message_len2);
-	WWSetEntVarNPC_Struct* WWSN = (WWSetEntVarNPC_Struct*) pack->pBuffer;
-	strn0cpy(WWSN->variable_name, variable_name, 256);
-	strn0cpy(WWSN->variable_value, variable_value, 256);
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::WorldWideSignalClient(uint32 signal, uint8 min_status, uint8 max_status) {
-	auto pack = new ServerPacket(ServerOP_WWSignalClient, sizeof(WWSignalClient_Struct));
-	WWSignalClient_Struct* WWSC = (WWSignalClient_Struct*) pack->pBuffer;
-	WWSC->signal = signal;
-	WWSC->min_status = min_status;
-	WWSC->max_status = max_status;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::WorldWideSignalNPC(uint32 signal) {
-	auto pack = new ServerPacket(ServerOP_WWSignalNPC, sizeof(WWSignalNPC_Struct));
-	WWSignalNPC_Struct* WWSN = (WWSignalNPC_Struct*) pack->pBuffer;
-	WWSN->signal = signal;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
-void QuestManager::WorldWideUpdateActivity(uint32 task_id, int activity_id, int activity_count, uint8 min_status, uint8 max_status) {
-	auto pack = new ServerPacket(ServerOP_WWUpdateActivity, sizeof(WWUpdateActivity_Struct));
-	WWUpdateActivity_Struct* WWUA = (WWUpdateActivity_Struct*) pack->pBuffer;
-	WWUA->task_id = task_id;
-	WWUA->activity_id = activity_id;
-	WWUA->activity_count = activity_count;
-	WWUA->min_status = min_status;
-	WWUA->max_status = max_status;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
 bool QuestManager::EnableRecipe(uint32 recipe_id)
 {
 	bool success = false;
@@ -4191,12 +3346,11 @@ void QuestManager::UpdateZoneHeader(std::string type, std::string value) {
 		for (int i = 0; i < 4; i++) {
 			zone->newzone_data.fog_maxclip[i] = atof(value.c_str());
 		}
-	}
-	else if (strcasecmp(type.c_str(), "gravity") == 0)
+	} else if (strcasecmp(type.c_str(), "gravity") == 0) {
 		zone->newzone_data.gravity = atof(value.c_str());
-	else if (strcasecmp(type.c_str(), "time_type") == 0)
+	} else if (strcasecmp(type.c_str(), "time_type") == 0) {
 		zone->newzone_data.time_type = atoi(value.c_str());
-	else if (strcasecmp(type.c_str(), "rain_chance") == 0) {
+	} else if (strcasecmp(type.c_str(), "rain_chance") == 0) {
 		for (int i = 0; i < 4; i++) {
 			zone->newzone_data.rain_chance[i] = atoi(value.c_str());
 		}
@@ -4212,27 +3366,31 @@ void QuestManager::UpdateZoneHeader(std::string type, std::string value) {
 		for (int i = 0; i < 4; i++) {
 			zone->newzone_data.snow_duration[i] = atoi(value.c_str());
 		}
-	}
-	else if (strcasecmp(type.c_str(), "sky") == 0)
+	} else if (strcasecmp(type.c_str(), "sky") == 0) {
 		zone->newzone_data.sky = atoi(value.c_str());
-	else if (strcasecmp(type.c_str(), "safe_x") == 0)
+	} else if (strcasecmp(type.c_str(), "safe_x") == 0) {
 		zone->newzone_data.safe_x = atof(value.c_str());
-	else if (strcasecmp(type.c_str(), "safe_y") == 0)
+	} else if (strcasecmp(type.c_str(), "safe_y") == 0) {
 		zone->newzone_data.safe_y = atof(value.c_str());
-	else if (strcasecmp(type.c_str(), "safe_z") == 0)
+	} else if (strcasecmp(type.c_str(), "safe_z") == 0) {
 		zone->newzone_data.safe_z = atof(value.c_str());
-	else if (strcasecmp(type.c_str(), "max_z") == 0)
+	} else if (strcasecmp(type.c_str(), "max_z") == 0) {
 		zone->newzone_data.max_z = atof(value.c_str());
-	else if (strcasecmp(type.c_str(), "underworld") == 0)
+	} else if (strcasecmp(type.c_str(), "underworld") == 0) {
 		zone->newzone_data.underworld = atof(value.c_str());
-	else if (strcasecmp(type.c_str(), "minclip") == 0)
+	} else if (strcasecmp(type.c_str(), "minclip") == 0) {
 		zone->newzone_data.minclip = atof(value.c_str());
-	else if (strcasecmp(type.c_str(), "maxclip") == 0)
+	} else if (strcasecmp(type.c_str(), "maxclip") == 0) {
 		zone->newzone_data.maxclip = atof(value.c_str());
-	else if (strcasecmp(type.c_str(), "fog_density") == 0)
+	} else if (strcasecmp(type.c_str(), "fog_density") == 0) {
 		zone->newzone_data.fog_density = atof(value.c_str());
-	else if (strcasecmp(type.c_str(), "suspendbuffs") == 0)
+	} else if (strcasecmp(type.c_str(), "suspendbuffs") == 0) {
 		zone->newzone_data.SuspendBuffs = atoi(value.c_str());
+	} else if (strcasecmp(type.c_str(), "lavadamage") == 0) {
+		zone->newzone_data.LavaDamage = atoi(value.c_str());
+	} else if (strcasecmp(type.c_str(), "minlavadamage") == 0) {
+		zone->newzone_data.MinLavaDamage = atoi(value.c_str());
+	}
 
 	auto outapp = new EQApplicationPacket(OP_NewZone, sizeof(NewZone_Struct));
 	memcpy(outapp->pBuffer, &zone->newzone_data, outapp->size);
@@ -4277,319 +3435,8 @@ std::string QuestManager::secondstotime(int duration) {
 }
 
 std::string QuestManager::gethexcolorcode(std::string color_name) {
-	static const std::map<std::string, std::string> colors = {
-		{ "Black", "#000000" },
-		{ "Brown", "#804000" },
-		{ "Burgundy", "#800000" },
-		{ "Cadet Blue", "#77BFC7" },
-		{ "Cadet Blue1", "#4C787E" },
-		{ "Chartreuse", "#8AFB17" },
-		{ "Chartreuse1", "#7FE817" },
-		{ "Chartreuse2", "#6CC417" },
-		{ "Chartreuse3", "#437C17" },
-		{ "Chocolate", "#C85A17" },
-		{ "Coral", "#F76541" },
-		{ "Coral1", "#E55B3C" },
-		{ "Coral2", "#C34A2C" },
-		{ "Cornflower Blue", "#151B8D" },
-		{ "Cyan", "#00FFFF" },
-		{ "Cyan1", "#57FEFF" },
-		{ "Cyan2", "#50EBEC" },
-		{ "Cyan3", "#46C7C7" },
-		{ "Cyan4", "#307D7E" },
-		{ "Dark Blue", "#0000A0" },
-		{ "Dark Goldenrod", "#AF7817" },
-		{ "Dark Goldenrod1", "#FBB117" },
-		{ "Dark Goldenrod2", "#E8A317" },
-		{ "Dark Goldenrod3", "#C58917" },
-		{ "Dark Goldenrod4", "#7F5217" },
-		{ "Dark Green", "#254117" },
-		{ "Dark Grey", "#808080" },
-		{ "Dark Olive Green", "#CCFB5D" },
-		{ "Dark Olive Green2", "#BCE954" },
-		{ "Dark Olive Green3", "#A0C544" },
-		{ "Dark Olive Green4", "#667C26" },
-		{ "Dark Orange", "#F88017" },
-		{ "Dark Orange1", "#F87217" },
-		{ "Dark Orange2", "#E56717" },
-		{ "Dark Orange3", "#7E3117" },
-		{ "Dark Orange3", "#C35617" },
-		{ "Dark Orchid", "#7D1B7E" },
-		{ "Dark Orchid1", "#B041FF" },
-		{ "Dark Orchid2", "#A23BEC" },
-		{ "Dark Orchid3", "#8B31C7" },
-		{ "Dark Orchid4", "#571B7e" },
-		{ "Dark Purple", "#800080" },
-		{ "Dark Salmon", "#E18B6B" },
-		{ "Dark Sea Green", "#8BB381" },
-		{ "Dark Sea Green1", "#C3FDB8" },
-		{ "Dark Sea Green2", "#B5EAAA" },
-		{ "Dark Sea Green3", "#99C68E" },
-		{ "Dark Sea Green4", "#617C58" },
-		{ "Dark Slate Blue", "#2B3856" },
-		{ "Dark Slate Gray", "#25383C" },
-		{ "Dark Slate Gray1", "#9AFEFF" },
-		{ "Dark Slate Gray2", "#8EEBEC" },
-		{ "Dark Slate Gray3", "#78c7c7" },
-		{ "Dark Slate Gray4", "#4C7D7E" },
-		{ "Dark Turquoise", "#3B9C9C" },
-		{ "Dark Violet", "#842DCE" },
-		{ "Deep Pink", "#F52887" },
-		{ "Deep Pink1", "#E4287C" },
-		{ "Deep Pink2", "#C12267" },
-		{ "Deep Pink3", "#7D053F" },
-		{ "Deep Sky Blue", "#3BB9FF" },
-		{ "Deep Sky Blue1", "#38ACEC" },
-		{ "Deep Sky Blue2", "#3090C7" },
-		{ "Deep Sky Blue3", "#25587E" },
-		{ "Dim Gray", "#463E41" },
-		{ "Dodger Blue", "#1589FF" },
-		{ "Dodger Blue1", "#157DEC" },
-		{ "Dodger Blue2", "#1569C7" },
-		{ "Dodger Blue3", "#153E7E" },
-		{ "Firebrick", "#800517" },
-		{ "Firebrick1", "#F62817" },
-		{ "Firebrick2", "#E42217" },
-		{ "Firebrick3", "#C11B17" },
-		{ "Forest Green", "#4E9258" },
-		{ "Forest Green1", "#808000" },
-		{ "Gold", "#D4A017" },
-		{ "Gold1", "#FDD017" },
-		{ "Gold2", "#EAC117" },
-		{ "Gold3", "#C7A317" },
-		{ "Gold4", "#806517" },
-		{ "Goldenrod", "#EDDA74" },
-		{ "Goldenrod1", "#FBB917" },
-		{ "Goldenrod2", "#E9AB17" },
-		{ "Goldenrod3", "#C68E17" },
-		{ "Goldenrod4", "#805817" },
-		{ "Grass Green", "#408080" },
-		{ "Gray", "#736F6E" },
-		{ "Gray1", "#150517" },
-		{ "Gray2", "#250517" },
-		{ "Gray3", "#2B1B17" },
-		{ "Gray4", "#302217" },
-		{ "Gray5", "#302226" },
-		{ "Gray6", "#342826" },
-		{ "Gray7", "#34282C" },
-		{ "Gray8", "#382D2C" },
-		{ "Gray9", "#3b3131" },
-		{ "Gray10", "#3E3535" },
-		{ "Gray11", "#413839" },
-		{ "Gray12", "#41383C" },
-		{ "Gray13", "#463E3F" },
-		{ "Gray14", "#4A4344" },
-		{ "Gray15", "#4C4646" },
-		{ "Gray16", "#4E4848" },
-		{ "Gray17", "#504A4B" },
-		{ "Gray18", "#544E4F" },
-		{ "Gray19", "#565051" },
-		{ "Gray19", "#595454" },
-		{ "Gray20", "#5C5858" },
-		{ "Gray21", "#5F5A59" },
-		{ "Gray22", "#625D5D" },
-		{ "Gray23", "#646060" },
-		{ "Gray24", "#666362" },
-		{ "Gray25", "#696565" },
-		{ "Gray26", "#6D6968" },
-		{ "Gray27", "#6E6A6B" },
-		{ "Gray28", "#726E6D" },
-		{ "Gray29", "#747170" },
-		{ "Green", "#00FF00" },
-		{ "Green1", "#5FFB17" },
-		{ "Green2", "#59E817" },
-		{ "Green3", "#4CC417" },
-		{ "Green4", "#347C17" },
-		{ "Green Yellow", "#B1FB17" },
-		{ "Hot Pink", "#F660AB" },
-		{ "Hot Pink1", "#F665AB" },
-		{ "Hot Pink2", "#E45E9D" },
-		{ "Hot Pink3", "#C25283" },
-		{ "Hot Pink4", "#7D2252" },
-		{ "Indian Red", "#F75D59" },
-		{ "Indian Red2", "#E55451" },
-		{ "Indian Red3", "#C24641" },
-		{ "Indian Red4", "#7E2217" },
-		{ "Khaki", "#ADA96E" },
-		{ "Khaki1", "#FFF380" },
-		{ "Khaki2", "#EDE275" },
-		{ "Khaki3", "#C9BE62" },
-		{ "Khaki4", "#827839" },
-		{ "Lavender", "#E3E4FA" },
-		{ "Lavender Blush", "#FDEEF4" },
-		{ "Lavender Blush1", "#EBDDE2" },
-		{ "Lavender Blush2", "#C8BBBE" },
-		{ "Lavender Blush3", "#817679" },
-		{ "Lawn Green", "#87F717" },
-		{ "Lemon Chiffon", "#FFF8C6" },
-		{ "Lemon Chiffon1", "#ECE5B6" },
-		{ "Lemon Chiffon2", "#C9C299" },
-		{ "Lemon Chiffon3", "#827B60" },
-		{ "Light Blue", "#0000FF" },
-		{ "Light Blue1", "#ADDFFF" },
-		{ "Light Blue2", "#BDEDFF" },
-		{ "Light Blue3", "#AFDCEC" },
-		{ "Light Blue4", "#95B9C7" },
-		{ "Light Blue5", "#5E767E" },
-		{ "Light Coral", "#E77471" },
-		{ "Light Cyan", "#E0FFFF" },
-		{ "Light Cyan1", "#CFECEC" },
-		{ "Light Cyan2", "#AFC7C7" },
-		{ "Light Cyan3", "#717D7D" },
-		{ "Light Golden", "#ECD672" },
-		{ "Light Goldenrod", "#ECD872" },
-		{ "Light Goldenrod1", "#FFE87C" },
-		{ "Light Goldenrod2", "#C8B560" },
-		{ "Light Goldenrod3", "#817339" },
-		{ "Light Goldenrod Yellow", "#FAF8CC" },
-		{ "Light Grey", "#C0C0C0" },
-		{ "Light Pink", "#FAAFBA" },
-		{ "Light Pink1", "#F9A7B0" },
-		{ "Light Pink2", "#E799A3" },
-		{ "Light Pink3", "#C48189" },
-		{ "Light Pink4", "#7F4E52" },
-		{ "Light Purple", "#FF0080" },
-		{ "Light Salmon", "#F9966B" },
-		{ "Light Salmon1", "#E78A61" },
-		{ "Light Salmon2", "#C47451" },
-		{ "Light Salmon3", "#7F462C" },
-		{ "Light Sea Green", "#3EA99F" },
-		{ "Light Sky Blue", "#82CAFA" },
-		{ "Light Sky Blue1", "#A0CFEC" },
-		{ "Light Sky Blue2", "#87AFC7" },
-		{ "Light Sky Blue3", "#566D7E" },
-		{ "Light Slate Blue", "#736AFF" },
-		{ "Light Slate Gray", "#6D7B8D" },
-		{ "Light Steel Blue", "#728FCE" },
-		{ "Light Steel Blue1", "#C6DEFF" },
-		{ "Light Steel Blue2", "#B7CEEC" },
-		{ "Light Steel Blue3", "#646D7E" },
-		{ "Lime Green", "#41A317" },
-		{ "Magenta", "#FF00FF" },
-		{ "Magenta1", "#F433FF" },
-		{ "Magenta2", "#E238EC" },
-		{ "Magenta3", "#C031C7" },
-		{ "Maroon", "#810541" },
-		{ "Maroon1", "#F535AA" },
-		{ "Maroon2", "#E3319D" },
-		{ "Maroon3", "#C12283" },
-		{ "Maroon4", "#7D0552" },
-		{ "Medium Aquamarine", "#348781" },
-		{ "Medium Forest Green", "#347235" },
-		{ "Medium Orchid", "#B048B5" },
-		{ "Medium Orchid1", "#D462FF" },
-		{ "Medium Orchid2", "#C45AEC" },
-		{ "Medium Orchid3", "#A74AC7" },
-		{ "Medium Orchid4", "#6A287E" },
-		{ "Medium Purple", "#8467D7" },
-		{ "Medium Purple1", "#9E7BFF" },
-		{ "Medium Purple2", "#9172EC" },
-		{ "Medium Purple3", "#7A5DC7" },
-		{ "Medium Purple4", "#4E387E" },
-		{ "Medium Sea Green", "#306754" },
-		{ "Medium Slate Blue", "#5E5A80" },
-		{ "Medium Spring Green", "#348017" },
-		{ "Medium Turquoise", "#48CCCD" },
-		{ "Medium Violet Red", "#CA226B" },
-		{ "Midnight Blue", "#151B54" },
-		{ "Orange", "#FF8040" },
-		{ "Pale Turquoise", "#92C7C7" },
-		{ "Pale Turquoise1", "#5E7D7E" },
-		{ "Pale Violet Red", "#D16587" },
-		{ "Pale Violet Red1", "#F778A1" },
-		{ "Pale Violet Red2", "#E56E94" },
-		{ "Pale Violet Red3", "#C25A7C" },
-		{ "Pale Violet Red4", "#7E354D" },
-		{ "Pastel Green", "#00FF00" },
-		{ "Pink", "#FAAFBE" },
-		{ "Pink1", "#FF00FF" },
-		{ "Pink2", "#E7A1B0" },
-		{ "Pink3", "#C48793" },
-		{ "Pink4", "#7F525D" },
-		{ "Plum", "#B93B8F" },
-		{ "Plum1", "#F9B7FF" },
-		{ "Plum2", "#E6A9EC" },
-		{ "Plum3", "#C38EC7" },
-		{ "Plum4", "#7E587E" },
-		{ "Purple", "#8E35EF" },
-		{ "Purple1", "#893BFF" },
-		{ "Purple2", "#7F38EC" },
-		{ "Purple3", "#6C2DC7" },
-		{ "Purple4", "#461B7E" },
-		{ "Red", "#FF0000" },
-		{ "Red1", "#F62217" },
-		{ "Red2", "#E41B17" },
-		{ "Rosy Brown", "#B38481" },
-		{ "Rosy Brown1", "#FBBBB9" },
-		{ "Rosy Brown2", "#E8ADAA" },
-		{ "Rosy Brown3", "#C5908E" },
-		{ "Rosy Brown4", "#7F5A58" },
-		{ "Royal Blue", "#2B60DE" },
-		{ "Royal Blue1", "#306EFF" },
-		{ "Royal Blue2", "#2B65EC" },
-		{ "Royal Blue3", "#2554C7" },
-		{ "Royal Blue4", "#15317E" },
-		{ "Salmon1", "#F88158" },
-		{ "Salmon2", "#E67451" },
-		{ "Salmon3", "#C36241" },
-		{ "Salmon4", "#7E3817" },
-		{ "Sandy Brown", "#EE9A4D" },
-		{ "Sea Green", "#4E8975" },
-		{ "Sea Green1", "#6AFB92" },
-		{ "Sea Green2", "#64E986" },
-		{ "Sea Green3", "#54C571" },
-		{ "Sea Green4", "#387C44" },
-		{ "Sienna", "#8A4117" },
-		{ "Sienna1", "#F87431" },
-		{ "Sienna2", "#E66C2C" },
-		{ "Sienna3", "#C35817" },
-		{ "Sienna4", "#7E3517" },
-		{ "Sky Blue", "#82CAFF" },
-		{ "Sky Blue1", "#6698FF" },
-		{ "Sky Blue2", "#79BAEC" },
-		{ "Sky Blue3", "#659EC7" },
-		{ "Sky Blue4", "#41627E" },
-		{ "Slate Blue", "#357EC7" },
-		{ "Slate Blue1", "#737CA1" },
-		{ "Slate Blue2", "#6960EC" },
-		{ "Slate Blue3", "#342D7E" },
-		{ "Slate Gray", "#657383" },
-		{ "Slate Gray1", "#C2DFFF" },
-		{ "Slate Gray2", "#B4CFEC" },
-		{ "Slate Gray3", "#98AFC7" },
-		{ "Slate Gray4", "#616D7E" },
-		{ "Spring Green", "#4AA02C" },
-		{ "Spring Green1", "#5EFB6E" },
-		{ "Spring Green2", "#57E964" },
-		{ "Spring Green3", "#4CC552" },
-		{ "Spring Green4", "#347C2C" },
-		{ "Steel Blue", "#4863A0" },
-		{ "Steel Blue1", "#5CB3FF" },
-		{ "Steel Blue2", "#56A5EC" },
-		{ "Steel Blue3", "#488AC7" },
-		{ "Steel Blue4", "#2B547E" },
-		{ "Thistle", "#D2B9D3" },
-		{ "Thistle1", "#FCDFFF" },
-		{ "Thistle2", "#E9CFEC" },
-		{ "Thistle3", "#C6AEC7" },
-		{ "Thistle4", "#806D7E" },
-		{ "Turquoise", "#00FFFF" },
-		{ "Turquoise1", "#43C6DB" },
-		{ "Turquoise2", "#52F3FF" },
-		{ "Turquoise3", "#4EE2EC" },
-		{ "Turquoise4", "#43BFC7" },
-		{ "Violet", "#8D38C9" },
-		{ "Violet Red", "#F6358A" },
-		{ "Violet Red1", "#F6358A" },
-		{ "Violet Red2", "#E4317F" },
-		{ "Violet Red3", "#C12869" },
-		{ "Violet Red4", "#7D0541" },
-		{ "White", "#FFFFFF" },
-		{ "Yellow", "#FFFF00" },
-		{ "Yellow1", "#FFFC17" },
-		{ "Yellow Green", "#52D017" }
-	};
-	for (auto color : colors) {
+
+	for (auto color : html_colors) {
 		if (!strcasecmp(color.first.c_str(), color_name.c_str())) {
 			return color.second;
 		}
@@ -4614,27 +3461,8 @@ void QuestManager::SetEXPModifierByCharID(uint32 character_id, uint32 zone_id, d
 	database.SetEXPModifier(character_id, zone_id, exp_modifier);
 }
 
-void QuestManager::CrossZoneLDoNUpdate(uint8 type, uint8 subtype, int identifier, uint32 theme_id, int points) {
-	auto pack = new ServerPacket(ServerOP_CZLDoNUpdate, sizeof(CZLDoNUpdate_Struct));
-	CZLDoNUpdate_Struct* CZLU = (CZLDoNUpdate_Struct*)pack->pBuffer;
-	CZLU->update_type = type;
-	CZLU->update_subtype = subtype;
-	CZLU->update_identifier = identifier;
-	CZLU->theme_id = theme_id;
-	CZLU->points = points;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
-}
-
 std::string QuestManager::getgendername(uint32 gender_id) {
-	auto gender_name = "Unknown";
-	if (gender_id == MALE) {
-		gender_name = "Male";
-	} else if (gender_id == FEMALE) {
-		gender_name = "Female";
-	} else if (gender_id == NEUTER) {
-		gender_name = "Neuter";
-	}
+	std::string gender_name = GetGenderName(gender_id);
 	return gender_name;
 }
 
@@ -4654,4 +3482,227 @@ int QuestManager::getitemstat(uint32 item_id, std::string stat_identifier) {
 int QuestManager::getspellstat(uint32 spell_id, std::string stat_identifier, uint8 slot) {
 	QuestManagerCurrentQuestVars();
 	return GetSpellStatValue(spell_id, stat_identifier.c_str(), slot);
+}
+
+void QuestManager::CrossZoneDialogueWindow(uint8 update_type, int update_identifier, const char* message, const char* client_name) {
+	auto pack = new ServerPacket(ServerOP_CZDialogueWindow, sizeof(CZDialogueWindow_Struct));
+	CZDialogueWindow_Struct* CZDW = (CZDialogueWindow_Struct*)pack->pBuffer;
+	CZDW->update_type = update_type;
+	CZDW->update_identifier = update_identifier;
+	strn0cpy(CZDW->message, message, 4096);
+	strn0cpy(CZDW->client_name, client_name, 64);
+	worldserver.SendPacket(pack);
+	safe_delete(pack);
+}
+
+void QuestManager::CrossZoneLDoNUpdate(uint8 update_type, uint8 update_subtype, int update_identifier, uint32 theme_id, int points, const char* client_name) {
+	auto pack = new ServerPacket(ServerOP_CZLDoNUpdate, sizeof(CZLDoNUpdate_Struct));
+	CZLDoNUpdate_Struct* CZLU = (CZLDoNUpdate_Struct*)pack->pBuffer;
+	CZLU->update_type = update_type;
+	CZLU->update_subtype = update_subtype;
+	CZLU->update_identifier = update_identifier;
+	CZLU->theme_id = theme_id;
+	CZLU->points = points;
+	strn0cpy(CZLU->client_name, client_name, 64);
+	worldserver.SendPacket(pack);
+	safe_delete(pack);
+}
+
+void QuestManager::CrossZoneMarquee(uint8 update_type, int update_identifier, uint32 type, uint32 priority, uint32 fade_in, uint32 fade_out, uint32 duration, const char* message, const char* client_name) {
+	auto pack = new ServerPacket(ServerOP_CZMarquee, sizeof(CZMarquee_Struct));
+	CZMarquee_Struct* CZM = (CZMarquee_Struct*)pack->pBuffer;
+	CZM->update_type = update_type;
+	CZM->update_identifier = update_identifier;
+	CZM->type = type;
+	CZM->priority = priority;
+	CZM->fade_in = fade_in;
+	CZM->fade_out = fade_out;
+	CZM->duration = duration;
+	strn0cpy(CZM->message, message, 512);
+	strn0cpy(CZM->client_name, client_name, 64);
+	worldserver.SendPacket(pack);
+	safe_delete(pack);
+}
+
+void QuestManager::CrossZoneMessage(uint8 update_type, int update_identifier, uint32 type, const char* message, const char* client_name) {
+	auto pack = new ServerPacket(ServerOP_CZMessage, sizeof(CZMarquee_Struct));
+	CZMessage_Struct* CZM = (CZMessage_Struct*)pack->pBuffer;
+	CZM->update_type = update_type;
+	CZM->update_identifier = update_identifier;
+	CZM->type = type;
+	strn0cpy(CZM->message, message, 512);
+	strn0cpy(CZM->client_name, client_name, 64);
+	worldserver.SendPacket(pack);
+	safe_delete(pack);
+}
+
+void QuestManager::CrossZoneMove(uint8 update_type, uint8 update_subtype, int update_identifier, const char* zone_short_name, uint16 instance_id, const char* client_name) {
+	auto pack = new ServerPacket(ServerOP_CZMove, sizeof(CZMove_Struct));
+	CZMove_Struct* CZM = (CZMove_Struct*)pack->pBuffer;
+	CZM->update_type = update_type;
+	CZM->update_subtype = update_subtype;
+	CZM->update_identifier = update_identifier;
+	strn0cpy(CZM->zone_short_name, zone_short_name, 32);
+	CZM->instance_id = instance_id;
+	strn0cpy(CZM->client_name, client_name, 64);
+	worldserver.SendPacket(pack);
+	safe_delete(pack);
+}
+
+void QuestManager::CrossZoneSetEntityVariable(uint8 update_type, int update_identifier, const char* variable_name, const char* variable_value, const char* client_name) {
+	auto pack = new ServerPacket(ServerOP_CZSetEntityVariable, sizeof(CZSetEntityVariable_Struct));
+	CZSetEntityVariable_Struct* CZM = (CZSetEntityVariable_Struct*)pack->pBuffer;
+	CZM->update_type = update_type;
+	CZM->update_identifier = update_identifier;
+	strn0cpy(CZM->variable_name, variable_name, 256);
+	strn0cpy(CZM->variable_value, variable_value, 256);
+	strn0cpy(CZM->client_name, client_name, 64);
+	worldserver.SendPacket(pack);
+	safe_delete(pack);
+}
+
+void QuestManager::CrossZoneSignal(uint8 update_type, int update_identifier, uint32 signal, const char* client_name) {
+	auto pack = new ServerPacket(ServerOP_CZSignal, sizeof(CZSignal_Struct));
+	CZSignal_Struct* CZS = (CZSignal_Struct*)pack->pBuffer;
+	CZS->update_type = update_type;
+	CZS->update_identifier = update_identifier;
+	CZS->signal = signal;
+	strn0cpy(CZS->client_name, client_name, 64);
+	worldserver.SendPacket(pack);
+	safe_delete(pack);
+}
+
+void QuestManager::CrossZoneSpell(uint8 update_type, uint8 update_subtype, int update_identifier, uint32 spell_id, const char* client_name) {
+	auto pack = new ServerPacket(ServerOP_CZSpell, sizeof(CZSpell_Struct));
+	CZSpell_Struct* CZS = (CZSpell_Struct*)pack->pBuffer;
+	CZS->update_type = update_type;
+	CZS->update_subtype = update_subtype;
+	CZS->update_identifier = update_identifier;
+	CZS->spell_id = spell_id;
+	strn0cpy(CZS->client_name, client_name, 64);
+	worldserver.SendPacket(pack);
+	safe_delete(pack);
+}
+
+void QuestManager::CrossZoneTaskUpdate(uint8 update_type, uint8 update_subtype, int update_identifier, uint32 task_identifier, int task_subidentifier, int update_count, bool enforce_level_requirement, const char* client_name) {
+	auto pack = new ServerPacket(ServerOP_CZTaskUpdate, sizeof(CZTaskUpdate_Struct));
+	CZTaskUpdate_Struct* CZTU = (CZTaskUpdate_Struct*)pack->pBuffer;
+	CZTU->update_type = update_type;
+	CZTU->update_subtype = update_subtype;
+	CZTU->update_identifier = update_identifier;
+	CZTU->task_identifier = task_identifier;
+	CZTU->task_subidentifier = task_subidentifier;
+	CZTU->update_count = update_count;
+	CZTU->enforce_level_requirement = enforce_level_requirement;
+	strn0cpy(CZTU->client_name, client_name, 64);
+	worldserver.SendPacket(pack);
+	safe_delete(pack);
+}
+
+void QuestManager::WorldWideDialogueWindow(const char* message, uint8 min_status, uint8 max_status) {
+	auto pack = new ServerPacket(ServerOP_WWDialogueWindow, sizeof(WWDialogueWindow_Struct));
+	WWDialogueWindow_Struct* WWDW = (WWDialogueWindow_Struct*)pack->pBuffer;
+	strn0cpy(WWDW->message, message, 4096);
+	WWDW->min_status = min_status;
+	WWDW->max_status = max_status;
+	worldserver.SendPacket(pack);
+	safe_delete(pack);
+}
+
+void QuestManager::WorldWideLDoNUpdate(uint8 update_type, uint32 theme_id, int points, uint8 min_status, uint8 max_status) {
+	auto pack = new ServerPacket(ServerOP_WWLDoNUpdate, sizeof(WWLDoNUpdate_Struct));
+	WWLDoNUpdate_Struct* WWLU = (WWLDoNUpdate_Struct*)pack->pBuffer;
+	WWLU->update_type = update_type;
+	WWLU->theme_id = theme_id;
+	WWLU->points = points;
+	WWLU->min_status = min_status;
+	WWLU->max_status = max_status;
+	worldserver.SendPacket(pack);
+	safe_delete(pack);
+}
+
+void QuestManager::WorldWideMarquee(uint32 type, uint32 priority, uint32 fade_in, uint32 fade_out, uint32 duration, const char* message, uint8 min_status, uint8 max_status) {
+	auto pack = new ServerPacket(ServerOP_WWMarquee, sizeof(WWMarquee_Struct));
+	WWMarquee_Struct* WWM = (WWMarquee_Struct*)pack->pBuffer;
+	WWM->type = type;
+	WWM->priority = priority;
+	WWM->fade_in = fade_in;
+	WWM->fade_out = fade_out;
+	WWM->duration = duration;
+	strn0cpy(WWM->message, message, 512);
+	WWM->min_status = min_status;
+	WWM->max_status = max_status;
+	worldserver.SendPacket(pack);
+	safe_delete(pack);
+}
+
+void QuestManager::WorldWideMessage(uint32 type, const char* message, uint8 min_status, uint8 max_status) {
+	auto pack = new ServerPacket(ServerOP_WWMessage, sizeof(WWMarquee_Struct));
+	WWMessage_Struct* WWM = (WWMessage_Struct*)pack->pBuffer;
+	WWM->type = type;
+	strn0cpy(WWM->message, message, 512);
+	WWM->min_status = min_status;
+	WWM->max_status = max_status;
+	worldserver.SendPacket(pack);
+	safe_delete(pack);
+}
+
+void QuestManager::WorldWideMove(uint8 update_type, const char* zone_short_name, uint16 instance_id, uint8 min_status, uint8 max_status) {
+	auto pack = new ServerPacket(ServerOP_WWMove, sizeof(WWMove_Struct));
+	WWMove_Struct* WWM = (WWMove_Struct*)pack->pBuffer;
+	WWM->update_type = update_type;
+	strn0cpy(WWM->zone_short_name, zone_short_name, 32);
+	WWM->instance_id = instance_id;
+	WWM->min_status = min_status;
+	WWM->max_status = max_status;
+	worldserver.SendPacket(pack);
+	safe_delete(pack);
+}
+
+void QuestManager::WorldWideSetEntityVariable(uint8 update_type, const char* variable_name, const char* variable_value, uint8 min_status, uint8 max_status) {
+	auto pack = new ServerPacket(ServerOP_WWSetEntityVariable, sizeof(WWSetEntityVariable_Struct));
+	WWSetEntityVariable_Struct* WWSEV = (WWSetEntityVariable_Struct*)pack->pBuffer;
+	WWSEV->update_type = update_type;
+	strn0cpy(WWSEV->variable_name, variable_name, 256);
+	strn0cpy(WWSEV->variable_value, variable_value, 256);
+	WWSEV->min_status = min_status;
+	WWSEV->max_status = max_status;
+	worldserver.SendPacket(pack);
+	safe_delete(pack);
+}
+
+void QuestManager::WorldWideSignal(uint8 update_type, uint32 signal, uint8 min_status, uint8 max_status) {
+	auto pack = new ServerPacket(ServerOP_WWSignal, sizeof(WWSignal_Struct));
+	WWSignal_Struct* WWS = (WWSignal_Struct*)pack->pBuffer;
+	WWS->update_type = update_type;
+	WWS->signal = signal;
+	WWS->min_status = min_status;
+	WWS->max_status = max_status;
+	worldserver.SendPacket(pack);
+	safe_delete(pack);
+}
+
+void QuestManager::WorldWideSpell(uint8 update_type, uint32 spell_id, uint8 min_status, uint8 max_status) {
+	auto pack = new ServerPacket(ServerOP_WWSpell, sizeof(WWSpell_Struct));
+	WWSpell_Struct* WWS = (WWSpell_Struct*)pack->pBuffer;
+	WWS->update_type = update_type;
+	WWS->spell_id = spell_id;
+	WWS->min_status = min_status;
+	WWS->max_status = max_status;
+	worldserver.SendPacket(pack);
+	safe_delete(pack);
+}
+
+void QuestManager::WorldWideTaskUpdate(uint8 update_type, uint32 task_identifier, int task_subidentifier, int update_count, bool enforce_level_requirement, uint8 min_status, uint8 max_status) {
+	auto pack = new ServerPacket(ServerOP_WWTaskUpdate, sizeof(WWTaskUpdate_Struct));
+	WWTaskUpdate_Struct* WWTU = (WWTaskUpdate_Struct*)pack->pBuffer;
+	WWTU->update_type = update_type;
+	WWTU->task_identifier = task_identifier;
+	WWTU->task_subidentifier = task_subidentifier;
+	WWTU->update_count = update_count;
+	WWTU->enforce_level_requirement = enforce_level_requirement;
+	WWTU->min_status = min_status;
+	WWTU->max_status = max_status;
+	worldserver.SendPacket(pack);
+	safe_delete(pack);
 }

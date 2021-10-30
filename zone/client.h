@@ -80,6 +80,7 @@ namespace EQ
 #include <algorithm>
 #include <memory>
 #include <deque>
+#include <ctime>
 
 
 #define CLIENT_TIMEOUT 90000
@@ -202,7 +203,11 @@ enum eInnateSkill {
 	InnateDisabled = 255
 };
 
-const uint32 POPUPID_UPDATE_SHOWSTATSWINDOW = 1000000;
+const std::string DIAWIND_RESPONSE_ONE_KEY       = "diawind_npc_response_one";
+const std::string DIAWIND_RESPONSE_TWO_KEY       = "diawind_npc_response_two";
+const uint32      POPUPID_DIAWIND_ONE            = 99999;
+const uint32      POPUPID_DIAWIND_TWO            = 100000;
+const uint32      POPUPID_UPDATE_SHOWSTATSWINDOW = 1000000;
 
 struct ClientReward
 {
@@ -335,6 +340,9 @@ public:
 	bool GetRevoked() const { return revoked; }
 	void SetRevoked(bool rev) { revoked = rev; }
 	inline uint32 GetIP() const { return ip; }
+	std::string GetIPString();
+	int GetIPExemption();
+	void SetIPExemption(int exemption_amount);
 	inline bool GetHideMe() const { return gm_hide_me; }
 	void SetHideMe(bool hm);
 	inline uint16 GetPort() const { return port; }
@@ -723,6 +731,7 @@ public:
 	void Stun(int duration);
 	void UnStun();
 	void ReadBook(BookRequest_Struct *book);
+	void ReadBookByName(std::string book_name, uint8 book_type);
 	void QuestReadBook(const char* text, uint8 type);
 	void SendClientMoneyUpdate(uint8 type,uint32 amount);
 	void SendMoneyUpdate();
@@ -790,11 +799,17 @@ public:
 	std::vector<int> GetMemmedSpells();
 	std::vector<int> GetScribeableSpells(uint8 min_level = 1, uint8 max_level = 0);
 	std::vector<int> GetScribedSpells();
-	void ScribeSpell(uint16 spell_id, int slot, bool update_client = true);
-	void UnscribeSpell(int slot, bool update_client = true);
+	// defer save used when bulk saving
+	void ScribeSpell(uint16 spell_id, int slot, bool update_client = true, bool defer_save = false);
+	void SaveSpells();
+	void SaveDisciplines();
+
+	// defer save used when bulk saving
+	void UnscribeSpell(int slot, bool update_client = true, bool defer_save = false);
 	void UnscribeSpellAll(bool update_client = true);
-	void UntrainDisc(int slot, bool update_client = true);
+	void UntrainDisc(int slot, bool update_client = true, bool defer_save = false);
 	void UntrainDiscAll(bool update_client = true);
+	void UntrainDiscBySpellID(uint16 spell_id, bool update_client = true);
 	bool SpellGlobalCheck(uint16 spell_id, uint32 char_id);
 	bool SpellBucketCheck(uint16 spell_id, uint32 char_id);
 	uint32 GetCharMaxLevelFromQGlobal();
@@ -907,6 +922,7 @@ public:
 	void PutLootInInventory(int16 slot_id, const EQ::ItemInstance &inst, ServerLootItem_Struct** bag_item_data = 0);
 	bool AutoPutLootInInventory(EQ::ItemInstance& inst, bool try_worn = false, bool try_cursor = true, ServerLootItem_Struct** bag_item_data = 0);
 	bool SummonItem(uint32 item_id, int16 charges = -1, uint32 aug1 = 0, uint32 aug2 = 0, uint32 aug3 = 0, uint32 aug4 = 0, uint32 aug5 = 0, uint32 aug6 = 0, bool attuned = false, uint16 to_slot = EQ::invslot::slotCursor, uint32 ornament_icon = 0, uint32 ornament_idfile = 0, uint32 ornament_hero_model = 0);
+	void SummonBaggedItems(uint32 bag_item_id, const std::vector<ServerLootItem_Struct>& bag_items);
 	void SetStats(uint8 type,int16 set_val);
 	void IncStats(uint8 type,int16 increase_val);
 	void DropItem(int16 slot_id, bool recurse = true);
@@ -1030,7 +1046,11 @@ public:
 	void SendTaskActivityComplete(int task_id, int activity_id, int task_index, TaskType task_type, int task_incomplete=1);
 	void SendTaskFailed(int task_id, int task_index, TaskType task_type);
 	void SendTaskComplete(int task_index);
+	bool HasTaskRequestCooldownTimer();
+	void SendTaskRequestCooldownTimerMessage();
+	void StartTaskRequestCooldownTimer();
 	inline ClientTaskState *GetTaskState() const { return task_state; }
+	inline bool HasTaskState() { if (task_state) { return true; } return false; }
 	inline void CancelTask(int task_index, TaskType task_type)
 	{
 		if (task_state) {
@@ -1085,17 +1105,8 @@ public:
 			);
 		}
 	}
-	inline void UpdateTasksOnKill(int npc_type_id)
-	{
-		if (task_state) {
-			task_state->UpdateTasksOnKill(
-				this,
-				npc_type_id
-			);
-		}
-	}
 	inline void UpdateTasksForItem(
-		ActivityType activity_type,
+		TaskActivityType activity_type,
 		int item_id,
 		int count = 1
 	)
@@ -1202,7 +1213,7 @@ public:
 		bool enforce_level_requirement = false
 	) {
 		if (task_state) {
-			task_state->AcceptNewTask(this, task_id, npc_id, enforce_level_requirement);
+			task_state->AcceptNewTask(this, task_id, npc_id, std::time(nullptr), enforce_level_requirement);
 		}
 	}
 	inline int ActiveSpeakTask(int npc_type_id)
@@ -1262,6 +1273,18 @@ public:
 	{
 		return (task_state ? task_state->CompletedTasksInSet(task_set_id) : 0);
 	}
+	void PurgeTaskTimers();
+
+	// shared task shims / middleware
+	// these variables are used as a shim to intercept normal localized task functionality
+	// and pipe it into zone -> world and back to world -> zone
+	// world is authoritative
+	bool m_requesting_shared_task        = false;
+	bool m_shared_task_update            = false;
+	bool m_requested_shared_task_removal = false;
+
+	std::vector<Client*> GetPartyMembers();
+	void HandleUpdateTasksOnKill(uint32 npc_type_id);
 
 	inline const EQ::versions::ClientVersion ClientVersion() const { return m_ClientVersion; }
 	inline const uint32 ClientVersionBit() const { return m_ClientVersionBit; }
@@ -1305,8 +1328,7 @@ public:
 	uint32 GetLDoNWinsTheme(uint32 t);
 	uint32 GetLDoNLossesTheme(uint32 t);
 	uint32 GetLDoNPointsTheme(uint32 t);
-	void AddLDoNWin(uint32 theme_id);
-	void AddLDoNLoss(uint32 theme_id);
+	void UpdateLDoNWinLoss(uint32 theme_id, bool win = false, bool remove = false);
 	void CheckLDoNHail(Mob *target);
 	void CheckEmoteHail(Mob *target, const char* message);
 
@@ -1330,9 +1352,9 @@ public:
 		const std::string& event_Name, int seconds, const std::string& uuid = {}, bool update_db = false);
 	void AddNewExpeditionLockout(const std::string& expedition_name,
 		const std::string& event_name, uint32_t duration, std::string uuid = {});
-	Expedition* CreateExpedition(DynamicZone& dz_instance, ExpeditionRequest& request);
-	Expedition* CreateExpedition(
-		const std::string& zone_name, uint32 version, uint32 duration, const std::string& expedition_name,
+	Expedition* CreateExpedition(DynamicZone& dz, bool disable_messages = false);
+	Expedition* CreateExpedition(const std::string& zone_name,
+		uint32 version, uint32 duration, const std::string& expedition_name,
 		uint32 min_players, uint32 max_players, bool disable_messages = false);
 	Expedition* GetExpedition() const;
 	uint32 GetExpeditionID() const { return m_expedition_id; }
@@ -1350,7 +1372,6 @@ public:
 	void SendExpeditionLockoutTimers();
 	void SetExpeditionID(uint32 expedition_id) { m_expedition_id = expedition_id; };
 	void SetPendingExpeditionInvite(ExpeditionInvite&& invite) { m_pending_expedition_invite = invite; }
-	void UpdateExpeditionInfoAndLockouts();
 	void DzListTimers();
 	void SetDzRemovalTimer(bool enable_timer);
 	void SendDzCompassUpdate();
@@ -1360,6 +1381,11 @@ public:
 	std::vector<DynamicZone*> GetDynamicZones(uint32_t zone_id = 0, int zone_version = -1);
 	std::unique_ptr<EQApplicationPacket> CreateDzSwitchListPacket(const std::vector<DynamicZone*>& dzs);
 	std::unique_ptr<EQApplicationPacket> CreateCompassPacket(const std::vector<DynamicZoneCompassEntry_Struct>& entries);
+	void AddDynamicZoneID(uint32_t dz_id);
+	void RemoveDynamicZoneID(uint32_t dz_id);
+	void SendDynamicZoneUpdates();
+	void SetDynamicZoneMemberStatus(DynamicZoneMemberStatus status);
+	void CreateTaskDynamicZone(int task_id, DynamicZone& dz_request);
 
 	void CalcItemScale();
 	bool CalcItemScale(uint32 slot_x, uint32 slot_y); // behavior change: 'slot_y' is now [RANGE]_END and not [RANGE]_END + 1
@@ -1590,6 +1616,9 @@ public:
 	void ShowDevToolsMenu();
 	CheatManager cheat_manager;
 
+	// rate limit
+	Timer m_list_task_timers_rate_limit = {};
+
 protected:
 	friend class Mob;
 	void CalcItemBonuses(StatBonuses* newbon);
@@ -1742,8 +1771,16 @@ private:
 	int Haste; //precalced value
 	uint32 tmSitting; // time stamp started sitting, used for HP regen bonus added on MAY 5, 2004
 
+
+	// dev tools
 	bool display_mob_info_window;
 	bool dev_tools_enabled;
+
+	uint16 m_door_tool_entity_id;
+public:
+	uint16 GetDoorToolEntityId() const;
+	void SetDoorToolEntityId(uint16 door_tool_entity_id);
+private:
 
 	int32 max_end;
 	int32 current_endurance;
@@ -1818,11 +1855,10 @@ private:
 	Timer helm_toggle_timer;
 	Timer aggro_meter_timer;
 	Timer mob_close_scan_timer;
-	Timer hp_self_update_throttle_timer; /* This is to prevent excessive packet sending under trains/fast combat */
-	Timer hp_other_update_throttle_timer; /* This is to keep clients from DOSing the server with macros that change client targets constantly */
 	Timer position_update_timer; /* Timer used when client hasn't updated within a 10 second window */
 	Timer consent_throttle_timer;
 	Timer dynamiczone_removal_timer;
+	Timer task_request_timer;
 
 	glm::vec3 m_Proximity;
 	glm::vec4 last_position_before_bulk_update;
@@ -1856,6 +1892,14 @@ private:
 
 	ClientTaskState *task_state;
 	int TotalSecondsPlayed;
+
+	// we use this very sparingly at the zone level
+	// used for keeping clients in donecount sync before world sends absolute confirmations of state
+	int64 m_shared_task_id = 0;
+public:
+	void SetSharedTaskId(int64 shared_task_id);
+	int64 GetSharedTaskId() const;
+private:
 
 	//Anti Spam Stuff
 	Timer *KarmaUpdateTimer;
@@ -1929,6 +1973,7 @@ private:
 	std::vector<ExpeditionLockoutTimer> m_expedition_lockouts;
 	glm::vec3 m_quest_compass;
 	bool m_has_quest_compass = false;
+	std::vector<uint32_t> m_dynamic_zone_ids;
 
 #ifdef BOTS
 

@@ -123,6 +123,10 @@ namespace Logs {
 		DynamicZones,
 		Scheduler,
 		Cheat,
+		ClientList,
+		DiaWind,
+		HTTP,
+		Saylink,
 		MaxCategoryID /* Don't Remove this */
 	};
 
@@ -203,7 +207,11 @@ namespace Logs {
 		"Expeditions",
 		"DynamicZones",
 		"Scheduler",
-		"Cheat"
+		"Cheat",
+		"ClientList",
+		"DialogueWindow",
+		"HTTP",
+		"Saylink",
 	};
 }
 

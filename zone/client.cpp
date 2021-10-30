@@ -63,6 +63,10 @@ extern volatile bool RunLoops;
 #include "../common/expedition_lockout_timer.h"
 #include "cheat_manager.h"
 
+#include "../common/repositories/character_spells_repository.h"
+#include "../common/repositories/character_disciplines_repository.h"
+
+
 extern QueryServ* QServ;
 extern EntityList entity_list;
 extern Zone* zone;
@@ -169,8 +173,6 @@ Client::Client(EQStreamInterface* ieqs)
   last_region_type(RegionTypeUnsupported),
   m_dirtyautohaters(false),
   mob_close_scan_timer(6000),
-  hp_self_update_throttle_timer(300),
-  hp_other_update_throttle_timer(500),
   position_update_timer(10000),
   consent_throttle_timer(2000),
   tmSitting(0)
@@ -320,7 +322,7 @@ Client::Client(EQStreamInterface* ieqs)
 	adventure_stats_timer = nullptr;
 	adventure_leaderboard_timer = nullptr;
 	adv_data = nullptr;
-	adv_requested_theme = 0;
+	adv_requested_theme = LDoNThemes::Unused;
 	adv_requested_id = 0;
 	adv_requested_member_count = 0;
 
@@ -350,9 +352,10 @@ Client::Client(EQStreamInterface* ieqs)
 	temp_pvp = false;
 	is_client_moving = false;
 
-	/**
-	 * GM
-	 */
+	// rate limiter
+	m_list_task_timers_rate_limit.Start(1000);
+
+	// gm
 	SetDisplayMobInfoWindow(true);
 	SetDevToolsEnabled(true);
 
@@ -1376,9 +1379,8 @@ bool Client::UpdateLDoNPoints(uint32 theme_id, int points) {
 			return false;
 	}
 
-	switch (theme_id)
-	{
-		case 0: { // No theme, so distribute evenly across all
+	switch (theme_id) {
+		case LDoNThemes::Unused: { // No theme, so distribute evenly across all
 			int split_points = (points / 5);
 			int guk_points = (split_points + (points % 5));
 			int mir_points = split_points;
@@ -1422,47 +1424,52 @@ bool Client::UpdateLDoNPoints(uint32 theme_id, int points) {
 			m_pp.ldon_points_ruj += ruj_points;
 			m_pp.ldon_points_tak += tak_points;
 			points -= split_points;
-			if (split_points != 0) // if anything left, recursively loop thru again
+			if (split_points != 0) { // if anything left, recursively loop thru again
 				UpdateLDoNPoints(0, split_points);
-
+			}
 			break;
 		}
-		case 1:	{
+		case LDoNThemes::GUK:	{
 			if(points < 0) {
-				if(m_pp.ldon_points_guk < (0 - points))
+				if(m_pp.ldon_points_guk < (0 - points)) {
 					return false;
+				}
 			}
 			m_pp.ldon_points_guk += points;
 			break;
 		}
-		case 2: {
+		case LDoNThemes::MIR: {
 			if(points < 0) {
-				if(m_pp.ldon_points_mir < (0 - points))
+				if(m_pp.ldon_points_mir < (0 - points)) {
 					return false;
+				}
 			}
 			m_pp.ldon_points_mir += points;
 			break;
 		}
-		case 3: {
+		case LDoNThemes::MMC: {
 			if(points < 0) {
-				if(m_pp.ldon_points_mmc < (0 - points))
+				if(m_pp.ldon_points_mmc < (0 - points)) {
 					return false;
+				}
 			}
 			m_pp.ldon_points_mmc += points;
 			break;
 		}
-		case 4: {
+		case LDoNThemes::RUJ: {
 			if(points < 0) {
-				if(m_pp.ldon_points_ruj < (0 - points))
+				if(m_pp.ldon_points_ruj < (0 - points)) {
 					return false;
+				}
 			}
 			m_pp.ldon_points_ruj += points;
 			break;
 		}
-		case 5: {
+		case LDoNThemes::TAK: {
 			if(points < 0) {
-				if(m_pp.ldon_points_tak < (0 - points))
+				if(m_pp.ldon_points_tak < (0 - points)) {
 					return false;
+				}
 			}
 			m_pp.ldon_points_tak += points;
 			break;
@@ -1552,46 +1559,56 @@ void Client::SendSound(){//Makes a sound.
 	safe_delete(outapp);
 
 }
-void Client::UpdateWho(uint8 remove) {
-	if (account_id == 0)
+void Client::UpdateWho(uint8 remove)
+{
+	if (account_id == 0) {
 		return;
-	if (!worldserver.Connected())
+	}
+	if (!worldserver.Connected()) {
 		return;
+	}
+
 	auto pack = new ServerPacket(ServerOP_ClientList, sizeof(ServerClientList_Struct));
-	ServerClientList_Struct* scl = (ServerClientList_Struct*) pack->pBuffer;
-	scl->remove = remove;
-	scl->wid = this->GetWID();
-	scl->IP = this->GetIP();
-	scl->charid = this->CharacterID();
-	strcpy(scl->name, this->GetName());
+	auto *s   = (ServerClientList_Struct *) pack->pBuffer;
+	s->remove = remove;
+	s->wid    = this->GetWID();
+	s->IP     = this->GetIP();
+	s->charid = this->CharacterID();
+	strcpy(s->name, this->GetName());
 
-	scl->gm = GetGM();
-	scl->Admin = this->Admin();
-	scl->AccountID = this->AccountID();
-	strcpy(scl->AccountName, this->AccountName());
-	scl->LSAccountID = this->LSAccountID();
-	strn0cpy(scl->lskey, lskey, sizeof(scl->lskey));
-	scl->zone = zone->GetZoneID();
-	scl->instance_id = zone->GetInstanceID();
-	scl->race = this->GetRace();
-	scl->class_ = GetClass();
-	scl->level = GetLevel();
-	if (m_pp.anon == 0)
-		scl->anon = 0;
-	else if (m_pp.anon == 1)
-		scl->anon = 1;
-	else if (m_pp.anon >= 2)
-		scl->anon = 2;
+	s->gm        = GetGM();
+	s->Admin     = this->Admin();
+	s->AccountID = this->AccountID();
+	strcpy(s->AccountName, this->AccountName());
 
-	scl->ClientVersion = static_cast<unsigned int>(ClientVersion());
-	scl->tellsoff = tellsoff;
-	scl->guild_id = guild_id;
-	scl->LFG = LFG;
-	if(LFG) {
-		scl->LFGFromLevel = LFGFromLevel;
-		scl->LFGToLevel = LFGToLevel;
-		scl->LFGMatchFilter = LFGMatchFilter;
-		memcpy(scl->LFGComments, LFGComments, sizeof(scl->LFGComments));
+	s->LSAccountID = this->LSAccountID();
+	strn0cpy(s->lskey, lskey, sizeof(s->lskey));
+
+	s->zone        = zone->GetZoneID();
+	s->instance_id = zone->GetInstanceID();
+	s->race        = this->GetRace();
+	s->class_      = GetClass();
+	s->level       = GetLevel();
+
+	if (m_pp.anon == 0) {
+		s->anon = 0;
+	}
+	else if (m_pp.anon == 1) {
+		s->anon = 1;
+	}
+	else if (m_pp.anon >= 2) {
+		s->anon = 2;
+	}
+
+	s->ClientVersion = static_cast<unsigned int>(ClientVersion());
+	s->tellsoff      = tellsoff;
+	s->guild_id      = guild_id;
+	s->LFG           = LFG;
+	if (LFG) {
+		s->LFGFromLevel   = LFGFromLevel;
+		s->LFGToLevel     = LFGToLevel;
+		s->LFGMatchFilter = LFGMatchFilter;
+		memcpy(s->LFGComments, LFGComments, sizeof(s->LFGComments));
 	}
 
 	worldserver.SendPacket(pack);
@@ -2402,9 +2419,12 @@ bool Client::CheckIncreaseSkill(EQ::skills::SkillType skillid, Mob *against_who,
 		return false;
 	int skillval = GetRawSkill(skillid);
 	int maxskill = GetMaxSkillAfterSpecializationRules(skillid, MaxSkill(skillid));
-	char buffer[24] = { 0 };
-	snprintf(buffer, 23, "%d %d", skillid, skillval);
-	parse->EventPlayer(EVENT_USE_SKILL, this, buffer, 0);
+	std::string export_string = fmt::format(
+		"{} {}",
+		skillid,
+		skillval
+	);
+	parse->EventPlayer(EVENT_USE_SKILL, this, export_string, 0);
 	if (against_who) {
 		if (
 			against_who->GetSpecialAbility(IMMUNE_AGGRO) ||
@@ -2503,7 +2523,7 @@ uint16 Client::GetMaxSkillAfterSpecializationRules(EQ::skills::SkillType skillid
 	uint16 PrimarySpecialization = 0, SecondaryForte = 0;
 
 	uint16 PrimarySkillValue = 0, SecondarySkillValue = 0;
-	
+
 	uint16 MaxSpecializations = aabonuses.SecondaryForte ? 2 : 1;
 
 	if (skillid >= EQ::skills::SkillSpecializeAbjure && skillid <= EQ::skills::SkillSpecializeEvocation)
@@ -3370,11 +3390,7 @@ void Client::LinkDead()
 		raid->MemberZoned(this);
 	}
 
-	Expedition* expedition = GetExpedition();
-	if (expedition)
-	{
-		expedition->SetMemberStatus(this, DynamicZoneMemberStatus::LinkDead);
-	}
+	SetDynamicZoneMemberStatus(DynamicZoneMemberStatus::LinkDead);
 
 //	save_timer.Start(2500);
 	linkdead_timer.Start(RuleI(Zone,ClientLinkdeadMS));
@@ -5334,10 +5350,8 @@ void Client::ShowSkillsWindow()
 
 void Client::Signal(uint32 data)
 {
-	char buf[32];
-	snprintf(buf, 31, "%d", data);
-	buf[31] = '\0';
-	parse->EventPlayer(EVENT_SIGNAL, this, buf, 0);
+	std::string export_string = fmt::format("{}", data);
+	parse->EventPlayer(EVENT_SIGNAL, this, export_string, 0);
 }
 
 void Client::SendRewards()
@@ -5485,15 +5499,15 @@ uint32 Client::GetLDoNPointsTheme(uint32 t)
 {
 	switch(t)
 	{
-	case 1:
+	case LDoNThemes::GUK:
 		return m_pp.ldon_points_guk;
-	case 2:
+	case LDoNThemes::MIR:
 		return m_pp.ldon_points_mir;
-	case 3:
+	case LDoNThemes::MMC:
 		return m_pp.ldon_points_mmc;
-	case 4:
+	case LDoNThemes::RUJ:
 		return m_pp.ldon_points_ruj;
-	case 5:
+	case LDoNThemes::TAK:
 		return m_pp.ldon_points_tak;
 	default:
 		return 0;
@@ -5504,15 +5518,15 @@ uint32 Client::GetLDoNWinsTheme(uint32 t)
 {
 	switch(t)
 	{
-	case 1:
+	case LDoNThemes::GUK:
 		return m_pp.ldon_wins_guk;
-	case 2:
+	case LDoNThemes::MIR:
 		return m_pp.ldon_wins_mir;
-	case 3:
+	case LDoNThemes::MMC:
 		return m_pp.ldon_wins_mmc;
-	case 4:
+	case LDoNThemes::RUJ:
 		return m_pp.ldon_wins_ruj;
-	case 5:
+	case LDoNThemes::TAK:
 		return m_pp.ldon_wins_tak;
 	default:
 		return 0;
@@ -5523,77 +5537,62 @@ uint32 Client::GetLDoNLossesTheme(uint32 t)
 {
 	switch(t)
 	{
-	case 1:
+	case LDoNThemes::GUK:
 		return m_pp.ldon_losses_guk;
-	case 2:
+	case LDoNThemes::MIR:
 		return m_pp.ldon_losses_mir;
-	case 3:
+	case LDoNThemes::MMC:
 		return m_pp.ldon_losses_mmc;
-	case 4:
+	case LDoNThemes::RUJ:
 		return m_pp.ldon_losses_ruj;
-	case 5:
+	case LDoNThemes::TAK:
 		return m_pp.ldon_losses_tak;
 	default:
 		return 0;
 	}
 }
 
-void Client::AddLDoNLoss(uint32 theme_id)
-{
-	switch (theme_id)
-	{
-		case 1:
-			m_pp.ldon_losses_guk += 1;
-			database.UpdateAdventureStatsEntry(CharacterID(), theme_id, false);
+void Client::UpdateLDoNWinLoss(uint32 theme_id, bool win, bool remove) {
+	switch (theme_id) {
+		case LDoNThemes::GUK:
+			if (win) {
+				m_pp.ldon_wins_guk += (remove ? -1 : 1);
+			} else {
+				m_pp.ldon_losses_guk += (remove ? -1 : 1);
+			}
 			break;
-		case 2:
-			m_pp.ldon_losses_mir += 1;
-			database.UpdateAdventureStatsEntry(CharacterID(), theme_id, false);
+		case LDoNThemes::MIR:
+			if (win) {
+				m_pp.ldon_wins_mir += (remove ? -1 : 1);
+			} else {
+				m_pp.ldon_losses_mir += (remove ? -1 : 1);
+			}
 			break;
-		case 3:
-			m_pp.ldon_losses_mmc += 1;
-			database.UpdateAdventureStatsEntry(CharacterID(), theme_id, false);
+		case LDoNThemes::MMC:
+			if (win) {
+				m_pp.ldon_wins_mmc += (remove ? -1 : 1);
+			} else {
+				m_pp.ldon_losses_mmc += (remove ? -1 : 1);
+			}
 			break;
-		case 4:
-			m_pp.ldon_losses_ruj += 1;
-			database.UpdateAdventureStatsEntry(CharacterID(), theme_id, false);
+		case LDoNThemes::RUJ:
+			if (win) {
+				m_pp.ldon_wins_ruj += (remove ? -1 : 1);
+			} else {
+				m_pp.ldon_losses_ruj += (remove ? -1 : 1);
+			}
 			break;
-		case 5:
-			m_pp.ldon_losses_tak += 1;
-			database.UpdateAdventureStatsEntry(CharacterID(), theme_id, false);
-			break;
-		default:
-			return;
-	}
-}
-
-void Client::AddLDoNWin(uint32 theme_id)
-{
-	switch (theme_id)
-	{
-		case 1:
-			m_pp.ldon_wins_guk += 1;
-			database.UpdateAdventureStatsEntry(CharacterID(), theme_id, true);
-			break;
-		case 2:
-			m_pp.ldon_wins_mir += 1;
-			database.UpdateAdventureStatsEntry(CharacterID(), theme_id, true);
-			break;
-		case 3:
-			m_pp.ldon_wins_mmc += 1;
-			database.UpdateAdventureStatsEntry(CharacterID(), theme_id, true);
-			break;
-		case 4:
-			m_pp.ldon_wins_ruj += 1;
-			database.UpdateAdventureStatsEntry(CharacterID(), theme_id, true);
-			break;
-		case 5:
-			m_pp.ldon_wins_tak += 1;
-			database.UpdateAdventureStatsEntry(CharacterID(), theme_id, true);
+		case LDoNThemes::TAK:
+			if (win) {
+				m_pp.ldon_wins_tak += (remove ? -1 : 1);
+			} else {
+				m_pp.ldon_losses_tak += (remove ? -1 : 1);
+			}
 			break;
 		default:
 			return;
 	}
+	database.UpdateAdventureStatsEntry(CharacterID(), theme_id, win, remove);
 }
 
 
@@ -5732,16 +5731,27 @@ void Client::AddPVPPoints(uint32 Points)
 	SendPVPStats();
 }
 
-void Client::AddCrystals(uint32 Radiant, uint32 Ebon)
+void Client::AddCrystals(uint32 radiant, uint32 ebon)
 {
-	m_pp.currentRadCrystals += Radiant;
-	m_pp.careerRadCrystals += Radiant;
-	m_pp.currentEbonCrystals += Ebon;
-	m_pp.careerEbonCrystals += Ebon;
+	m_pp.currentRadCrystals += radiant;
+	m_pp.careerRadCrystals += radiant;
+	m_pp.currentEbonCrystals += ebon;
+	m_pp.careerEbonCrystals += ebon;
 
 	SaveCurrency();
 
 	SendCrystalCounts();
+
+	// newer clients handle message client side (older clients likely used eqstr 5967 and 5968, this matches live)
+	if (radiant > 0)
+	{
+		MessageString(Chat::Yellow, YOU_RECEIVE, fmt::format("{} Radiant Crystals", radiant).c_str());
+	}
+
+	if (ebon > 0)
+	{
+		MessageString(Chat::Yellow, YOU_RECEIVE, fmt::format("{} Ebon Crystals", ebon).c_str());
+	}
 }
 
 void Client::SetEbonCrystals(uint32 value) {
@@ -5965,7 +5975,7 @@ void Client::NewAdventure(int id, int theme, const char *text, int member_count,
 void Client::ClearPendingAdventureData()
 {
 	adv_requested_id = 0;
-	adv_requested_theme = 0;
+	adv_requested_theme = LDoNThemes::Unused;
 	safe_delete_array(adv_requested_data);
 	adv_requested_member_count = 0;
 }
@@ -9175,7 +9185,7 @@ void Client::SetDisplayMobInfoWindow(bool display_mob_info_window)
 
 bool Client::IsDevToolsEnabled() const
 {
-	return dev_tools_enabled && RuleB(World, EnableDevTools);
+	return dev_tools_enabled && GetGM() && RuleB(World, EnableDevTools);
 }
 
 void Client::SetDevToolsEnabled(bool in_dev_tools_enabled)
@@ -9465,12 +9475,16 @@ void Client::SendCrossZoneMessage(
 	}
 	else if (!character_name.empty() && !message.empty())
 	{
-		uint32_t pack_size = sizeof(CZMessagePlayer_Struct);
-		auto pack = std::make_unique<ServerPacket>(ServerOP_CZMessagePlayer, pack_size);
-		auto buf = reinterpret_cast<CZMessagePlayer_Struct*>(pack->pBuffer);
+		uint32_t pack_size = sizeof(CZMessage_Struct);
+		auto pack = std::make_unique<ServerPacket>(ServerOP_CZMessage, pack_size);
+		auto buf = reinterpret_cast<CZMessage_Struct*>(pack->pBuffer);
+		uint8 update_type = CZUpdateType_Character;
+		int update_identifier = 0;
+		buf->update_type = update_type;
+		buf->update_identifier = update_identifier;
 		buf->type = chat_type;
-		strn0cpy(buf->character_name, character_name.c_str(), sizeof(buf->character_name));
 		strn0cpy(buf->message, message.c_str(), sizeof(buf->message));
+		strn0cpy(buf->client_name, character_name.c_str(), sizeof(buf->client_name));
 
 		worldserver.SendPacket(pack.get());
 	}
@@ -9503,7 +9517,7 @@ void Client::SendCrossZoneMessageString(
 	auto buf = reinterpret_cast<CZClientMessageString_Struct*>(pack->pBuffer);
 	buf->string_id = string_id;
 	buf->chat_type = chat_type;
-	strn0cpy(buf->character_name, character_name.c_str(), sizeof(buf->character_name));
+	strn0cpy(buf->client_name, character_name.c_str(), sizeof(buf->client_name));
 	buf->args_size = args_size;
 	memcpy(buf->args, argument_buffer.buffer(), argument_buffer.size());
 
@@ -9517,28 +9531,25 @@ void Client::SendCrossZoneMessageString(
 	}
 }
 
-void Client::UpdateExpeditionInfoAndLockouts()
+void Client::SendDynamicZoneUpdates()
 {
-	// this is processed by client after entering a zone
+	// bit inefficient since each do lookups but it avoids duplicating code here
 	SendDzCompassUpdate();
+	SetDynamicZoneMemberStatus(DynamicZoneMemberStatus::Online);
 
 	m_expedition_lockouts = ExpeditionDatabase::LoadCharacterLockouts(CharacterID());
 
+	// expeditions are the only dz type that keep the window updated
 	auto expedition = GetExpedition();
 	if (expedition)
 	{
-		expedition->SendClientExpeditionInfo(this);
+		expedition->GetDynamicZone()->SendClientWindowUpdate(this);
 
 		// live synchronizes lockouts obtained during the active expedition to
 		// members once they zone into the expedition's dynamic zone instance
-		if (expedition->GetDynamicZone().IsCurrentZoneDzInstance())
+		if (expedition->GetDynamicZone()->IsCurrentZoneDzInstance())
 		{
 			expedition->SyncCharacterLockouts(CharacterID(), m_expedition_lockouts);
-			expedition->SetMemberStatus(this, DynamicZoneMemberStatus::InDynamicZone);
-		}
-		else
-		{
-			expedition->SetMemberStatus(this, DynamicZoneMemberStatus::Online);
 		}
 	}
 
@@ -9548,18 +9559,29 @@ void Client::UpdateExpeditionInfoAndLockouts()
 	RequestPendingExpeditionInvite();
 }
 
-Expedition* Client::CreateExpedition(DynamicZone& dz_instance, ExpeditionRequest& request)
+Expedition* Client::CreateExpedition(DynamicZone& dz, bool disable_messages)
 {
-	return Expedition::TryCreate(this, dz_instance, request);
+	return Expedition::TryCreate(this, dz, disable_messages);
 }
 
 Expedition* Client::CreateExpedition(
 	const std::string& zone_name, uint32 version, uint32 duration, const std::string& expedition_name,
 	uint32 min_players, uint32 max_players, bool disable_messages)
 {
-	DynamicZone dz_instance{ ZoneID(zone_name), version, duration, DynamicZoneType::Expedition };
-	ExpeditionRequest request{ expedition_name, min_players, max_players, disable_messages };
-	return Expedition::TryCreate(this, dz_instance, request);
+	DynamicZone dz{ ZoneID(zone_name), version, duration, DynamicZoneType::Expedition };
+	dz.SetName(expedition_name);
+	dz.SetMinPlayers(min_players);
+	dz.SetMaxPlayers(max_players);
+
+	return Expedition::TryCreate(this, dz, disable_messages);
+}
+
+void Client::CreateTaskDynamicZone(int task_id, DynamicZone& dz_request)
+{
+	if (task_state)
+	{
+		task_state->CreateTaskDynamicZone(this, task_id, dz_request);
+	}
 }
 
 Expedition* Client::GetExpedition() const
@@ -9879,22 +9901,57 @@ void Client::GoToDzSafeReturnOrBind(const DynamicZone* dynamic_zone)
 	GoToBind();
 }
 
+void Client::AddDynamicZoneID(uint32_t dz_id)
+{
+	auto it = std::find_if(m_dynamic_zone_ids.begin(), m_dynamic_zone_ids.end(),
+		[&](uint32_t current_dz_id) { return current_dz_id == dz_id; });
+
+	if (it == m_dynamic_zone_ids.end())
+	{
+		LogDynamicZonesDetail("Adding dz [{}] to client [{}]", dz_id, GetName());
+		m_dynamic_zone_ids.push_back(dz_id);
+	}
+}
+
+void Client::RemoveDynamicZoneID(uint32_t dz_id)
+{
+	LogDynamicZonesDetail("Removing dz [{}] from client [{}]", dz_id, GetName());
+	m_dynamic_zone_ids.erase(std::remove_if(m_dynamic_zone_ids.begin(), m_dynamic_zone_ids.end(),
+		[&](uint32_t current_dz_id) { return current_dz_id == dz_id; }
+	), m_dynamic_zone_ids.end());
+}
+
 std::vector<DynamicZone*> Client::GetDynamicZones(uint32_t zone_id, int zone_version)
 {
 	std::vector<DynamicZone*> client_dzs;
 
-	// check client systems for any associated dynamic zones optionally filtered by zone
-	Expedition* expedition = GetExpedition();
-	if (expedition &&
-	   (zone_id == 0 || expedition->GetDynamicZone().GetZoneID() == zone_id) &&
-	   (zone_version < 0 || expedition->GetDynamicZone().GetZoneVersion() == zone_version))
+	for (uint32_t dz_id : m_dynamic_zone_ids)
 	{
-		client_dzs.emplace_back(&expedition->GetDynamicZone());
+		auto dz = DynamicZone::FindDynamicZoneByID(dz_id);
+		if (dz &&
+		   (zone_id == 0 || dz->GetZoneID() == zone_id) &&
+		   (zone_version < 0 || dz->GetZoneVersion() == zone_version))
+		{
+			client_dzs.emplace_back(dz);
+		}
 	}
 
-	// todo: tasks, missions (shared tasks), and quests with an associated dz to zone_id
-
 	return client_dzs;
+}
+
+void Client::SetDynamicZoneMemberStatus(DynamicZoneMemberStatus status)
+{
+	// sets status on all associated dzs client may have. if client is online
+	// inside a dz, only that dz has the "In Dynamic Zone" status set
+	for (auto& dz : GetDynamicZones())
+	{
+		// the rule to disable this status is handled internally by the dz
+		if (status == DynamicZoneMemberStatus::Online && dz->IsCurrentZoneDzInstance())
+		{
+			status = DynamicZoneMemberStatus::InDynamicZone;
+		}
+		dz->SetMemberStatus(CharacterID(), status);
+	}
 }
 
 void Client::MovePCDynamicZone(uint32 zone_id, int zone_version, bool msg_if_invalid)
@@ -10454,5 +10511,211 @@ void Client::ApplyWeaponsStance()
 		weaponstance.aabonus_enabled = false;
 		weaponstance.itembonus_enabled = false;
 		weaponstance.spellbonus_enabled = false;
+	}
+}
+
+uint16 Client::GetDoorToolEntityId() const
+{
+	return m_door_tool_entity_id;
+}
+
+void Client::SetDoorToolEntityId(uint16 door_tool_entity_id)
+{
+	Client::m_door_tool_entity_id = door_tool_entity_id;
+}
+
+int Client::GetIPExemption()
+{
+	return database.GetIPExemption(GetIPString());
+}
+
+std::string Client::GetIPString()
+{
+	in_addr client_ip{};
+	client_ip.s_addr = GetIP();
+	return inet_ntoa(client_ip);
+}
+
+void Client::SetIPExemption(int exemption_amount)
+{
+	database.SetIPExemption(GetIPString(), exemption_amount);
+}
+
+void Client::ReadBookByName(std::string book_name, uint8 book_type)
+{
+	int16 book_language = 0;
+	std::string book_text = content_db.GetBook(book_name.c_str(), &book_language);
+	int length = book_text.length();
+
+	if (book_text[0] != '\0') {
+		LogDebug("Client::ReadBookByName() Book Name: [{}] Text: [{}]", book_name, book_text.c_str());
+		auto outapp = new EQApplicationPacket(OP_ReadBook, length + sizeof(BookText_Struct));
+		BookText_Struct *out = (BookText_Struct *) outapp->pBuffer;
+		out->window = 0xFF;
+		out->type = book_type;
+		out->invslot = 0;
+
+		memcpy(out->booktext, book_text.c_str(), length);
+
+		if (book_language > 0 && book_language < MAX_PP_LANGUAGE) {
+			if (m_pp.languages[book_language] < 100) {
+				GarbleMessage(out->booktext, (100 - m_pp.languages[book_language]));
+			}
+		}
+
+		QueuePacket(outapp);
+		safe_delete(outapp);
+	}
+}
+
+// this will fetch raid clients if exists
+// fallback to group if raid doesn't exist
+// fallback to self if group doesn't exist
+std::vector<Client *> Client::GetPartyMembers()
+{
+	// get clients to update
+	std::vector<Client *> clients_to_update = {};
+
+	// raid
+	Raid *raid = entity_list.GetRaidByClient(this);
+	if (raid) {
+		for (auto &e : raid->members) {
+			if (e.member && e.member->IsClient()) {
+				clients_to_update.push_back(e.member->CastToClient());
+			}
+		}
+	}
+
+	// group
+	if (clients_to_update.empty()) {
+		Group *group = entity_list.GetGroupByClient(this);
+		if (group) {
+			for (auto &m : group->members) {
+				if (m && m->IsClient()) {
+					clients_to_update.push_back(m->CastToClient());
+				}
+			}
+		}
+	}
+
+	// solo
+	if (clients_to_update.empty()) {
+		clients_to_update.push_back(this);
+	}
+
+	return clients_to_update;
+}
+
+void Client::SummonBaggedItems(uint32 bag_item_id, const std::vector<ServerLootItem_Struct>& bag_items)
+{
+	if (bag_items.empty())
+	{
+		return;
+	}
+
+	// todo: maybe some common functions for SE_SummonItem and SE_SummonItemIntoBag
+
+	const EQ::ItemData* bag_item = database.GetItem(bag_item_id);
+	if (!bag_item)
+	{
+		Message(Chat::Red, fmt::format("Unable to summon item [{}]. Item not found.", bag_item_id).c_str());
+		return;
+	}
+
+	if (CheckLoreConflict(bag_item))
+	{
+		DuplicateLoreMessage(bag_item_id);
+		return;
+	}
+
+	int bag_item_charges = 1; // just summoning a single bag
+	EQ::ItemInstance* summoned_bag = database.CreateItem(bag_item_id, bag_item_charges);
+	if (!summoned_bag || !summoned_bag->IsClassBag())
+	{
+		Message(Chat::Red, fmt::format("Failed to summon bag item [{}]", bag_item_id).c_str());
+		safe_delete(summoned_bag);
+		return;
+	}
+
+	for (const auto& item : bag_items)
+	{
+		uint8 open_slot = summoned_bag->FirstOpenSlot();
+		if (open_slot == 0xff)
+		{
+			Message(Chat::Red, "Attempting to summon item in to bag, but there is no room in the summoned bag!");
+			break;
+		}
+
+		const EQ::ItemData* current_item = database.GetItem(item.item_id);
+
+		if (CheckLoreConflict(current_item))
+		{
+			DuplicateLoreMessage(item.item_id);
+		}
+		else
+		{
+			EQ::ItemInstance* summoned_bag_item = database.CreateItem(
+				item.item_id,
+				item.charges,
+				item.aug_1,
+				item.aug_2,
+				item.aug_3,
+				item.aug_4,
+				item.aug_5,
+				item.aug_6,
+				item.attuned
+			);
+			if (summoned_bag_item)
+			{
+				summoned_bag->PutItem(open_slot, *summoned_bag_item);
+				safe_delete(summoned_bag_item);
+			}
+		}
+	}
+
+	PushItemOnCursor(*summoned_bag);
+	SendItemPacket(EQ::invslot::slotCursor, summoned_bag, ItemPacketLimbo);
+	safe_delete(summoned_bag);
+}
+
+void Client::SaveSpells()
+{
+	std::vector<CharacterSpellsRepository::CharacterSpells> character_spells = {};
+
+	for (int index = 0; index < EQ::spells::SPELLBOOK_SIZE; index++) {
+		if (IsValidSpell(m_pp.spell_book[index])) {
+			auto spell = CharacterSpellsRepository::NewEntity();
+			spell.id       = CharacterID();
+			spell.slot_id  = index;
+			spell.spell_id = m_pp.spell_book[index];
+			character_spells.emplace_back(spell);
+		}
+	}
+
+	CharacterSpellsRepository::DeleteWhere(database, fmt::format("id = {}", CharacterID()));
+
+	if (!character_spells.empty()) {
+		CharacterSpellsRepository::InsertMany(database, character_spells);
+	}
+}
+
+void Client::SaveDisciplines()
+{
+	std::vector<CharacterDisciplinesRepository::CharacterDisciplines> character_discs = {};
+
+	for (int index = 0; index < MAX_PP_DISCIPLINES; index++) {
+		if (IsValidSpell(m_pp.disciplines.values[index])) {
+			auto discipline = CharacterDisciplinesRepository::NewEntity();
+			discipline.id      = CharacterID();
+			discipline.slot_id = index;
+			discipline.disc_id = m_pp.disciplines.values[index];
+			character_discs.emplace_back(discipline);
+		}
+	}
+
+	CharacterDisciplinesRepository::DeleteWhere(database, fmt::format("id = {}", CharacterID()));
+
+	if (!character_discs.empty()) {
+		CharacterDisciplinesRepository::InsertMany(database, character_discs);
 	}
 }

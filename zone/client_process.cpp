@@ -119,8 +119,9 @@ bool Client::Process() {
 
 		// SendHPUpdate calls hpupdate_timer.Start so it can delay this timer, so lets not reset with the check
 		// since the function will anyways
-		if (hpupdate_timer.Check(false))
+		if (hpupdate_timer.Check(false)) {
 			SendHPUpdate();
+		}
 
 		/* I haven't naturally updated my position in 10 seconds, updating manually */
 		if (!is_client_moving && position_update_timer.Check()) {
@@ -180,11 +181,9 @@ bool Client::Process() {
 				myraid->MemberZoned(this);
 			}
 
-			Expedition* expedition = GetExpedition();
-			if (expedition)
-			{
-				expedition->SetMemberStatus(this, DynamicZoneMemberStatus::Offline);
-			}
+			SetDynamicZoneMemberStatus(DynamicZoneMemberStatus::Offline);
+
+			parse->EventPlayer(EVENT_DISCONNECT, this, "", 0);
 
 			return false; //delete client
 		}
@@ -445,19 +444,8 @@ bool Client::Process() {
 			}
 		}
 
-		if (HasVirus()) {
-			if (viral_timer.Check()) {
-				viral_timer_counter++;
-				for (int i = 0; i < MAX_SPELL_TRIGGER * 2; i += 2) {
-					if (viral_spells[i]) {
-						if (viral_timer_counter % spells[viral_spells[i]].viral_timer == 0) {
-							SpreadVirus(viral_spells[i], viral_spells[i + 1]);
-						}
-					}
-				}
-			}
-			if (viral_timer_counter > 999)
-				viral_timer_counter = 0;
+		if (viral_timer.Check() && !dead) {
+			VirusEffectProcess();
 		}
 
 		ProjectileAttack();
@@ -466,7 +454,7 @@ bool Client::Process() {
 			if (gravity_timer.Check())
 				DoGravityEffect();
 		}
-		
+
 		if (shield_timer.Check()) {
 			ShieldAbilityFinish();
 		}
@@ -521,9 +509,6 @@ bool Client::Process() {
 		}
 	}
 
-	if (focus_proc_limit_timer.Check() && !dead)
-		FocusProcLimitProcess();
-
 	if (client_state == CLIENT_KICKED) {
 		Save();
 		OnDisconnect(true);
@@ -561,11 +546,7 @@ bool Client::Process() {
 			AI_Start(CLIENT_LD_TIMEOUT);
 			SendAppearancePacket(AT_Linkdead, 1);
 
-			Expedition* expedition = GetExpedition();
-			if (expedition)
-			{
-				expedition->SetMemberStatus(this, DynamicZoneMemberStatus::LinkDead);
-			}
+			SetDynamicZoneMemberStatus(DynamicZoneMemberStatus::LinkDead);
 		}
 	}
 
@@ -697,10 +678,9 @@ void Client::OnDisconnect(bool hard_disconnect) {
 		}
 	}
 
-	Expedition* expedition = GetExpedition();
-	if (expedition && !bZoning)
+	if (!bZoning)
 	{
-		expedition->SetMemberStatus(this, DynamicZoneMemberStatus::Offline);
+		SetDynamicZoneMemberStatus(DynamicZoneMemberStatus::Offline);
 	}
 
 	RemoveAllAuras();
@@ -1872,7 +1852,7 @@ void Client::DoEnduranceUpkeep() {
 
 	if(upkeep_sum != 0){
 		SetEndurance(GetEndurance() - upkeep_sum);
-		TryTriggerOnValueAmount(false, false, true);
+		TryTriggerOnCastRequirement();
 	}
 
 	if (!has_effect)
@@ -2080,7 +2060,8 @@ void Client::HandleRespawnFromHover(uint32 Option)
 		}
 
 		//After they've respawned into the same zone, trigger EVENT_RESPAWN
-		parse->EventPlayer(EVENT_RESPAWN, this, static_cast<std::string>(itoa(Option)), is_rez ? 1 : 0);
+		std::string export_string = fmt::format("{}", Option);
+		parse->EventPlayer(EVENT_RESPAWN, this, export_string, is_rez ? 1 : 0);
 
 		//Pop Rez option from the respawn options list;
 		//easiest way to make sure it stays at the end and

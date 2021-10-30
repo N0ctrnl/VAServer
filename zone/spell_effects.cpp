@@ -46,7 +46,7 @@ extern WorldServer worldserver;
 
 // the spell can still fail here, if the buff can't stack
 // in this case false will be returned, true otherwise
-bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_override)
+bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_override, int reflect_effectiveness, int32 duration_override)
 {
 	int caster_level, buffslot, effect, effect_value, i;
 	EQ::ItemInstance *SummonedItem=nullptr;
@@ -62,6 +62,11 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 
 	if (spell.disallow_sit && IsBuffSpell(spell_id) && IsClient() && (CastToClient()->IsSitting() || CastToClient()->GetHorseId() != 0))
 		return false;
+
+	bool CanMemoryBlurFromMez = true;
+	if (IsMezzed()) { //Check for special memory blur behavior when on mez, this needs to be before buff override.
+		CanMemoryBlurFromMez = false;
+	}
 
 	bool c_override = false;
 	if (caster && caster->IsClient() && GetCastedSpellInvSlot() > 0) {
@@ -114,7 +119,7 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 			}
 			else
 			{
-				buffslot = AddBuff(caster, spell_id);
+				buffslot = AddBuff(caster, spell_id, duration_override);
 			}
 			if(buffslot == -1)	// stacking failure
 				return false;
@@ -156,41 +161,32 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 		}
 	}
 
-	if(IsNPC())
-	{
-		std::vector<EQ::Any> args;
-		args.push_back(&buffslot);
-		int i = parse->EventSpell(EVENT_SPELL_EFFECT_NPC, CastToNPC(), nullptr, spell_id, caster ? caster->GetID() : 0, &args);
-		if(i != 0){
+	std::string buf = fmt::format(
+		"{} {} {} {}",
+		caster ? caster->GetID() : 0,
+		buffslot >= 0 ? buffs[buffslot].ticsremaining : 0,
+		caster ? caster->GetLevel() : 0,
+		buffslot
+	);
+
+	if (IsClient()) {
+		if (parse->EventSpell(EVENT_SPELL_EFFECT_CLIENT, nullptr, CastToClient(), spell_id, buf, 0) != 0) {
 			CalcBonuses();
 			return true;
 		}
-	}
-	else if(IsClient())
-	{
-		std::vector<EQ::Any> args;
-		args.push_back(&buffslot);
-		int i = parse->EventSpell(EVENT_SPELL_EFFECT_CLIENT, nullptr, CastToClient(), spell_id, caster ? caster->GetID() : 0, &args);
-		if(i != 0){
+	} else if (IsNPC()) {
+		if (parse->EventSpell(EVENT_SPELL_EFFECT_NPC, CastToNPC(), nullptr, spell_id, buf, 0) != 0) {
 			CalcBonuses();
 			return true;
 		}
 	}
 
-	if(spells[spell_id].viral_targets > 0) {
-		if(!viral_timer.Enabled())
+	if(IsVirusSpell(spell_id)) {
+
+		if (!viral_timer.Enabled()) {
 			viral_timer.Start(1000);
-
-		has_virus = true;
-		for(int i = 0; i < MAX_SPELL_TRIGGER*2; i+=2)
-		{
-			if(!viral_spells[i])
-			{
-				viral_spells[i] = spell_id;
-				viral_spells[i+1] = caster->GetID();
-				break;
-			}
 		}
+		buffs[buffslot].virus_spread_time = zone->random.Int(GetViralMinSpreadTime(spell_id), GetViralMaxSpreadTime(spell_id));
 	}
 
 
@@ -201,6 +197,7 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 
 	// if buff slot, use instrument mod there, otherwise calc it
 	uint32 instrument_mod = buffslot > -1 ? buffs[buffslot].instrument_mod : caster ? caster->GetInstrumentMod(spell_id) : 10;
+																			 
 	// iterate through the effects in the spell
 	for (i = 0; i < EFFECT_COUNT; i++)
 	{
@@ -216,10 +213,19 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 		if (GetSpellPowerDistanceMod())
 			effect_value = effect_value*GetSpellPowerDistanceMod()/100;
 
+		//Prevents effect from being applied
+		if (spellbonuses.NegateEffects) {
+			if (effect != SE_NegateSpellEffect && NegateSpellEffect(spell_id, effect)) {
+				if (caster) {
+					caster->Message(Chat::Red, "Part or all of this spell has lost its effectiveness."); //Placeholder msg, until live one is obtained.
+				}
+				continue;
+			}
+		}
+
 #ifdef SPELL_EFFECT_SPAM
 		effect_desc[0] = 0;
 #endif
-
 		switch(effect)
 		{
 			case SE_CurrentHP:	// nukes, heals; also regen/dot if a buff
@@ -245,7 +251,12 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 
 					//handles AAs and what not...
 					if(caster) {
-						dmg = caster->GetActSpellDamage(spell_id, dmg, this);
+						if (reflect_effectiveness) {
+							dmg = caster->GetActReflectedSpellDamage(spell_id, (int32)(spells[spell_id].base[i] * partial / 100), reflect_effectiveness);
+						}
+						else {
+							dmg = caster->GetActSpellDamage(spell_id, dmg, this);
+						}
 						caster->ResourceTap(-dmg, spell_id);
 					}
 
@@ -343,31 +354,13 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 #ifdef SPELL_EFFECT_SPAM
 				snprintf(effect_desc, _EDLEN, "Complete Heal");
 #endif
-				//make sure they are not allready affected by this...
-				//I think that is the point of making this a buff.
-				//this is in the wrong spot, it should be in the immune
-				//section so the buff timer does not get refreshed!
-
-				int i;
-				bool inuse = false;
-				int buff_count = GetMaxTotalSlots();
-				for(i = 0; i < buff_count; i++) {
-					if(buffs[i].spellid == spell_id && i != buffslot) {
-						Message(0, "You must wait before you can be affected by this spell again.");
-						inuse = true;
-						break;
-					}
-				}
-				if(inuse)
-					break;
-
-				int32 val = 0;
-				val = 7500 * effect_value;
-				if (caster)
+				int val = 7500 * effect_value;
+				if (caster) {
 					val = caster->GetActSpellHealing(spell_id, val, this);
-
-				if (val > 0)
+				}
+				if (val > 0) {
 					HealDamage(val, caster);
+				}
 
 				break;
 			}
@@ -387,7 +380,7 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 							caster->SetMana(caster->GetMana() + std::abs(effect_value));
 
 						if (effect_value < 0)
-							TryTriggerOnValueAmount(false, true);
+							TryTriggerOnCastRequirement();
 #ifdef SPELL_EFFECT_SPAM
 						if (caster)
 							caster->Message(Chat::White, "You have gained %+i mana!", effect_value);
@@ -403,7 +396,7 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 
 				SetMana(GetMana() + effect_value);
 				if (effect_value < 0)
-					TryTriggerOnValueAmount(false, true);
+					TryTriggerOnCastRequirement();
 				}
 
 				break;
@@ -600,7 +593,6 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 				snprintf(effect_desc, _EDLEN, "Invisibility to Animals");
 #endif
 				invisible_animals = true;
-				SetInvisible(0);
 				break;
 			}
 
@@ -611,7 +603,6 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 				snprintf(effect_desc, _EDLEN, "Invisibility to Undead");
 #endif
 				invisible_undead = true;
-				SetInvisible(0);
 				break;
 			}
 			case SE_SeeInvis:
@@ -855,7 +846,7 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 							MessageID = SENSE_ANIMAL;
 						}
 
-						Mob *ClosestMob = entity_list.GetClosestMobByBodyType(this, bt);
+						Mob *ClosestMob = entity_list.GetClosestMobByBodyType(this, bt, true);
 
 						if(ClosestMob)
 						{
@@ -1092,14 +1083,19 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 						caster->MessageString(Chat::SpellFailure, SPELL_NO_EFFECT, spells[spell_id].name);
 					break;
 				}
-
+				/*
+					TODO: Parsing shows there is no level modifier. However, a consistent -2% modifer was
+					found on spell with value 950 (95% spells would have 7% failure rates).
+					Further investigation is needed. ~ Kayen
+				*/
+				int chance = spells[spell_id].base[i];
 				int buff_count = GetMaxTotalSlots();
 				for(int slot = 0; slot < buff_count; slot++) {
 					if (buffs[slot].spellid != SPELL_UNKNOWN &&
 						IsDetrimentalSpell(buffs[slot].spellid) &&
 						spells[buffs[slot].spellid].dispel_flag == 0)
 					{
-						if (caster && TryDispel(caster->GetLevel(),buffs[slot].casterlevel, effect_value)){
+						if (zone->random.Int(1, 1000) <= chance){
 							BuffFadeBySlot(slot);
 							slot = buff_count;
 						}
@@ -1119,13 +1115,14 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 					break;
 				}
 
+				int chance = spells[spell_id].base[i];
 				int buff_count = GetMaxTotalSlots();
 				for(int slot = 0; slot < buff_count; slot++) {
 					if (buffs[slot].spellid != SPELL_UNKNOWN &&
 						IsBeneficialSpell(buffs[slot].spellid) &&
 						spells[buffs[slot].spellid].dispel_flag == 0)
 					{
-						if (caster && TryDispel(caster->GetLevel(),buffs[slot].casterlevel, effect_value)){
+						if (zone->random.Int(1, 1000) <= chance) {
 							BuffFadeBySlot(slot);
 							slot = buff_count;
 						}
@@ -1136,13 +1133,23 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 
 			case SE_Purify:
 			{
-				//Attempt to remove all Deterimental buffs.
-				int buff_count = GetMaxTotalSlots();
-				for(int slot = 0; slot < buff_count; slot++) {
-					if (buffs[slot].spellid != SPELL_UNKNOWN &&
-                            IsDetrimentalSpell(buffs[slot].spellid) && spells[buffs[slot].spellid].dispel_flag == 0)
-					{
-						if (caster && TryDispel(caster->GetLevel(),buffs[slot].casterlevel, effect_value)){
+				//Attempt to remove up to base amount of detrimental effects (excluding charm, fear, resurrection, and revival sickness).
+				int purify_count = spells[spell_id].base[i];
+				if (purify_count > GetMaxTotalSlots()) {
+					purify_count = GetMaxTotalSlots();
+				}
+
+				for(int slot = 0; slot < purify_count; slot++) {
+					if (IsValidSpell(buffs[slot].spellid) && IsDetrimentalSpell(buffs[slot].spellid)){
+
+						if (!IsEffectInSpell(buffs[slot].spellid, SE_Charm) &&
+							!IsEffectInSpell(buffs[slot].spellid, SE_Fear) &&
+							buffs[slot].spellid != SPELL_RESURRECTION_SICKNESS &&
+							buffs[slot].spellid != SPELL_RESURRECTION_SICKNESS2 &&
+							buffs[slot].spellid != SPELL_RESURRECTION_SICKNESS3 &&
+							buffs[slot].spellid != SPELL_RESURRECTION_SICKNESS4 &&
+							buffs[slot].spellid != SPELL_REVIVAL_SICKNESS)
+						{
 							BuffFadeBySlot(slot);
 						}
 					}
@@ -1319,9 +1326,6 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 #ifdef SPELL_EFFECT_SPAM
 				snprintf(effect_desc, _EDLEN, "Melee Absorb Rune: %+i", effect_value);
 #endif
-				if (caster)
-					effect_value = caster->ApplySpellEffectiveness(spell_id, effect_value);
-
 				buffs[buffslot].melee_rune = effect_value;
 				break;
 			}
@@ -1445,37 +1449,53 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 				}
 				// Racial Illusions
 				else {
-					SendIllusionPacket
-					(
-						spell.base[i],
-						Mob::GetDefaultGender(spell.base[i], GetGender()),
-						spell.base2[i],
-						spell.max[i]
+					auto gender_id = (
+						spell.max[i] > 0 &&
+						(
+							spell.max[i] != 3 ||
+							spell.base2[i] == 0
+						) ?
+						(spell.max[i] - 1) :
+						Mob::GetDefaultGender(spell.base[i], GetGender())
 					);
-					if(spell.base[i] == OGRE){
-						SendAppearancePacket(AT_Size, 9);
+
+					auto race_size = GetRaceGenderDefaultHeight(
+						spell.base[i],
+						gender_id
+					);
+
+					if (spell.max[i] > 0) {
+						if (spell.base2[i] == 0) {
+							SendIllusionPacket(
+								spell.base[i],
+								gender_id
+							);
+						} else {
+							if (spell.max[i] != 3) {
+								SendIllusionPacket(
+									spell.base[i],
+									gender_id,
+									spell.base2[i],
+									spell.max[i]
+								);
+							} else {
+								SendIllusionPacket(
+									spell.base[i],
+									gender_id,
+									spell.base2[i],
+									spell.base2[i]
+								);
+							}
+						}
+					} else {
+						SendIllusionPacket(
+							spell.base[i],
+							gender_id,
+							spell.base2[i],
+							spell.max[i]
+						);
 					}
-					else if(spell.base[i] == TROLL){
-						SendAppearancePacket(AT_Size, 8);
-					}
-					else if(spell.base[i] == VAHSHIR || spell.base[i] == BARBARIAN){
-						SendAppearancePacket(AT_Size, 7);
-					}
-					else if(spell.base[i] == HALF_ELF || spell.base[i] == WOOD_ELF || spell.base[i] == DARK_ELF || spell.base[i] == FROGLOK){
-						SendAppearancePacket(AT_Size, 5);
-					}
-					else if(spell.base[i] == DWARF){
-						SendAppearancePacket(AT_Size, 4);
-					}
-					else if(spell.base[i] == HALFLING || spell.base[i] == GNOME){
-						SendAppearancePacket(AT_Size, 3);
-					}
-					else if(spell.base[i] == WOLF) {
-						SendAppearancePacket(AT_Size, 2);
-					}
-					else{
-						SendAppearancePacket(AT_Size, 6);
-					}
+					SendAppearancePacket(AT_Size, race_size);
 				}
 
 				for (int x = EQ::textures::textureBegin; x <= EQ::textures::LastTintableTexture; x++) {
@@ -1515,16 +1535,16 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 #ifdef SPELL_EFFECT_SPAM
 				snprintf(effect_desc, _EDLEN, "Memory Blur: %d", effect_value);
 #endif
-				int wipechance = spells[spell_id].base[i];
-				int bonus = 0;
-
-				if (caster){
-					bonus = caster->spellbonuses.IncreaseChanceMemwipe +
-						caster->itembonuses.IncreaseChanceMemwipe +
-						caster->aabonuses.IncreaseChanceMemwipe;
+				//Memory blur component of Mez spells is not checked again if Mez is recast on a target that is already mezed
+				if (!CanMemoryBlurFromMez && IsEffectInSpell(spell_id, SE_Mez)) {
+					break;
 				}
 
-				wipechance += wipechance*bonus/100;
+				int wipechance = 0;
+
+				if (caster) {
+					wipechance = caster->GetMemoryBlurChance(effect_value);
+				}
 
 				if(zone->random.Roll(wipechance))
 				{
@@ -2334,22 +2354,20 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 				???? = spells[spell_id].max[i] - MOST of the effects have this value.
 				*Max is lower value then Weapon base, possibly min hit vs Weapon Damage range ie. MakeRandInt(max,base)
 				*/
-				int16 focus = 0;
 				int ReuseTime = spells[spell_id].recast_time + spells[spell_id].recovery_time;
-				if (!caster)
+				if (!caster) {
 					break;
-
-				focus = caster->GetFocusEffect(focusFcBaseEffects, spell_id);
-
+				}
+				
 				switch(spells[spell_id].skill) {
 				case EQ::skills::SkillThrowing:
-					caster->DoThrowingAttackDmg(this, nullptr, nullptr, spells[spell_id].base[i],spells[spell_id].base2[i], focus,  ReuseTime);
+					caster->DoThrowingAttackDmg(this, nullptr, nullptr, effect_value,spells[spell_id].base2[i], 0, ReuseTime);
 					break;
 				case EQ::skills::SkillArchery:
-					caster->DoArcheryAttackDmg(this, nullptr, nullptr, spells[spell_id].base[i],spells[spell_id].base2[i],focus,  ReuseTime);
+					caster->DoArcheryAttackDmg(this, nullptr, nullptr, effect_value,spells[spell_id].base2[i], 0, ReuseTime);
 					break;
 				default:
-					caster->DoMeleeSkillAttackDmg(this, spells[spell_id].base[i], spells[spell_id].skill, spells[spell_id].base2[i], focus, false, ReuseTime);
+					caster->DoMeleeSkillAttackDmg(this, effect_value, spells[spell_id].skill, spells[spell_id].base2[i], 0, false, ReuseTime);
 					break;
 				}
 				break;
@@ -2442,8 +2460,9 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 #endif
 				if(IsClient()) {
 					CastToClient()->SetEndurance(CastToClient()->GetEndurance() + effect_value);
-					if (effect_value < 0)
-						TryTriggerOnValueAmount(false, false, true);
+					if (effect_value < 0) {
+						TryTriggerOnCastRequirement();
+					}
 				}
 				break;
 			}
@@ -2454,10 +2473,11 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 				snprintf(effect_desc, _EDLEN, "Current Endurance Once: %+i", effect_value);
 #endif
 
-				if(IsClient()) {
+				if (IsClient()) {
 					CastToClient()->SetEndurance(CastToClient()->GetEndurance() + effect_value);
-					if (effect_value < 0)
-						TryTriggerOnValueAmount(false, false, true);
+					if (effect_value < 0) {
+						TryTriggerOnCastRequirement();
+					}
 				}
 				break;
 			}
@@ -2636,7 +2656,7 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 				int32 mana_to_use = GetMana() - spell.base[i];
 				if(mana_to_use > -1) {
 					SetMana(GetMana() - spell.base[i]);
-					TryTriggerOnValueAmount(false, true);
+					TryTriggerOnCastRequirement();
 					// we take full dmg(-10 to make the damage the right sign)
 					mana_damage = spell.base[i] / -10 * spell.base2[i];
 					Damage(caster, mana_damage, spell_id, spell.skill, false, i, true);
@@ -2656,7 +2676,7 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 					int32 end_to_use = CastToClient()->GetEndurance() - spell.base[i];
 					if(end_to_use > -1) {
 						CastToClient()->SetEndurance(CastToClient()->GetEndurance() - spell.base[i]);
-						TryTriggerOnValueAmount(false, false, true);
+						TryTriggerOnCastRequirement();
 						// we take full dmg(-10 to make the damage the right sign)
 						end_damage = spell.base[i] / -10 * spell.base2[i];
 						Damage(caster, end_damage, spell_id, spell.skill, false, i, true);
@@ -2738,7 +2758,7 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 					else {
 						dmg = ratio*max_mana/10;
 						caster->SetMana(caster->GetMana() - max_mana);
-						TryTriggerOnValueAmount(false, true);
+						TryTriggerOnCastRequirement();
 					}
 
 					if(IsDetrimentalSpell(spell_id)) {
@@ -2969,11 +2989,6 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 				}
 				else
 					caster->MessageString(Chat::SpellFailure, FEAR_TOO_HIGH);
-				break;
-			}
-
-			case SE_Proc_Timer_Modifier:{
-				buffs[buffslot].focusproclimit_procamt = spells[spell_id].base[i]; //Set max amount of procs before lockout timer
 				break;
 			}
 
@@ -3280,6 +3295,7 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 			case SE_Skill_Base_Damage_Mod:
 			case SE_Worn_Endurance_Regen_Cap:
 			case SE_Buy_AA_Rank:
+			case SE_Ff_FocusTimerMin:
 			{
 				break;
 			}
@@ -3311,16 +3327,16 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 }
 
 int Mob::CalcSpellEffectValue(uint16 spell_id, int effect_id, int caster_level, uint32 instrument_mod, Mob *caster,
-			      int ticsremaining, uint16 caster_id)
+	int ticsremaining, uint16 caster_id)
 {
-	int formula, base, max, effect_value;
-
 	if (!IsValidSpell(spell_id) || effect_id < 0 || effect_id >= EFFECT_COUNT)
 		return 0;
 
-	formula = spells[spell_id].formula[effect_id];
-	base = spells[spell_id].base[effect_id];
-	max = spells[spell_id].max[effect_id];
+	int formula = spells[spell_id].formula[effect_id];
+	int base = spells[spell_id].base[effect_id];
+	int max = spells[spell_id].max[effect_id];
+	int effect_value = 0;
+	int oval = 0;
 
 	if (IsBlankSpellEffect(spell_id, effect_id))
 		return 0;
@@ -3328,22 +3344,47 @@ int Mob::CalcSpellEffectValue(uint16 spell_id, int effect_id, int caster_level, 
 	effect_value = CalcSpellEffectValue_formula(formula, base, max, caster_level, spell_id, ticsremaining);
 
 	// this doesn't actually need to be a song to get mods, just the right skill
-	if (EQ::skills::IsBardInstrumentSkill(spells[spell_id].skill) &&
-	    spells[spell_id].effectid[effect_id] != SE_AttackSpeed &&
-	    spells[spell_id].effectid[effect_id] != SE_AttackSpeed2 &&
-	    spells[spell_id].effectid[effect_id] != SE_AttackSpeed3 &&
-	    spells[spell_id].effectid[effect_id] != SE_Lull &&
-	    spells[spell_id].effectid[effect_id] != SE_ChangeFrenzyRad &&
-	    spells[spell_id].effectid[effect_id] != SE_Harmony &&
-	    spells[spell_id].effectid[effect_id] != SE_CurrentMana &&
-	    spells[spell_id].effectid[effect_id] != SE_ManaRegen_v2 &&
-		spells[spell_id].effectid[effect_id] != SE_AddFaction) {
+	if (EQ::skills::IsBardInstrumentSkill(spells[spell_id].skill)
+		&& IsInstrumentModAppliedToSpellEffect(spell_id, spells[spell_id].effectid[effect_id])) {
 
-		int oval = effect_value;
-		int mod = ApplySpellEffectiveness(spell_id, instrument_mod, true, caster_id);
-		effect_value = effect_value * mod / 10;
-		LogSpells("Effect value [{}] altered with bard modifier of [{}] to yeild [{}]",
-			oval, mod, effect_value);
+			oval = effect_value;
+			effect_value = effect_value * static_cast<int>(instrument_mod) / 10;
+			LogSpells("Effect value [{}] altered with bard modifier of [{}] to yeild [{}]",
+				oval, instrument_mod, effect_value);
+	}
+	/*
+		SPA 413 SE_FcBaseEffects, modifies base value of a spell effect after formula calcultion, but before other focuses.
+		This is applied to non-Bards in Mob::GetInstrumentMod
+		Like bard modifiers, this is sent in the action_struct using action->instrument_mod (which is a base effect modifier)
+
+		Issue: value sent with action->instrument_mod needs to be 10 or higher. Therefore lowest possible percent chance would be 11 (calculated to 10%)
+		there are modern spells that use less than 10% but we send as a uint where lowest value has to be 10, where it should be a float for current clients.
+		Though not ideal, at the moment for spells that are instant effects, the action packet doesn't matter and we will calculate the actual percent here correctly.
+		Logic here is, caster_id is only sent from ApplySpellBonuses. Thus if it is a buff a long as the base effects is set to over 10% and at +10% intervals
+		it will focus the base value correctly.
+
+	*/
+	if (GetClass() != BARD) {
+
+		if (caster_id && instrument_mod > 10) {
+			//This is checked from Mob::ApplySpellBonuses, applied to buffs that receive bonuses. See above, must be in 10% intervals to work.
+			oval = effect_value;
+			effect_value = effect_value * static_cast<int>(instrument_mod) / 10;
+
+			LogSpells("Bonus Effect value [{}] altered with base effects modifier of [{}] to yeild [{}]",
+				oval, instrument_mod, effect_value);
+		}
+		else if (!caster_id) {
+			//This is checked from Mob::SpellEffects and applied to instant spells and runes.
+			if (caster && caster->HasBaseEffectFocus()) {
+				oval = effect_value;
+				int mod = caster->GetFocusEffect(focusFcBaseEffects, spell_id);
+				effect_value += effect_value * mod / 100;
+
+				LogSpells("Instant Effect value [{}] altered with base effects modifier of [{}] to yeild [{}]",
+					oval, mod, effect_value);
+			}
+		}
 	}
 
 	effect_value = mod_effect_value(effect_value, spell_id, spells[spell_id].effectid[effect_id], caster, caster_id);
@@ -3488,7 +3529,8 @@ snare has both of them negative, yet their range should work the same:
 			break;
 
 		case 119:	// confirmed 2/6/04
-			result = ubase + (caster_level / 8); break;
+			result = ubase + (caster_level / 8); 
+			break;
 		case 120:
 		{
 			int ticdif = CalcBuffDuration_formula(caster_level, spells[spell_id].buffdurationformula, spells[spell_id].buffduration) - std::max((ticsremaining - 1), 0);
@@ -3717,24 +3759,20 @@ void Mob::DoBuffTic(const Buffs_Struct &buff, int slot, Mob *caster)
 
 	const SPDat_Spell_Struct &spell = spells[buff.spellid];
 
-	if (IsNPC()) {
-		std::vector<EQ::Any> args;
-		args.push_back(&buff.ticsremaining);
-		args.push_back(&buff.casterlevel);
-		args.push_back(&slot);
-		int i = parse->EventSpell(EVENT_SPELL_BUFF_TIC_NPC, CastToNPC(), nullptr, buff.spellid,
-					  caster ? caster->GetID() : 0, &args);
-		if (i != 0) {
+	std::string buf = fmt::format(
+		"{} {} {} {}",
+		caster ? caster->GetID() : 0,
+		buffs[slot].ticsremaining,
+		caster ? caster->GetLevel() : 0,
+		slot
+	);
+
+	if (IsClient()) {
+		if (parse->EventSpell(EVENT_SPELL_EFFECT_BUFF_TIC_CLIENT, nullptr, CastToClient(), buff.spellid, buf, 0) != 0) {
 			return;
 		}
-	} else {
-		std::vector<EQ::Any> args;
-		args.push_back(&buff.ticsremaining);
-		args.push_back(&buff.casterlevel);
-		args.push_back(&slot);
-		int i = parse->EventSpell(EVENT_SPELL_BUFF_TIC_CLIENT, nullptr, CastToClient(), buff.spellid,
-					  caster ? caster->GetID() : 0, &args);
-		if (i != 0) {
+	} else if (IsNPC()) {
+		if (parse->EventSpell(EVENT_SPELL_EFFECT_BUFF_TIC_NPC, CastToNPC(), nullptr, buff.spellid, buf, 0) != 0) {
 			return;
 		}
 	}
@@ -3749,7 +3787,7 @@ void Mob::DoBuffTic(const Buffs_Struct &buff, int slot, Mob *caster)
 
 		switch (effect) {
 		case SE_CurrentHP: {
-			
+
 			if (spells[buff.spellid].base2[i] && !PassCastRestriction(spells[buff.spellid].base2[i])) {
 				break;
 			}
@@ -3842,19 +3880,15 @@ void Mob::DoBuffTic(const Buffs_Struct &buff, int slot, Mob *caster)
 		}
 
 		case SE_WipeHateList: {
-			if (IsMezSpell(buff.spellid))
+			if (IsMezSpell(buff.spellid)) {
 				break;
-
-			int wipechance = spells[buff.spellid].base[i];
-			int bonus = 0;
-
-			if (caster) {
-				bonus = caster->spellbonuses.IncreaseChanceMemwipe +
-					caster->itembonuses.IncreaseChanceMemwipe +
-					caster->aabonuses.IncreaseChanceMemwipe;
 			}
 
-			wipechance += wipechance * bonus / 100;
+			int wipechance = 0;
+
+			if (caster) {
+				wipechance = caster->GetMemoryBlurChance(effect_value);
+			}
 
 			if (zone->random.Roll(wipechance)) {
 				if (IsAIControlled()) {
@@ -4069,33 +4103,22 @@ void Mob::BuffFadeBySlot(int slot, bool iRecalcBonuses)
 
 	LogSpells("Fading buff [{}] from slot [{}]", buffs[slot].spellid, slot);
 
-	if(spells[buffs[slot].spellid].viral_targets > 0) {
-		bool last_virus = true;
-		for(int i = 0; i < MAX_SPELL_TRIGGER*2; i+=2)
-		{
-			if(viral_spells[i] && viral_spells[i] != buffs[slot].spellid)
-			{
-				// If we have a virus that doesn't match this one then don't stop the viral timer
-				last_virus = false;
-			}
+	std::string buf = fmt::format(
+		"{} {} {} {}",
+		buffs[slot].casterid,
+		buffs[slot].ticsremaining,
+		buffs[slot].casterlevel,
+		slot
+	);
+
+	if (IsClient()) {
+		if (parse->EventSpell(EVENT_SPELL_FADE, nullptr, CastToClient(), buffs[slot].spellid, buf, 0) != 0) {
+			return;
 		}
-		// This is the last virus on us so lets stop timer
-		if(last_virus) {
-			viral_timer.Disable();
-			has_virus = false;
+	} else if (IsNPC()) {
+		if (parse->EventSpell(EVENT_SPELL_FADE, CastToNPC(), nullptr, buffs[slot].spellid, buf, 0) != 0) {
+			return;
 		}
-	}
-
-	if(IsClient()) {
-		std::vector<EQ::Any> args;
-		args.push_back(&buffs[slot].casterid);
-
-		parse->EventSpell(EVENT_SPELL_FADE, nullptr, CastToClient(), buffs[slot].spellid, slot, &args);
-	} else if(IsNPC()) {
-		std::vector<EQ::Any> args;
-		args.push_back(&buffs[slot].casterid);
-
-		parse->EventSpell(EVENT_SPELL_FADE, CastToNPC(), nullptr, buffs[slot].spellid, slot, &args);
 	}
 
 	for (int i=0; i < EFFECT_COUNT; i++)
@@ -4262,7 +4285,7 @@ void Mob::BuffFadeBySlot(int slot, bool iRecalcBonuses)
 				}
 
 				SendAppearancePacket(AT_Pet, 0, true, true);
-				Mob* tempmob = GetOwner();
+				Mob* owner = GetOwner();
 				SetOwnerID(0);
 				SetPetType(petNone);
 				SetHeld(false);
@@ -4271,25 +4294,27 @@ void Mob::BuffFadeBySlot(int slot, bool iRecalcBonuses)
 				SetFocused(false);
 				SetPetStop(false);
 				SetPetRegroup(false);
-				if(tempmob)
+				if(owner)
 				{
-					tempmob->SetPet(0);
+					owner->SetPet(0);
 				}
 				if (IsAIControlled())
 				{
-					// clear the hate list of the mobs
+					//Remove damage over time effects on charmed pet and those applied by charmed pet.
 					if (RuleB(Spells, PreventFactionWarOnCharmBreak)) {
 						for (auto mob : hate_list.GetHateList()) {
 							auto tar = mob->entity_on_hatelist;
-							if (tar->IsCasting()) {
-								tar->InterruptSpell(tar->CastingSpellID());
-							}
-							uint32 buff_count = tar->GetMaxTotalSlots();
-							for (unsigned int j = 0; j < buff_count; j++) {
-								if (tar->GetBuffs()[j].spellid != SPELL_UNKNOWN) {
-									auto spell = spells[tar->GetBuffs()[j].spellid];
-									if (spell.goodEffect == 0 && IsEffectInSpell(spell.id, SE_CurrentHP) && tar->GetBuffs()[j].casterid == GetID()) {
-										tar->BuffFadeBySpellID(spell.id);
+							if (tar) {
+								if (tar->IsCasting()) {
+									tar->InterruptSpell(tar->CastingSpellID());
+								}
+								uint32 buff_count = tar->GetMaxTotalSlots();
+								for (unsigned int j = 0; j < buff_count; j++) {
+									if (IsValidSpell(tar->GetBuffs()[j].spellid)) {
+										auto spell = spells[tar->GetBuffs()[j].spellid];
+										if (spell.goodEffect == 0 && IsEffectInSpell(spell.id, SE_CurrentHP) && tar->GetBuffs()[j].casterid == GetID()) {
+											tar->BuffFadeBySpellID(spell.id);
+										}
 									}
 								}
 							}
@@ -4299,7 +4324,7 @@ void Mob::BuffFadeBySlot(int slot, bool iRecalcBonuses)
 						}
 						uint32 buff_count = GetMaxTotalSlots();
 						for (unsigned int j = 0; j < buff_count; j++) {
-							if (GetBuffs()[j].spellid != SPELL_UNKNOWN) {
+							if (IsValidSpell(GetBuffs()[j].spellid )) {
 								auto spell = spells[this->GetBuffs()[j].spellid];
 								if (spell.goodEffect == 0 && IsEffectInSpell(spell.id, SE_CurrentHP)) {
 									BuffFadeBySpellID(spell.id);
@@ -4307,17 +4332,43 @@ void Mob::BuffFadeBySlot(int slot, bool iRecalcBonuses)
 							}
 						}
 					}
-					entity_list.ReplaceWithTarget(this, tempmob);
+
+					// clear the hate list of the mobs
+					entity_list.ReplaceWithTarget(this, owner);
 					WipeHateList();
-					if(tempmob)
-						AddToHateList(tempmob, 1, 0);
+					if (owner) {
+						AddToHateList(owner, 1, 0);
+					}
+					//If owner dead, briefly setting Immmune Aggro while hatelists wipe for both pet and targets is needed to ensure no reaggroing.
+					else if (IsNPC()){
+						bool immune_aggro = GetSpecialAbility(IMMUNE_AGGRO); //check if already immune aggro
+						SetSpecialAbility(IMMUNE_AGGRO, 1);
+						WipeHateList();
+						if (IsCasting()) {
+							InterruptSpell(CastingSpellID());
+						}
+						entity_list.RemoveFromHateLists(this);
+						//If NPC targeting charmed pet are in process of casting on it after it is removed from hatelist, stop the cast to prevent reaggroing.
+						Mob *current_npc = nullptr;
+						for (auto &it : entity_list.GetNPCList()) {
+							current_npc = it.second;
+
+							if (current_npc && current_npc->IsCasting() && current_npc->GetTarget() == this) {
+								current_npc->InterruptSpell(current_npc->CastingSpellID());
+							}
+						}
+
+						if (!immune_aggro) {
+							SetSpecialAbility(IMMUNE_AGGRO, 0);
+						}
+					}
 					SendAppearancePacket(AT_Anim, ANIM_STAND);
 				}
-				if(tempmob && tempmob->IsClient())
+				if(owner && owner->IsClient())
 				{
 					auto app = new EQApplicationPacket(OP_Charm, sizeof(Charm_Struct));
 					Charm_Struct *ps = (Charm_Struct*)app->pBuffer;
-					ps->owner_id = tempmob->GetID();
+					ps->owner_id = owner->GetID();
 					ps->pet_id = GetID();
 					ps->command = 0;
 					entity_list.QueueClients(this, app);
@@ -4512,8 +4563,9 @@ int32 Client::CalcAAFocus(focusType type, const AA::Rank &rank, uint16 spell_id)
 	int32  base1       = 0;
 	int32  base2       = 0;
 	uint32 slot        = 0;
-
+	
 	int index_id = -1;
+	uint32 focus_reuse_time = 0;
 
 	bool LimitFailure                  = false;
 	bool LimitInclude[MaxLimitInclude] = {false};
@@ -4861,6 +4913,15 @@ int32 Client::CalcAAFocus(focusType type, const AA::Rank &rank, uint16 spell_id)
 				}
 				break;
 
+			case SE_Ff_FocusTimerMin:
+				if (IsFocusProcLimitTimerActive(-rank.id)) {
+					LimitFailure = true;
+				}
+				else {
+					focus_reuse_time = base2;
+				}
+				break;
+
 
 				/* These are not applicable to AA's because there is never a 'caster' of the 'buff' with the focus effect.
 				case SE_Ff_Same_Caster:
@@ -5161,6 +5222,10 @@ int32 Client::CalcAAFocus(focusType type, const AA::Rank &rank, uint16 spell_id)
 		return 0;
 	}
 
+	if (focus_reuse_time) {
+		SetFocusProcLimitTimer(-rank.id, focus_reuse_time);
+	}
+
 	return (value * lvlModifier / 100);
 }
 
@@ -5191,6 +5256,7 @@ int32 Mob::CalcFocusEffect(focusType type, uint16 focus_id, uint16 spell_id, boo
 	int    lvldiff         = 0;
 	uint32 Caston_spell_id = 0;
 	int    index_id        = -1;
+	uint32 focus_reuse_time = 0; //If this is set and all limits pass, start timer at end of script.
 
 	bool LimitInclude[MaxLimitInclude] = {false};
 	/* Certain limits require only one of several Include conditions to be true. Determined by limits being negative or positive
@@ -5523,7 +5589,16 @@ int32 Mob::CalcFocusEffect(focusType type, uint16 focus_id, uint16 spell_id, boo
 				}
 				break;
 
-				// handle effects
+			case SE_Ff_FocusTimerMin:
+				if (IsFocusProcLimitTimerActive(focus_spell.id)) {
+					return 0;
+				}
+				else {
+					focus_reuse_time = focus_spell.base2[i];
+				}
+				break;
+
+			// handle effects
 			case SE_ImprovedDamage:
 				if (type == focusImprovedDamage) {
 					value = GetFocusRandomEffectivenessValue(focus_spell.base[i], focus_spell.base2[i], best_focus);
@@ -5725,7 +5800,7 @@ int32 Mob::CalcFocusEffect(focusType type, uint16 focus_id, uint16 spell_id, boo
 
 			case SE_FcHealPctCritIncoming:
 				if (type == focusFcHealPctCritIncoming) {
-					value = focus_spell.base[i];
+					value = GetFocusRandomEffectivenessValue(focus_spell.base[i], focus_spell.base2[i], best_focus);
 				}
 				break;
 
@@ -5743,7 +5818,7 @@ int32 Mob::CalcFocusEffect(focusType type, uint16 focus_id, uint16 spell_id, boo
 
 			case SE_FcHealPctIncoming:
 				if (type == focusFcHealPctIncoming) {
-					value = focus_spell.base[i];
+					value = GetFocusRandomEffectivenessValue(focus_spell.base[i], focus_spell.base2[i], best_focus);
 				}
 				break;
 
@@ -5824,6 +5899,10 @@ int32 Mob::CalcFocusEffect(focusType type, uint16 focus_id, uint16 spell_id, boo
 				spells[Caston_spell_id].ResistDiff
 			);
 		}
+	}
+
+	if (focus_reuse_time) {
+		SetFocusProcLimitTimer(focus_spell.id, focus_reuse_time);
 	}
 
 	return (value * lvlModifier / 100);
@@ -5907,7 +5986,7 @@ void Mob::TryTriggerOnCastFocusEffect(focusType type, uint16 spell_id)
 		}
 	}
 
-	// Only use of this focus per AA effect.
+	// Only use one of this focus per AA effect.
 	if (IsClient() && aabonuses.FocusEffects[type]) {
 		for (const auto &aa : aa_ranks) {
 			auto ability_rank = zone->GetAlternateAdvancementAbilityAndRank(aa.first, aa.second.first);
@@ -6354,8 +6433,9 @@ int32 NPC::GetFocusEffect(focusType type, uint16 spell_id) {
 
 	//Improved Healing, Damage & Mana Reduction are handled differently in that some are random percentages
 	//In these cases we need to find the most powerful effect, so that each piece of gear wont get its own chance
-	if(RuleB(Spells, LiveLikeFocusEffects) && (type == focusManaCost || type == focusImprovedHeal || type == focusImprovedDamage || type == focusImprovedDamage2))
+	if (RuleB(Spells, LiveLikeFocusEffects) && CanFocusUseRandomEffectivenessByType(type)) {
 		rand_effectiveness = true;
+	}
 
 	if (RuleB(Spells, NPC_UseFocusFromItems) && itembonuses.FocusEffects[type]){
 
@@ -6915,74 +6995,54 @@ int32 Mob::GetFcDamageAmtIncoming(Mob *caster, uint32 spell_id, bool use_skill, 
 
 int32 Mob::GetFocusIncoming(focusType type, int effect, Mob *caster, uint32 spell_id) {
 
+	//**** This can be removed when bot healing focus code is updated ****
+
 	/*
 	This is a general function for calculating best focus effect values for focus effects that exist on targets but modify incoming spells.
 	Should be used when checking for foci that can exist on clients or npcs ect.
 	Example: When your target has a focus limited buff that increases amount of healing on them.
 	*/
 
-	if (!caster)
+	if (!caster) {
 		return 0;
+	}
 
 	int value = 0;
 
 	if (spellbonuses.FocusEffects[type]){
 
-			int32 tmp_focus = 0;
-			int tmp_buffslot = -1;
+		int32 tmp_focus = 0;
+		int tmp_buffslot = -1;
 
-			int buff_count = GetMaxTotalSlots();
-			for(int i = 0; i < buff_count; i++) {
+		int buff_count = GetMaxTotalSlots();
+		for(int i = 0; i < buff_count; i++) {
 
-				if((IsValidSpell(buffs[i].spellid) && IsEffectInSpell(buffs[i].spellid, effect))){
+			if((IsValidSpell(buffs[i].spellid) && IsEffectInSpell(buffs[i].spellid, effect))){
 
-					int32 focus = caster->CalcFocusEffect(type, buffs[i].spellid, spell_id);
+				int32 focus = caster->CalcFocusEffect(type, buffs[i].spellid, spell_id);
 
-					if (!focus)
-						continue;
+				if (!focus) {
+					continue;
+				}
 
-					if (tmp_focus && focus > tmp_focus){
-						tmp_focus = focus;
-						tmp_buffslot = i;
-					}
+				if (tmp_focus && focus > tmp_focus){
+					tmp_focus = focus;
+					tmp_buffslot = i;
+				}
 
-					else if (!tmp_focus){
-						tmp_focus = focus;
-						tmp_buffslot = i;
-					}
+				else if (!tmp_focus){
+					tmp_focus = focus;
+					tmp_buffslot = i;
 				}
 			}
-
-			value = tmp_focus;
-
-			if (tmp_buffslot >= 0)
-				CheckNumHitsRemaining(NumHit::MatchingSpells, tmp_buffslot);
 		}
 
+		value = tmp_focus;
 
-	return value;
-}
+		if (tmp_buffslot >= 0)
+			CheckNumHitsRemaining(NumHit::MatchingSpells, tmp_buffslot);
+	}
 
-int32 Mob::ApplySpellEffectiveness(int16 spell_id, int32 value, bool IsBard, uint16 caster_id) {
-
-	// 9-17-12: This is likely causing crashes, disabled till can resolve.
-	if (IsBard)
-		return value;
-
-	Mob* caster = this;
-
-	if (caster_id && caster_id != GetID())//Make sure we are checking the casters focus
-		caster = entity_list.GetMob(caster_id);
-
-	if (!caster)
-		return value;
-
-	int16 focus = caster->GetFocusEffect(focusFcBaseEffects, spell_id);
-
-	if (IsBard)
-		value += focus;
-	else
-		value += value*focus/100;
 
 	return value;
 }
@@ -7048,15 +7108,6 @@ uint16 Mob::GetSpellEffectResistChance(uint16 spell_id)
 
 bool Mob::TryDispel(uint8 caster_level, uint8 buff_level, int level_modifier){
 
-	/*Live 5-20-14 Patch Note: Updated all spells which use Remove Detrimental and
-	Cancel Beneficial spell effects to use a new method. The chances for those spells to
-	affect their targets have not changed unless otherwise noted.*/
-
-	/*This should provide a somewhat accurate conversion between pre 5/14 base values and post.
-	until more information is avialble - Kayen*/
-	if (level_modifier >= 100)
-		level_modifier = level_modifier/100;
-
 	//Dispels - Check level of caster agianst buffs level (level of the caster who cast the buff)
 	//Effect value of dispels are treated as a level modifier.
 	//Values for scaling were obtain from live parses, best estimates.
@@ -7082,7 +7133,6 @@ bool Mob::TryDispel(uint8 caster_level, uint8 buff_level, int level_modifier){
 	else
 		return false;
 }
-
 
 bool Mob::ImprovedTaunt(){
 
@@ -7122,7 +7172,7 @@ bool Mob::PassCastRestriction(int value)
 
 		Note: (ID 221 - 249) For effect seen in mage spell 'Shock of Many' which increases damage based on number of pets on targets hatelist. The way it is implemented
 		works for how our ROF2 spell file handles the effect where each slot fires individually, while on live it only takes the highest
-		value. In the future the way check is done will need to be adjusted to check a defined range instead of just great than. 
+		value. In the future the way check is done will need to be adjusted to check a defined range instead of just great than.
 	*/
 
 	if (value <= 0) {
@@ -7156,8 +7206,8 @@ bool Mob::PassCastRestriction(int value)
 			break;
 
 		case IS_BODY_TYPE_MISC:
-			if ((GetBodyType() == BT_Humanoid)  || (GetBodyType() == BT_Lycanthrope) || (GetBodyType() == BT_Giant) || 
-				(GetBodyType() == BT_RaidGiant) || (GetBodyType() == BT_RaidColdain) || (GetBodyType() == BT_Animal)|| 
+			if ((GetBodyType() == BT_Humanoid)  || (GetBodyType() == BT_Lycanthrope) || (GetBodyType() == BT_Giant) ||
+				(GetBodyType() == BT_RaidGiant) || (GetBodyType() == BT_RaidColdain) || (GetBodyType() == BT_Animal)||
 				(GetBodyType() == BT_Construct) || (GetBodyType() == BT_Dragon)		 || (GetBodyType() == BT_Insect)||
 				(GetBodyType() == BT_VeliousDragon) || (GetBodyType() == BT_Muramite) || (GetBodyType() == BT_Magical))
 				return true;
@@ -7296,7 +7346,7 @@ bool Mob::PassCastRestriction(int value)
 			if (IsHybridClass(GetClass()))
 				return true;
 			break;
-			
+
 		case IS_CLASS_WARRIOR:
 			if (GetClass() == WARRIOR)
 				return true;
@@ -7403,7 +7453,7 @@ bool Mob::PassCastRestriction(int value)
 				return true;
 			break;
 
-		case FRENZIED_BURNOUT_NOT_ACTIVE: 
+		case FRENZIED_BURNOUT_NOT_ACTIVE:
 			if (!HasBuffWithSpellGroup(SPELLGROUP_FRENZIED_BURNOUT))
 				return true;
 			break;
@@ -7412,7 +7462,7 @@ bool Mob::PassCastRestriction(int value)
 			if (GetHPRatio() > 75)
 				return true;
 			break;
-			
+
 		case IS_HP_LESS_THAN_20_PCT:
 			if (GetHPRatio() <= 20)
 				return true;
@@ -7559,27 +7609,27 @@ bool Mob::PassCastRestriction(int value)
 			if (GetHPRatio() > 25 && GetHPRatio() <= 35)
 				return true;
 			break;
-			
+
 		case IS_HP_BETWEEN_35_AND_45_PCT:
 			if (GetHPRatio() > 35 && GetHPRatio() <= 45)
 				return true;
 			break;
-			
+
 		case IS_HP_BETWEEN_45_AND_55_PCT:
 			if (GetHPRatio() > 45 && GetHPRatio() <= 55)
 				return true;
 			break;
-			
+
 		case IS_HP_BETWEEN_55_AND_65_PCT:
 			if (GetHPRatio() > 55 && GetHPRatio() <= 65)
 				return true;
 			break;
-			
+
 		case IS_HP_BETWEEN_65_AND_75_PCT:
 			if (GetHPRatio() > 65 && GetHPRatio() <= 75)
 				return true;
 			break;
-			
+
 		case IS_HP_BETWEEN_75_AND_85_PCT:
 			if (GetHPRatio() > 75 && GetHPRatio() <= 85)
 				return true;
@@ -7589,7 +7639,7 @@ bool Mob::PassCastRestriction(int value)
 			if (GetHPRatio() > 85 && GetHPRatio() <= 95)
 				return true;
 			break;
-			
+
 		case IS_HP_ABOVE_45_PCT:
 			if (GetHPRatio() > 45)
 				return true;
@@ -7629,7 +7679,7 @@ bool Mob::PassCastRestriction(int value)
 			if (GetBodyType() != BT_Plant)
 				return true;
 			break;
-			
+
 		case IS_NOT_CLIENT:
 			if (!IsClient())
 				return true;
@@ -7643,8 +7693,8 @@ bool Mob::PassCastRestriction(int value)
 		case IS_LEVEL_ABOVE_42_AND_IS_CLIENT:
 			if (IsClient() && GetLevel() > 42)
 				return true;
-			break;		
-			
+			break;
+
 		case IS_TREANT:
 			if (GetRace() == RT_TREANT || GetRace() == RT_TREANT_2 || GetRace() == RT_TREANT_3)
 				return true;
@@ -7832,7 +7882,7 @@ bool Mob::PassCastRestriction(int value)
 			}
 			break;
 		}
-			
+
 		case IS_CLIENT_AND_MALE_PLATE_USER:
 			if (IsClient() && GetGender() == MALE && IsPlateClass(GetClass()))
 				return true;
@@ -7844,7 +7894,7 @@ bool Mob::PassCastRestriction(int value)
 			break;
 
 		case IS_CLIENT_AND_MALE_BEASTLORD_BERSERKER_MONK_RANGER_OR_ROGUE:
-			if (IsClient() && GetGender() == MALE && 
+			if (IsClient() && GetGender() == MALE &&
 				(GetClass() == BEASTLORD || GetClass() == BERSERKER || GetClass() == MONK || GetClass() == RANGER || GetClass() == ROGUE))
 				return true;
 			break;
@@ -7921,7 +7971,7 @@ bool Mob::PassCastRestriction(int value)
 			}
 			break;
 		}
-			
+
 		case IS_NOT_CLASS_BARD:
 			if (GetClass() != BARD)
 				return true;
@@ -7966,7 +8016,7 @@ bool Mob::PassCastRestriction(int value)
 			if (FindBuff(SPELL_INCENDIARY_OOZE_BUFF))
 				return true;
 			break;
-				
+
 		//Not handled, just allow them to pass for now.
 		case UNKNOWN_3:
 		case HAS_CRYSTALLIZED_FLAME_BUFF:
@@ -8266,101 +8316,21 @@ void Mob::CastSpellOnLand(Mob* caster, int32 spell_id)
 
 				if (IsValidSpell(trigger_spell_id) && (trigger_spell_id != spell_id)) {
 
-					//Step 3: Check if SE_Proc_Time_Modifier is present and if so apply it.
-					if (ApplyFocusProcLimiter(buffs[i].spellid, i)) {
-						//Step 4: Cast spells
-						if (IsBeneficialSpell(trigger_spell_id)) {
-							SpellFinished(trigger_spell_id, this, EQ::spells::CastingSlot::Item, 0, -1, spells[trigger_spell_id].ResistDiff);
-						}
-						else {
-							Mob* current_target = GetTarget();
-							//For now don't let players cast detrimental effects on themselves if they are targeting themselves. Need to confirm behavior.
-							if (current_target && current_target->GetID() != GetID())
-								SpellFinished(trigger_spell_id, current_target, EQ::spells::CastingSlot::Item, 0, -1, spells[trigger_spell_id].ResistDiff);
-						}
+					//Step 3: Cast spells
+					if (IsBeneficialSpell(trigger_spell_id)) {
+						SpellFinished(trigger_spell_id, this, EQ::spells::CastingSlot::Item, 0, -1, spells[trigger_spell_id].ResistDiff);
 					}
-
-					if (i >= 0)
-						CheckNumHitsRemaining(NumHit::MatchingSpells, i);
-				}
-			}
-		}
-	}
-}
-
-bool Mob::ApplyFocusProcLimiter(int32 spell_id, int buffslot)
-{
-	if (buffslot < 0)
-		return false;
-
-	//Do not allow spell cast if timer is active.
-	if (buffs[buffslot].focusproclimit_time > 0)
-		return false;
-
-	/*
-	SE_Proc_Timer_Modifier
-	base1= amount of total procs allowed until lock out timer is triggered, should be set to at least 1 in any spell for the effect to function.
-	base2= lock out timer, which prevents any more procs set in ms 1500 = 1.5 seconds
-	This system allows easy scaling for multiple different buffs with same effects each having seperate active individual timer checks. Ie.
-	*/
-
-	if (IsValidSpell(spell_id)) {
-
-		for (int i = 0; i < EFFECT_COUNT; i++) {
-
-			//Step 1: Find which slot the spell effect is in.
-			if (spells[spell_id].effectid[i] == SE_Proc_Timer_Modifier) {
-
-				//Step 2: Check if you still have procs left to trigger, and if so reduce available procs
-				if (buffs[buffslot].focusproclimit_procamt > 0) {
-					--buffs[buffslot].focusproclimit_procamt; //Reduce total amount of triggers possible.
-				}
-
-				//Step 3: If you used all the procs in the time frame then set proc amount back to max
-				if (buffs[buffslot].focusproclimit_procamt == 0 && spells[spell_id].base[i] > 0) {
-					buffs[buffslot].focusproclimit_procamt = spells[spell_id].base[i];//reset to max
-
-					//Step 4: Check if timer exists on this spell, and then set it, and activiate global timer if not active
-					if (buffs[buffslot].focusproclimit_time ==0 && spells[spell_id].base2[i] > 0) {
-						buffs[buffslot].focusproclimit_time = spells[spell_id].base2[i];//set time
-
-						//Step 5: If timer is not already running, then start it.
-						if (!focus_proc_limit_timer.Enabled()) {
-							focus_proc_limit_timer.Start(250);
-						}
-
-						return true;
+					else {
+						Mob* current_target = GetTarget();
+						//For now don't let players cast detrimental effects on themselves if they are targeting themselves. Need to confirm behavior.
+						if (current_target && current_target->GetID() != GetID())
+							SpellFinished(trigger_spell_id, current_target, EQ::spells::CastingSlot::Item, 0, -1, spells[trigger_spell_id].ResistDiff);
 					}
 				}
+				if (i >= 0)
+					CheckNumHitsRemaining(NumHit::MatchingSpells, i);
 			}
 		}
-	}
-	return true;
-}
-
-void Mob::FocusProcLimitProcess()
-{
-	/*
-	Fast 250 ms uinversal timer for checking Focus effects that have a proc rate limiter set in actual time.
-	*/
-	bool stop_timer = true;
-	int buff_count = GetMaxTotalSlots();
-	for (int buffs_i = 0; buffs_i < buff_count; ++buffs_i)
-	{
-		if (IsValidSpell(buffs[buffs_i].spellid))
-		{
-			if (buffs[buffs_i].focusproclimit_time > 0) {
-				buffs[buffs_i].focusproclimit_time -= 250;
-				stop_timer = false;
-			}
-
-			if (buffs[buffs_i].focusproclimit_time < 0)
-				buffs[buffs_i].focusproclimit_time = 0;
-		}
-	}
-
-	if (stop_timer) {
-		focus_proc_limit_timer.Disable();
 	}
 }
 
@@ -8480,6 +8450,8 @@ bool Mob::CanFocusUseRandomEffectivenessByType(focusType type)
 	case focusSpellHateMod:
 	case focusSpellVulnerability:
 	case focusFcSpellDamagePctIncomingPC:
+	case focusFcHealPctIncoming:
+	case focusFcHealPctCritIncoming:
 		return true;
 	}
 
@@ -8504,4 +8476,180 @@ int Mob::GetFocusRandomEffectivenessValue(int focus_base, int focus_base2, bool 
 	}
 
 	return zone->random.Int(focus_base, focus_base2);
+}
+
+bool Mob::NegateSpellEffect(uint16 spell_id, int effect_id)
+{
+	/*
+		This works for most effects, anything handled purely by the client will bypass this (ie Gate, Shadowstep)
+		Seen with resurrection effects, likely blocks the client from accepting a ressurection request. *Not implement at this time.
+	*/
+
+	for (int i = 0; i < GetMaxTotalSlots(); i++) {
+		//Check for any buffs containing NegateEffect
+		if (IsValidSpell(buffs[i].spellid) && IsEffectInSpell(buffs[i].spellid, SE_NegateSpellEffect) && spell_id != buffs[i].spellid) {
+			//Match each of the negate effects with the current spell effect, if found, that effect will not be applied.
+			for (int j = 0; j < EFFECT_COUNT; j++)
+			{
+				if (spells[buffs[i].spellid].base2[j] == effect_id) {
+					return true;
+				}
+			}
+		}
+	}
+	return false;
+}
+
+int Mob::GetMemoryBlurChance(int base_chance)
+{
+	/*
+		Memory Blur mechanic for SPA 62
+		Chance formula is effect chance + charisma modifer + caster level modifier
+		Effect chance is base value of spell
+		Charisma modifier is CHA/10 = %, with MAX of 15% (thus 150 cha gives you max bonus)
+		Caster level modifier. +100% if caster < level 17 which scales down to 25% at > 53. **
+		(Yes the above gets worse as you level. Behavior was confirmed on live.)
+		Memory blur is applied to mez on initial cast using same formula. However, recasting on a target that
+		is already mezed will not give a chance to memory blur. The blur is not checked on buff ticks.
+
+		SPA 242 SE_IncreaseChanceMemwipe modifies the final chance after all bonuses are applied.
+		This is also applied to memory blur from mez spells.
+
+		this = caster
+	*/
+	int cha_mod = int(GetCHA() / 10);
+	cha_mod = std::min(cha_mod, 15);
+
+	int lvl_mod = 0;
+	if (GetLevel() < 17) {
+		lvl_mod = 100;
+	}
+	else if (GetLevel() > 53) {
+		lvl_mod = 25;
+	}
+	else {
+		lvl_mod = 100 + ((GetLevel() - 16)*-2);//Derived from above range of values.**
+	}
+
+	int chance = cha_mod + lvl_mod + base_chance;
+
+	int chance_mod = spellbonuses.IncreaseChanceMemwipe + itembonuses.IncreaseChanceMemwipe + aabonuses.IncreaseChanceMemwipe;
+
+	chance += chance * chance_mod / 100;
+	return chance;
+}
+
+void Mob::VirusEffectProcess()
+{
+	/*
+		Virus Mechanics
+		To qualify as a virus effect buff, all of the following spell table need to be set. (At some point will correct names)
+		viral_targets = MIN_SPREAD_TIME
+		viral_timer   = MAX_SPREAD_TIME
+		viral_range   = SPREAD_RADIUS
+		Once a buff with a viral effect is applied, a 1000 ms timer will begin.
+		The time at which the virus will attempt to spread is determined by a random value between MIN_SPREAD_TIME and MAX_SPREAD_TIME
+		Each time the virus attempts to spread the next time interval will be chosen at random again.
+		If a spreader finds a target for viral buff, when the viral buff spreads the duration on the new target will be the time remaining on the spreaders buff.
+		Spreaders DOES NOT need LOS to spread. There is no max amount of targets the virus can spread to.
+		When the spreader no longer has any viral buffs the timer stops.
+		The current code supports spreading for both detrimental and beneficial spells.
+	*/
+
+	// Only spread in zones without perm buffs
+	if (zone->BuffTimersSuspended()) {
+		viral_timer.Disable();
+		return;
+	}
+
+	bool stop_timer = true;
+	for (int buffs_i = 0; buffs_i < GetMaxTotalSlots(); ++buffs_i)
+	{
+		if (IsValidSpell(buffs[buffs_i].spellid) && IsVirusSpell(buffs[buffs_i].spellid))
+		{
+			if (buffs[buffs_i].virus_spread_time > 0) {
+				buffs[buffs_i].virus_spread_time -= 1;
+				stop_timer = false;
+			}
+
+			if (buffs[buffs_i].virus_spread_time <= 0) {
+				buffs[buffs_i].virus_spread_time = zone->random.Int(GetViralMinSpreadTime(buffs[buffs_i].spellid), GetViralMaxSpreadTime(buffs[buffs_i].spellid));
+				SpreadVirusEffect(buffs[buffs_i].spellid, buffs[buffs_i].casterid, buffs[buffs_i].ticsremaining);
+				stop_timer = false;
+			}
+		}
+	}
+
+	if (stop_timer) {
+		viral_timer.Disable();
+	}
+}
+
+void Mob::SpreadVirusEffect(int32 spell_id, uint32 caster_id, int32 buff_tics_remaining)
+{
+	Mob *caster = entity_list.GetMob(caster_id);
+	std::vector<Mob *> targets_in_range = entity_list.GetTargetsForVirusEffect(
+		this,
+		caster,
+		GetViralSpreadRange(spell_id),
+		spells[spell_id].pcnpc_only_flag,
+		spell_id
+	);
+
+	for (auto &mob: targets_in_range) {
+		if (!mob) {
+			continue;
+		}
+
+		if (!mob->FindBuff(spell_id)) {
+			if (caster) {
+				if (buff_tics_remaining) {
+					//When virus is spread, the buff on new target is applied with the amount of time remaining on the spreaders buff.
+					caster->SpellOnTarget(spell_id, mob, 0, false, 0, false, -1, buff_tics_remaining);
+				}
+			}
+		}
+	}
+}
+
+bool Mob::IsFocusProcLimitTimerActive(int32 focus_spell_id) {
+	/*
+		Used with SPA SE_Ff_FocusTimerMin to limit how often a focus effect can be applied. 
+		Ie. Can only have a spell trigger once every 15 seconds, or to be more creative can only
+		have the fire spells received a very high special focused once every 30 seconds.
+		Note, this stores timers for both spell, item and AA related focuses For AA the focus_spell_id
+		is saved as the the negative value of the rank.id (to avoid conflicting with spell_ids)
+	*/
+	for (int i = 0; i < MAX_FOCUS_PROC_LIMIT_TIMERS; i++) {
+		if (focusproclimit_spellid[i] == focus_spell_id) {
+			if (focusproclimit_timer[i].Enabled()) {
+				if (focusproclimit_timer[i].GetRemainingTime() > 0) {
+					return true;
+				}
+				else {
+					focusproclimit_timer[i].Disable();
+					focusproclimit_spellid[i] = 0;
+				}
+			}
+		}
+	}
+	return false;
+}
+
+void Mob::SetFocusProcLimitTimer(int32 focus_spell_id, uint32 focus_reuse_time) {
+	
+	bool is_set = false;
+
+	for (int i = 0; i < MAX_FOCUS_PROC_LIMIT_TIMERS; i++) {
+		if (!focusproclimit_spellid[i] && !is_set) {
+			focusproclimit_spellid[i] = focus_spell_id;
+			focusproclimit_timer[i].SetTimer(focus_reuse_time);
+			is_set = true;
+		}
+		//Remove old temporary focus if was from a buff you no longer have.
+		else if (focusproclimit_spellid[i] > 0 && !FindBuff(focus_spell_id)) {
+			focusproclimit_spellid[i] = 0;
+			focusproclimit_timer[i].Disable();
+		}
+	}
 }
