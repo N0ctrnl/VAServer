@@ -1,23 +1,3 @@
-/**
- * EQEmulator: Everquest Server Emulator
- * Copyright (C) 2001-2019 EQEmulator Development Team (https://github.com/EQEmu/Server)
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; version 2 of the License.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY except by those people which sell it, which
- * are required to give you total support for your newly bought product;
- * without even the implied warranty of MERCHANTABILITY or FITNESS FOR
- * A PARTICULAR PURPOSE. See the GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
- *
- */
-
 #include "../common/global_define.h"
 #include "../common/types.h"
 #include "../common/opcodemgr.h"
@@ -30,6 +10,7 @@
 #include "login_server.h"
 #include "loginserver_webserver.h"
 #include "loginserver_command_handler.h"
+#include "../common/string_util.h"
 #include <time.h>
 #include <stdlib.h>
 #include <string>
@@ -40,6 +21,7 @@ LoginServer server;
 EQEmuLogSys LogSys;
 bool        run_server = true;
 
+void ResolveAddresses();
 void CatchSignal(int sig_num)
 {
 }
@@ -80,8 +62,30 @@ void LoadServerConfig()
 			"worldservers",
 			"reject_duplicate_servers",
 			false
-		));
-	server.options.AllowUnregistered(server.config.GetVariableBool("worldservers", "unregistered_allowed", true));
+		)
+		);
+	server.options.SetShowPlayerCount(server.config.GetVariableBool("worldservers", "show_player_count", false));
+	server.options.AllowUnregistered(
+		server.config.GetVariableBool(
+			"worldservers",
+			"unregistered_allowed",
+			true
+		)
+	);
+	server.options.SetWorldDevTestServersListBottom(
+		server.config.GetVariableBool(
+			"worldservers",
+			"dev_test_servers_list_bottom",
+			false
+		)
+	);
+	server.options.SetWorldSpecialCharacterStartListBottom(
+		server.config.GetVariableBool(
+			"worldservers",
+			"special_character_start_list_bottom",
+			false
+		)
+	);
 
 	/**
 	 * Account
@@ -138,11 +142,13 @@ void start_web_server()
 
 	httplib::Server api;
 
-	api.set_logger([](const auto& req, const auto& res) {
-		if (!req.path.empty()) {
-			LogInfo("[API] Request [{}] via [{}:{}]", req.path, req.remote_addr, req.remote_port);
+	api.set_logger(
+		[](const auto &req, const auto &res) {
+			if (!req.path.empty()) {
+				LogInfo("[API] Request [{}] via [{}:{}]", req.path, req.remote_addr, req.remote_port);
+			}
 		}
-	});
+	);
 
 	LoginserverWebserver::RegisterRoutes(api);
 	api.listen("0.0.0.0", web_api_port);
@@ -256,6 +262,15 @@ int main(int argc, char **argv)
 #endif
 	LogInfo("[Config] [WorldServer] IsRejectingDuplicateServers [{0}]", server.options.IsRejectingDuplicateServers());
 	LogInfo("[Config] [WorldServer] IsUnregisteredAllowed [{0}]", server.options.IsUnregisteredAllowed());
+	LogInfo("[Config] [WorldServer] ShowPlayerCount [{0}]", server.options.IsShowPlayerCountEnabled());
+	LogInfo(
+		"[Config] [WorldServer] DevAndTestServersListBottom [{0}]",
+		server.options.IsWorldDevTestServersListBottom()
+	);
+	LogInfo(
+		"[Config] [WorldServer] SpecialCharactersStartListBottom [{0}]",
+		server.options.IsWorldSpecialCharacterStartListBottom()
+	);
 	LogInfo("[Config] [Security] GetEncryptionMode [{0}]", server.options.GetEncryptionMode());
 	LogInfo("[Config] [Security] IsTokenLoginAllowed [{0}]", server.options.IsTokenLoginAllowed());
 	LogInfo("[Config] [Security] IsPasswordLoginAllowed [{0}]", server.options.IsPasswordLoginAllowed());

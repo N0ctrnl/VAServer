@@ -136,7 +136,9 @@ const char *LuaEvents[_LargestEventID] = {
 	"event_combine",
 	"event_consider",
 	"event_consider_corpse",
-	"event_loot_zone"
+	"event_loot_zone",
+	"event_equip_item_client",
+	"event_unequip_item_client"
 };
 
 extern Zone *zone;
@@ -227,7 +229,8 @@ LuaParser::LuaParser() {
 	PlayerArgumentDispatch[EVENT_WARP] = handle_player_warp;
 	PlayerArgumentDispatch[EVENT_COMBINE] = handle_player_quest_combine;
 	PlayerArgumentDispatch[EVENT_CONSIDER] = handle_player_consider;
-	PlayerArgumentDispatch[EVENT_CONSIDER_CORPSE] = handle_player_consider_corpse;
+	PlayerArgumentDispatch[EVENT_EQUIP_ITEM_CLIENT] = handle_player_equip_item;
+	PlayerArgumentDispatch[EVENT_UNEQUIP_ITEM_CLIENT] = handle_player_equip_item;
 
 	ItemArgumentDispatch[EVENT_ITEM_CLICK] = handle_item_click;
 	ItemArgumentDispatch[EVENT_ITEM_CLICK_CAST] = handle_item_click;
@@ -327,7 +330,7 @@ int LuaParser::_EventNPC(std::string package_name, QuestEventID evt, NPC* npc, M
 		arg_function(this, L, npc, init, data, extra_data, extra_pointers);
 		Client *c = (init && init->IsClient()) ? init->CastToClient() : nullptr;
 
-		quest_manager.StartQuest(npc, c, nullptr);
+		quest_manager.StartQuest(npc, c);
 		if(lua_pcall(L, 1, 1, 0)) {
 			std::string error = lua_tostring(L, -1);
 			AddError(error);
@@ -420,7 +423,7 @@ int LuaParser::_EventPlayer(std::string package_name, QuestEventID evt, Client *
 		auto arg_function = PlayerArgumentDispatch[evt];
 		arg_function(this, L, client, data, extra_data, extra_pointers);
 
-		quest_manager.StartQuest(client, client, nullptr);
+		quest_manager.StartQuest(client, client);
 		if(lua_pcall(L, 1, 1, 0)) {
 			std::string error = lua_tostring(L, -1);
 			AddError(error);
@@ -584,7 +587,7 @@ int LuaParser::_EventSpell(std::string package_name, QuestEventID evt, NPC* npc,
 		auto arg_function = SpellArgumentDispatch[evt];
 		arg_function(this, L, npc, client, spell_id, data, extra_data, extra_pointers);
 
-		quest_manager.StartQuest(npc, client, nullptr);
+		quest_manager.StartQuest(npc, client, nullptr, const_cast<SPDat_Spell_Struct*>(&spells[spell_id]));
 		if(lua_pcall(L, 1, 1, 0)) {
 			std::string error = lua_tostring(L, -1);
 			AddError(error);
@@ -650,7 +653,7 @@ int LuaParser::_EventEncounter(std::string package_name, QuestEventID evt, std::
 		auto arg_function = EncounterArgumentDispatch[evt];
 		arg_function(this, L, enc, data, extra_data, extra_pointers);
 
-		quest_manager.StartQuest(enc, nullptr, nullptr, encounter_name);
+		quest_manager.StartQuest(enc, nullptr, nullptr, nullptr, encounter_name);
 		if(lua_pcall(L, 1, 1, 0)) {
 			std::string error = lua_tostring(L, -1);
 			AddError(error);

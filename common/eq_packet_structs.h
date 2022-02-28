@@ -448,6 +448,7 @@ struct ManaChange_Struct
 /*08*/	uint32	spell_id;
 /*12*/	uint8	keepcasting;	// won't stop the cast. Change mana while casting?
 /*13*/	uint8	padding[3];		// client doesn't read it, garbage data seems like
+/*16*/	int32	slot;			// -1 normal, otherwise clear ETA and GCD
 };
 
 struct SwapSpell_Struct
@@ -2761,7 +2762,7 @@ struct EnvDamage2_Struct {
 /*0004*/	uint16 unknown4;
 /*0006*/	uint32 damage;
 /*0010*/	uint8 unknown10[12];
-/*0022*/	uint8 dmgtype; //FA = Lava; FC = Falling
+/*0022*/	uint8 dmgtype; // FA = Lava, FB = Drowning, FC = Falling, FD = Trap
 /*0023*/	uint8 unknown2[4];
 /*0027*/	uint16 constant; //Always FFFF
 /*0029*/	uint16 unknown29;
@@ -4342,8 +4343,8 @@ struct AARankPrereq_Struct
 struct AARankEffect_Struct
 {
 	int32 effect_id;
-	int32 base1;
-	int32 base2;
+	int32 base_value;
+	int32 limit_value;
 	int32 slot;
 };
 
@@ -4351,8 +4352,8 @@ struct AARankEffect_Struct
 
 struct AA_Ability {
 /*00*/	uint32 skill_id;
-/*04*/	uint32 base1;
-/*08*/	uint32 base2;
+/*04*/	uint32 base_value;
+/*08*/	uint32 limit_value;
 /*12*/	uint32 slot;
 };
 

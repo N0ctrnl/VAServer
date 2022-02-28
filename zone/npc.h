@@ -70,9 +70,9 @@ struct AISpells_Struct {
 
 struct AISpellsEffects_Struct {
 	uint16	spelleffectid;
-	int32	base;
+	int32	base_value;
 	int32	limit;
-	int32	max;
+	int32	max_value;
 };
 
 struct AISpellsVar_Struct {
@@ -203,7 +203,7 @@ public:
 	void	AddCash(uint16 in_copper, uint16 in_silver, uint16 in_gold, uint16 in_platinum);
 	void	AddCash();
 	void	RemoveCash();
-	void	QueryLoot(Client* to);
+	void	QueryLoot(Client* to, bool is_pet_query = false);
 	bool	HasItem(uint32 item_id);
 	uint16	CountItem(uint32 item_id);
 	uint32	GetItemIDBySlot(uint16 loot_slot);
@@ -260,6 +260,7 @@ public:
 	uint32	GetSwarmTarget();
 	void	SetSwarmTarget(int target_id = 0);
 	void	DepopSwarmPets();
+	void	TryDepopTargetLockedPets(Mob* current_target);
 	void	PetOnSpawn(NewSpawn_Struct* ns);
 
 	void	SignalNPC(int _signal_id);
@@ -282,6 +283,8 @@ public:
 		content_db.GetFactionIdsForNPC(npc_faction_id, &faction_list, &primary_faction);
 	}
 
+	int32 GetFocusEffect(focusType type, uint16 spell_id, Mob* caster = nullptr);
+
     glm::vec4 m_SpawnPoint;
 
 	uint32	GetMaxDMG() const {return max_dmg;}
@@ -300,6 +303,7 @@ public:
 	void	PickPocket(Client* thief);
 	void	Disarm(Client* client, int chance);
 	void	StartSwarmTimer(uint32 duration) { swarm_timer.Start(duration); }
+	void	DisableSwarmTimer() { swarm_timer.Disable(); }
 
 	void AddLootDrop(
 		const EQ::ItemData *item2,
@@ -326,7 +330,7 @@ public:
 
 	//waypoint crap
 	int					GetMaxWp() const { return max_wp; }
-	void				DisplayWaypointInfo(Client *to);
+	void				DisplayWaypointInfo(Client *client);
 	void				CalculateNewWaypoint();
 	void				AssignWaypoints(int32 grid_id, int start_wp = 0);
 	void				SetWaypointPause();
@@ -404,6 +408,7 @@ public:
 	void	SetAvoidanceRating(int32 d) { avoidance_rating = d;}
 	int32 GetRawAC() const { return AC; }
 
+	float	GetNPCStat(const char *identifier);
 	void	ModifyNPCStat(const char *identifier, const char *new_value);
 	virtual void SetLevel(uint8 in_level, bool command = false);
 
@@ -445,8 +450,10 @@ public:
 
 	uint32 GetAdventureTemplate() const { return adventure_template_id; }
 	void AddSpellToNPCList(int16 iPriority, uint16 iSpellID, uint32 iType, int16 iManaCost, int32 iRecastDelay, int16 iResistAdjust, int8 min_hp, int8 max_hp);
-	void AddSpellEffectToNPCList(uint16 iSpellEffectID, int32 base, int32 limit, int32 max);
+	void AddSpellEffectToNPCList(uint16 iSpellEffectID, int32 base_value, int32 limit, int32 max_value, bool apply_bonus = false);
 	void RemoveSpellFromNPCList(uint16 spell_id);
+	void RemoveSpellEffectFromNPCList(uint16 iSpellEffectID, bool apply_bonus = false);
+	bool HasAISpellEffect(uint16 spell_effect_id);
 	Timer *GetRefaceTimer() const { return reface_timer; }
 	const uint32 GetAltCurrencyType() const { return NPCTypedata->alt_currency_type; }
 
@@ -496,6 +503,25 @@ public:
 	float GetRoamboxDestinationZ() const;
 	uint32 GetRoamboxDelay() const;
 	uint32 GetRoamboxMinDelay() const;
+
+	inline uint8 GetArmTexture() { return armtexture; }
+	inline uint8 GetBracerTexture() { return bracertexture; }
+	inline uint8 GetHandTexture() { return handtexture; }
+	inline uint8 GetFeetTexture() { return feettexture; }
+	inline uint8 GetLegTexture() { return legtexture; }
+
+	inline int GetCharmedAccuracy() { return charm_accuracy_rating; }
+	inline int GetCharmedArmorClass() { return charm_ac; }
+	inline int GetCharmedAttack() { return charm_atk; }
+	inline int GetCharmedAttackDelay() { return charm_attack_delay; }
+	inline int GetCharmedAvoidance() { return charm_avoidance_rating; }
+	inline int GetCharmedMaxDamage() { return charm_max_dmg; }
+	inline int GetCharmedMinDamage() { return charm_min_dmg; }
+
+	inline bool GetAlwaysAggro() { return always_aggro; }
+	inline bool GetNPCAggro() { return npc_aggro; }
+	inline bool GetIgnoreDespawn() { return ignore_despawn; }
+	inline bool GetSkipGlobalLoot() { return skip_global_loot; }
 
 	std::unique_ptr<Timer> AIautocastspell_timer;
 

@@ -38,6 +38,7 @@ class QuestManager {
 		Mob *owner;
 		Client *initiator;
 		EQ::ItemInstance* questitem;
+		const SPDat_Spell_Struct* questspell;
 		bool depop_npc;
 		std::string encounter;
 	};
@@ -51,7 +52,7 @@ public:
 	QuestManager();
 	virtual ~QuestManager();
 
-	void StartQuest(Mob *_owner, Client *_initiator = nullptr, EQ::ItemInstance* _questitem = nullptr, std::string encounter = "");
+	void StartQuest(Mob *_owner, Client *_initiator = nullptr, EQ::ItemInstance* _questitem = nullptr, const SPDat_Spell_Struct* _questspell = nullptr, std::string encounter = "");
 	void EndQuest();
 	bool QuestsRunning() { return !quests_running_.empty(); }
 
@@ -114,6 +115,11 @@ public:
 	std::string getracename(uint16 race_id);
 	std::string getspellname(uint32 spell_id);
 	std::string getskillname(int skill_id);
+	std::string getldonthemename(uint32 theme_id);
+	std::string getfactionname(int faction_id);
+	std::string getlanguagename(int language_id);
+	std::string getbodytypename(uint32 bodytype_id);
+	std::string getconsiderlevelname(uint8 consider_level);
 	void safemove();
 	void rain(int weather);
 	void snow(int weather);
@@ -271,8 +277,8 @@ public:
 	std::string getcharnamebyid(uint32 char_id);
 	uint32 getcharidbyname(const char* name);
 	std::string getclassname(uint8 class_id, uint8 level = 0);
-	int getcurrencyid(uint32 item_id);
-	int getcurrencyitemid(int currency_id);
+	uint32 getcurrencyid(uint32 item_id);
+	uint32 getcurrencyitemid(uint32 currency_id);
 	const char* getguildnamebyid(int guild_id);
 	int getguildidbycharid(uint32 char_id);
 	int getgroupidbycharid(uint32 char_id);
@@ -301,15 +307,15 @@ public:
 	void CrossZoneSignal(uint8 update_type, int update_identifier, uint32 signal, const char* client_name = "");
 	void CrossZoneSpell(uint8 update_type, uint8 update_subtype, int update_identifier, uint32 spell_id, const char* client_name = "");
 	void CrossZoneTaskUpdate(uint8 update_type, uint8 update_subtype, int update_identifier, uint32 task_identifier, int task_subidentifier = -1, int update_count = 1, bool enforce_level_requirement = false, const char* client_name = "");
-	void WorldWideDialogueWindow(const char* message, uint8 min_status = 0, uint8 max_status = 0);
-	void WorldWideLDoNUpdate(uint8 update_type, uint32 theme_id, int points = 1, uint8 min_status = 0, uint8 max_status = 0);
-	void WorldWideMarquee(uint32 type, uint32 priority, uint32 fade_in, uint32 fade_out, uint32 duration, const char* message, uint8 min_status = 0, uint8 max_status = 0);
-	void WorldWideMessage(uint32 type, const char* message, uint8 min_status = 0, uint8 max_status = 0);
-	void WorldWideMove(uint8 update_type, const char* zone_short_name, uint16 instance_id = 0, uint8 min_status = 0, uint8 max_status = 0);
-	void WorldWideSetEntityVariable(uint8 update_type, const char* variable_name, const char* variable_value, uint8 min_status = 0, uint8 max_status = 0);
-	void WorldWideSignal(uint8 update_type, uint32 signal, uint8 min_status = 0, uint8 max_status = 0);
-	void WorldWideSpell(uint8 update_type, uint32 spell_id, uint8 min_status = 0, uint8 max_status = 0);
-	void WorldWideTaskUpdate(uint8 update_type, uint32 task_identifier, int task_subidentifier = -1, int update_count = 1, bool enforce_level_requirement = false, uint8 min_status = 0, uint8 max_status = 0);
+	void WorldWideDialogueWindow(const char* message, uint8 min_status = AccountStatus::Player, uint8 max_status = AccountStatus::Player);
+	void WorldWideLDoNUpdate(uint8 update_type, uint32 theme_id, int points = 1, uint8 min_status = AccountStatus::Player, uint8 max_status = AccountStatus::Player);
+	void WorldWideMarquee(uint32 type, uint32 priority, uint32 fade_in, uint32 fade_out, uint32 duration, const char* message, uint8 min_status = AccountStatus::Player, uint8 max_status = AccountStatus::Player);
+	void WorldWideMessage(uint32 type, const char* message, uint8 min_status = AccountStatus::Player, uint8 max_status = AccountStatus::Player);
+	void WorldWideMove(uint8 update_type, const char* zone_short_name, uint16 instance_id = 0, uint8 min_status = AccountStatus::Player, uint8 max_status = AccountStatus::Player);
+	void WorldWideSetEntityVariable(uint8 update_type, const char* variable_name, const char* variable_value, uint8 min_status = AccountStatus::Player, uint8 max_status = AccountStatus::Player);
+	void WorldWideSignal(uint8 update_type, uint32 signal, uint8 min_status = AccountStatus::Player, uint8 max_status = AccountStatus::Player);
+	void WorldWideSpell(uint8 update_type, uint32 spell_id, uint8 min_status = AccountStatus::Player, uint8 max_status = AccountStatus::Player);
+	void WorldWideTaskUpdate(uint8 update_type, uint32 task_identifier, int task_subidentifier = -1, int update_count = 1, bool enforce_level_requirement = false, uint8 min_status = AccountStatus::Player, uint8 max_status = AccountStatus::Player);
 	bool EnableRecipe(uint32 recipe_id);
 	bool DisableRecipe(uint32 recipe_id);
 	void ClearNPCTypeCache(int npctype_id);
@@ -325,12 +331,15 @@ public:
 	std::string getinventoryslotname(int16 slot_id);
 	int getitemstat(uint32 item_id, std::string stat_identifier);
 	int getspellstat(uint32 spell_id, std::string stat_identifier, uint8 slot = 0);
+	const SPDat_Spell_Struct *getspell(uint32 spell_id);
+	std::string getenvironmentaldamagename(uint8 damage_type);
 
 	Client *GetInitiator() const;
 	NPC *GetNPC() const;
 	Mob *GetOwner() const;
 	EQ::InventoryProfile* GetInventory() const;
 	EQ::ItemInstance *GetQuestItem() const;
+	const SPDat_Spell_Struct *GetQuestSpell();
 	std::string GetEncounter() const;
 	inline bool ProximitySayInUse() { return HaveProximitySays; }
 

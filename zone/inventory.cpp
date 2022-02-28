@@ -1093,7 +1093,7 @@ void Client::SendCursorBuffer()
 }
 
 // Remove item from inventory
-void Client::DeleteItemInInventory(int16 slot_id, int8 quantity, bool client_update, bool update_db) {
+void Client::DeleteItemInInventory(int16 slot_id, int16 quantity, bool client_update, bool update_db) {
 	#if (EQDEBUG >= 5)
 		LogDebug("DeleteItemInInventory([{}], [{}], [{}])", slot_id, quantity, (client_update) ? "true":"false");
 	#endif
@@ -2205,27 +2205,63 @@ bool Client::SwapItem(MoveItem_Struct* move_in) {
 		if (src_slot_id <= EQ::invslot::EQUIPMENT_END) {
 			if(src_inst) {
 				parse->EventItem(EVENT_UNEQUIP_ITEM, this, src_inst, nullptr, "", src_slot_id);
+
+				std::string export_string = fmt::format(
+					"{} {}",
+					src_inst->IsStackable() ? src_inst->GetCharges() : 1,
+					src_slot_id
+				);
+
+				parse->EventPlayer(EVENT_UNEQUIP_ITEM_CLIENT, this, export_string, src_inst->GetItem()->ID);
 			}
 
 			if(dst_inst) {
 				parse->EventItem(EVENT_EQUIP_ITEM, this, dst_inst, nullptr, "", src_slot_id);
+
+				std::string export_string = fmt::format(
+					"{} {}",
+					dst_inst->IsStackable() ? dst_inst->GetCharges() : 1,
+					src_slot_id
+				);
+				
+				parse->EventPlayer(EVENT_EQUIP_ITEM_CLIENT, this, export_string, dst_inst->GetItem()->ID);
 			}
 		}
 
 		if (dst_slot_id <= EQ::invslot::EQUIPMENT_END) {
 			if(dst_inst) {
 				parse->EventItem(EVENT_UNEQUIP_ITEM, this, dst_inst, nullptr, "", dst_slot_id);
+
+				std::string export_string = fmt::format(
+					"{} {}",
+					dst_inst->IsStackable() ? dst_inst->GetCharges() : 1,
+					dst_slot_id
+				);
+
+				parse->EventPlayer(EVENT_UNEQUIP_ITEM_CLIENT, this, export_string, dst_inst->GetItem()->ID);
 			}
 
 			if(src_inst) {
 				parse->EventItem(EVENT_EQUIP_ITEM, this, src_inst, nullptr, "", dst_slot_id);
+
+				std::string export_string = fmt::format(
+					"{} {}",
+					src_inst->IsStackable() ? src_inst->GetCharges() : 1,
+					dst_slot_id
+				);
+
+				parse->EventPlayer(EVENT_EQUIP_ITEM_CLIENT, this, export_string, src_inst->GetItem()->ID);
 			}
 		}
 	}
 
 	int matslot = SlotConvert2(dst_slot_id);
-	if (dst_slot_id <= EQ::invslot::EQUIPMENT_END && matslot != EQ::textures::armorHead) { // think this is to allow the client to update with /showhelm
+	if (dst_slot_id <= EQ::invslot::EQUIPMENT_END) {// on Titanium and ROF2 /showhelm works even if sending helm slot
 		SendWearChange(matslot);
+	}
+	// This is part of a bug fix to ensure heroforge graphics display to other clients in zone.
+	if (queue_wearchange_slot >= 0) {
+		heroforge_wearchange_timer.Start(100);
 	}
 
 	// Step 7: Save change to the database
@@ -2503,67 +2539,14 @@ void Client::DyeArmorBySlot(uint8 slot, uint8 red, uint8 green, uint8 blue, uint
 	SendWearChange(slot);
 }
 
-#if 0
-bool Client::DecreaseByItemType(uint32 type, uint8 amt) {
-	const ItemData* TempItem = 0;
-	EQ::ItemInstance* ins;
-	int x;
-	for(x=EQ::legacy::POSSESSIONS_BEGIN; x <= EQ::legacy::POSSESSIONS_END; x++)
-	{
-		TempItem = 0;
-		ins = GetInv().GetItem(x);
-		if (ins)
-			TempItem = ins->GetItem();
-		if (TempItem && TempItem->ItemType == type)
-		{
-			if (ins->GetCharges() < amt)
-			{
-				amt -= ins->GetCharges();
-				DeleteItemInInventory(x,amt,true);
-			}
-			else
-			{
-				DeleteItemInInventory(x,amt,true);
-				amt = 0;
-			}
-			if (amt < 1)
-				return true;
-		}
-	}
-	for(x=EQ::legacy::GENERAL_BAGS_BEGIN; x <= EQ::legacy::GENERAL_BAGS_END; x++)
-	{
-		TempItem = 0;
-		ins = GetInv().GetItem(x);
-		if (ins)
-			TempItem = ins->GetItem();
-		if (TempItem && TempItem->ItemType == type)
-		{
-			if (ins->GetCharges() < amt)
-			{
-				amt -= ins->GetCharges();
-				DeleteItemInInventory(x,amt,true);
-			}
-			else
-			{
-				DeleteItemInInventory(x,amt,true);
-				amt = 0;
-			}
-			if (amt < 1)
-				return true;
-		}
-	}
-	return false;
-}
-#endif
-
-bool Client::DecreaseByID(uint32 type, uint8 amt) {
+bool Client::DecreaseByID(uint32 type, int16 quantity) {
 	const EQ::ItemData* TempItem = nullptr;
 	EQ::ItemInstance* ins = nullptr;
 	int x;
 	int num = 0;
 
 	for (x = EQ::invslot::POSSESSIONS_BEGIN; x <= EQ::invslot::POSSESSIONS_END; ++x) {
-		if (num >= amt)
+		if (num >= quantity)
 			break;
 		if (((uint64)1 << x) & GetInv().GetLookup()->PossessionsBitmask == 0)
 			continue;
@@ -2577,7 +2560,7 @@ bool Client::DecreaseByID(uint32 type, uint8 amt) {
 	}
 
 	for (x = EQ::invbag::GENERAL_BAGS_BEGIN; x <= EQ::invbag::GENERAL_BAGS_END; ++x) {
-		if (num >= amt)
+		if (num >= quantity)
 			break;
 		if ((((uint64)1 << (EQ::invslot::GENERAL_BEGIN + ((x - EQ::invbag::GENERAL_BAGS_BEGIN) / EQ::invbag::SLOT_COUNT))) & GetInv().GetLookup()->PossessionsBitmask) == 0)
 			continue;
@@ -2591,7 +2574,7 @@ bool Client::DecreaseByID(uint32 type, uint8 amt) {
 	}
 
 	for (x = EQ::invbag::CURSOR_BAG_BEGIN; x <= EQ::invbag::CURSOR_BAG_END; ++x) {
-		if (num >= amt)
+		if (num >= quantity)
 			break;
 
 		TempItem = nullptr;
@@ -2602,12 +2585,12 @@ bool Client::DecreaseByID(uint32 type, uint8 amt) {
 			num += ins->GetCharges();
 	}
 
-	if (num < amt)
+	if (num < quantity)
 		return false;
 
 
 	for (x = EQ::invslot::POSSESSIONS_BEGIN; x <= EQ::invslot::POSSESSIONS_END; ++x) {
-		if (amt < 1)
+		if (quantity < 1)
 			break;
 		if (((uint64)1 << x) & GetInv().GetLookup()->PossessionsBitmask == 0)
 			continue;
@@ -2619,18 +2602,18 @@ bool Client::DecreaseByID(uint32 type, uint8 amt) {
 		if (TempItem && TempItem->ID != type)
 			continue;
 
-		if (ins->GetCharges() < amt) {
-			amt -= ins->GetCharges();
-			DeleteItemInInventory(x, amt, true);
+		if (ins->GetCharges() < quantity) {
+			quantity -= ins->GetCharges();
+			DeleteItemInInventory(x, quantity, true);
 		}
 		else {
-			DeleteItemInInventory(x, amt, true);
-			amt = 0;
+			DeleteItemInInventory(x, quantity, true);
+			quantity = 0;
 		}
 	}
 
 	for (x = EQ::invbag::GENERAL_BAGS_BEGIN; x <= EQ::invbag::GENERAL_BAGS_END; ++x) {
-		if (amt < 1)
+		if (quantity < 1)
 			break;
 		if ((((uint64)1 << (EQ::invslot::GENERAL_BEGIN + ((x - EQ::invbag::GENERAL_BAGS_BEGIN) / EQ::invbag::SLOT_COUNT))) & GetInv().GetLookup()->PossessionsBitmask) == 0)
 			continue;
@@ -2642,18 +2625,18 @@ bool Client::DecreaseByID(uint32 type, uint8 amt) {
 		if (TempItem && TempItem->ID != type)
 			continue;
 
-		if (ins->GetCharges() < amt) {
-			amt -= ins->GetCharges();
-			DeleteItemInInventory(x, amt, true);
+		if (ins->GetCharges() < quantity) {
+			quantity -= ins->GetCharges();
+			DeleteItemInInventory(x, quantity, true);
 		}
 		else {
-			DeleteItemInInventory(x, amt, true);
-			amt = 0;
+			DeleteItemInInventory(x, quantity, true);
+			quantity = 0;
 		}
 	}
 
 	for (x = EQ::invbag::CURSOR_BAG_BEGIN; x <= EQ::invbag::CURSOR_BAG_END; ++x) {
-		if (amt < 1)
+		if (quantity < 1)
 			break;
 
 		TempItem = nullptr;
@@ -2663,13 +2646,13 @@ bool Client::DecreaseByID(uint32 type, uint8 amt) {
 		if (TempItem && TempItem->ID != type)
 			continue;
 
-		if (ins->GetCharges() < amt) {
-			amt -= ins->GetCharges();
-			DeleteItemInInventory(x, amt, true);
+		if (ins->GetCharges() < quantity) {
+			quantity -= ins->GetCharges();
+			DeleteItemInInventory(x, quantity, true);
 		}
 		else {
-			DeleteItemInInventory(x, amt, true);
-			amt = 0;
+			DeleteItemInInventory(x, quantity, true);
+			quantity = 0;
 		}
 	}
 
@@ -2906,7 +2889,7 @@ void Client::RemoveNoRent(bool client_update)
 		auto inst = m_inv[slot_id];
 		if(inst && !inst->GetItem()->NoRent) {
 			LogInventory("NoRent Timer Lapse: Deleting [{}] from slot [{}]", inst->GetItem()->Name, slot_id);
-			DeleteItemInInventory(slot_id, 0, false); // Can't delete from client Bank slots
+			DeleteItemInInventory(slot_id); // Can't delete from client Bank slots
 		}
 	}
 
@@ -2918,7 +2901,7 @@ void Client::RemoveNoRent(bool client_update)
 		auto inst = m_inv[slot_id];
 		if(inst && !inst->GetItem()->NoRent) {
 			LogInventory("NoRent Timer Lapse: Deleting [{}] from slot [{}]", inst->GetItem()->Name, slot_id);
-			DeleteItemInInventory(slot_id, 0, false); // Can't delete from client Bank Container slots
+			DeleteItemInInventory(slot_id); // Can't delete from client Bank Container slots
 		}
 	}
 
@@ -2926,7 +2909,7 @@ void Client::RemoveNoRent(bool client_update)
 		auto inst = m_inv[slot_id];
 		if(inst && !inst->GetItem()->NoRent) {
 			LogInventory("NoRent Timer Lapse: Deleting [{}] from slot [{}]", inst->GetItem()->Name, slot_id);
-			DeleteItemInInventory(slot_id, 0, false); // Can't delete from client Shared Bank slots
+			DeleteItemInInventory(slot_id); // Can't delete from client Shared Bank slots
 		}
 	}
 
@@ -2934,7 +2917,7 @@ void Client::RemoveNoRent(bool client_update)
 		auto inst = m_inv[slot_id];
 		if(inst && !inst->GetItem()->NoRent) {
 			LogInventory("NoRent Timer Lapse: Deleting [{}] from slot [{}]", inst->GetItem()->Name, slot_id);
-			DeleteItemInInventory(slot_id, 0, false); // Can't delete from client Shared Bank Container slots
+			DeleteItemInInventory(slot_id); // Can't delete from client Shared Bank Container slots
 		}
 	}
 

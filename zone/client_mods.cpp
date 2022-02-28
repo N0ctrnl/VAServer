@@ -1517,11 +1517,16 @@ uint32 Mob::GetInstrumentMod(uint16 spell_id)
 		}
 		return 10;
 	}
+
+	//AA's click effects that use instrument/singing skills don't apply modifiers (Confirmed on live 11/24/21 ~Kayen)
+	if (casting_spell_aa_id) {
+		return 10;
+	}
 		
 	uint32 effectmod = 10;
 	int effectmodcap = 0;
 	if (RuleB(Character, UseSpellFileSongCap)) {
-		effectmodcap = spells[spell_id].songcap / 10;
+		effectmodcap = spells[spell_id].song_cap / 10;
 		if (effectmodcap) {
 			effectmodcap += 10; //Actual calculated cap is 100 greater than songcap value.
 		}

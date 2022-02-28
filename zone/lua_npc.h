@@ -80,7 +80,7 @@ public:
 	void StartSwarmTimer(uint32 duration);
 	void DoClassAttacks(Lua_Mob target);
 	int GetMaxWp();
-	void DisplayWaypointInfo(Lua_Client to);
+	void DisplayWaypointInfo(Lua_Client client);
 	void CalculateNewWaypoint();
 	void AssignWaypoints(int grid);
 	void SetWaypointPause();
@@ -149,6 +149,10 @@ public:
 	float GetHealScale();
 	float GetSpellScale();
 	Lua_NPC_Loot_List GetLootList(lua_State* L);
+	void AddAISpellEffect(int spell_effect_id, int base_value, int limit_value, int max_value);
+	void RemoveAISpellEffect(int spell_effect_id);
+	bool HasAISpellEffect(int spell_effect_id);
+	float GetNPCStat(const char* identifier);
 };
 
 #endif

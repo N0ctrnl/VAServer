@@ -932,6 +932,19 @@ namespace Titanium
 		FINISH_ENCODE();
 	}
 
+	ENCODE(OP_ManaChange)
+	{
+		ENCODE_LENGTH_EXACT(ManaChange_Struct);
+		SETUP_DIRECT_ENCODE(ManaChange_Struct, structs::ManaChange_Struct);
+
+		OUT(new_mana);
+		OUT(stamina);
+		OUT(spell_id);
+		OUT(keepcasting);
+
+		FINISH_ENCODE();
+	}
+
 	ENCODE(OP_MemorizeSpell)
 	{
 		ENCODE_LENGTH_EXACT(MemorizeSpell_Struct);
@@ -1338,8 +1351,8 @@ namespace Titanium
 
 		for(auto i = 0; i < eq->total_abilities; ++i) {
 			eq->abilities[i].skill_id = inapp->ReadUInt32();
-			eq->abilities[i].base1 = inapp->ReadUInt32();
-			eq->abilities[i].base2 = inapp->ReadUInt32();
+			eq->abilities[i].base_value = inapp->ReadUInt32();
+			eq->abilities[i].limit_value = inapp->ReadUInt32();
 			eq->abilities[i].slot = inapp->ReadUInt32();
 		}
 

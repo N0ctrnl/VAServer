@@ -199,6 +199,25 @@ bool Client::Process() {
 			instalog = true;
 		}
 
+		if (heroforge_wearchange_timer.Check()) {
+			/*
+				This addresses bug where on zone in heroforge models would not be sent to other clients when this was
+				in Client::CompleteConnect(). Sending after a small 250 ms delay after that function resolves the issue. 
+				Unclear the underlying reason for this, if a better solution can be found then can move this back.
+			*/
+			if (queue_wearchange_slot >= 0) { //Resend slot from Client::SwapItem if heroforge item is swapped.
+				SendWearChange(static_cast<uint8>(queue_wearchange_slot));
+			}
+			else { //Send from Client::CompleteConnect()
+				SendWearChangeAndLighting(EQ::textures::LastTexture);
+				Mob *pet = GetPet();
+				if (pet) {
+					pet->SendWearChangeAndLighting(EQ::textures::LastTexture);
+				}
+			}
+			heroforge_wearchange_timer.Disable();
+		}
+
 		if (IsStunned() && stunned_timer.Check())
 			Mob::UnStun();
 
@@ -219,9 +238,9 @@ bool Client::Process() {
 				InterruptSpell(SONG_ENDS_ABRUPTLY, 0x121, bardsong);
 			}
 			else {
-				if (!ApplyNextBardPulse(bardsong, song_target, bardsong_slot))
+				if (!ApplyBardPulse(bardsong, song_target, bardsong_slot)) {
 					InterruptSpell(SONG_ENDS_ABRUPTLY, 0x121, bardsong);
-				//SpellFinished(bardsong, bardsong_target, bardsong_slot, spells[bardsong].mana);
+				}
 			}
 		}
 
@@ -302,6 +321,10 @@ bool Client::Process() {
 		}
 
 		if (AutoFireEnabled()) {
+			if (GetTarget() == this) {
+				MessageString(Chat::TooFarAway, TRY_ATTACKING_SOMEONE);
+				auto_fire = false;
+			}
 			EQ::ItemInstance *ranged = GetInv().GetItem(EQ::invslot::slotRange);
 			if (ranged)
 			{
@@ -391,7 +414,7 @@ bool Client::Process() {
 			else if (auto_attack_target->GetHP() > -10) // -10 so we can watch people bleed in PvP
 			{
 				EQ::ItemInstance *wpn = GetInv().GetItem(EQ::invslot::slotPrimary);
-				TryWeaponProc(wpn, auto_attack_target, EQ::invslot::slotPrimary);
+				TryCombatProcs(wpn, auto_attack_target, EQ::invslot::slotPrimary);
 				TriggerDefensiveProcs(auto_attack_target, EQ::invslot::slotPrimary, false);
 
 				DoAttackRounds(auto_attack_target, EQ::invslot::slotPrimary);
@@ -401,7 +424,7 @@ bool Client::Process() {
 				}
 
 				if (CheckAATimer(aaTimerRampage)) {
-					entity_list.AEAttack(this, 30);
+					entity_list.AEAttack(this, 40);
 				}
 			}
 		}
@@ -437,7 +460,7 @@ bool Client::Process() {
 				CheckIncreaseSkill(EQ::skills::SkillDualWield, auto_attack_target, -10);
 				if (CheckDualWield()) {
 					EQ::ItemInstance *wpn = GetInv().GetItem(EQ::invslot::slotSecondary);
-					TryWeaponProc(wpn, auto_attack_target, EQ::invslot::slotSecondary);
+					TryCombatProcs(wpn, auto_attack_target, EQ::invslot::slotSecondary);
 
 					DoAttackRounds(auto_attack_target, EQ::invslot::slotSecondary);
 				}
@@ -533,7 +556,7 @@ bool Client::Process() {
 		OnDisconnect(true);
 		LogInfo("Client linkdead: {}", name);
 
-		if (Admin() > 100) {
+		if (Admin() > AccountStatus::GMAdmin) {
 			if (GetMerc()) {
 				GetMerc()->Save();
 				GetMerc()->Depop();
@@ -978,31 +1001,38 @@ void Client::OPRezzAnswer(uint32 Action, uint32 SpellID, uint16 ZoneID, uint16 I
 		// corpse is in has shutdown since the rez spell was cast.
 		database.MarkCorpseAsRezzed(PendingRezzDBID);
 		LogSpells("Player [{}] got a [{}] Rezz, spellid [{}] in zone[{}], instance id [{}]",
-				this->name, (uint16)spells[SpellID].base[0],
+				this->name, (uint16)spells[SpellID].base_value[0],
 				SpellID, ZoneID, InstanceID);
 
-		this->BuffFadeNonPersistDeath();
+		BuffFadeNonPersistDeath();
 		int SpellEffectDescNum = GetSpellEffectDescNum(SpellID);
 		// Rez spells with Rez effects have this DescNum (first is Titanium, second is 6.2 Client)
-		if((SpellEffectDescNum == 82) || (SpellEffectDescNum == 39067)) {
+		if(RuleB(Character, UseResurrectionSickness) && SpellEffectDescNum == 82 || SpellEffectDescNum == 39067) {
+			SetHP(GetMaxHP() / 5);
 			SetMana(0);
-			SetHP(GetMaxHP()/5);
-			int rez_eff = 756;
-			if (RuleB(Character, UseOldRaceRezEffects) &&
-			    (GetRace() == BARBARIAN || GetRace() == DWARF || GetRace() == TROLL || GetRace() == OGRE))
-				rez_eff = 757;
-			SpellOnTarget(rez_eff, this); // Rezz effects
+			int resurrection_sickness_spell_id = (
+				RuleB(Character, UseOldRaceRezEffects) &&
+			    (
+					GetRace() == BARBARIAN ||
+					GetRace() == DWARF ||
+					GetRace() == TROLL ||
+					GetRace() == OGRE
+				) ? 
+				RuleI(Character, OldResurrectionSicknessSpellID) :
+				RuleI(Character, ResurrectionSicknessSpellID)
+			);
+			SpellOnTarget(resurrection_sickness_spell_id, this); // Rezz effects
 		}
 		else {
-			SetMana(GetMaxMana());
 			SetHP(GetMaxHP());
+			SetMana(GetMaxMana());
 		}
-		if(spells[SpellID].base[0] < 100 && spells[SpellID].base[0] > 0 && PendingRezzXP > 0)
+		if(spells[SpellID].base_value[0] < 100 && spells[SpellID].base_value[0] > 0 && PendingRezzXP > 0)
 		{
-				SetEXP(((int)(GetEXP()+((float)((PendingRezzXP / 100) * spells[SpellID].base[0])))),
+				SetEXP(((int)(GetEXP()+((float)((PendingRezzXP / 100) * spells[SpellID].base_value[0])))),
 						GetAAXP(),true);
 		}
-		else if (spells[SpellID].base[0] == 100 && PendingRezzXP > 0) {
+		else if (spells[SpellID].base_value[0] == 100 && PendingRezzXP > 0) {
 			SetEXP((GetEXP() + PendingRezzXP), GetAAXP(), true);
 		}
 
@@ -1019,6 +1049,11 @@ void Client::OPTGB(const EQApplicationPacket *app)
 {
 	if(!app) return;
 	if(!app->pBuffer) return;
+	
+	if(!RuleB(Character, EnableTGB))
+	{
+		return;
+	}
 
 	uint32 tgb_flag = *(uint32 *)app->pBuffer;
 	if(tgb_flag == 2)
@@ -1128,9 +1163,9 @@ void Client::BreakInvis()
 		sa_out->parameter = 0;
 		entity_list.QueueClients(this, outapp, true);
 		safe_delete(outapp);
-		invisible = false;
-		invisible_undead = false;
-		invisible_animals = false;
+		ZeroInvisibleVars(InvisType::T_INVISIBLE);
+		ZeroInvisibleVars(InvisType::T_INVISIBLE_VERSE_UNDEAD);
+		ZeroInvisibleVars(InvisType::T_INVISIBLE_VERSE_ANIMAL);
 		hidden = false;
 		improved_hidden = false;
 	}
@@ -1717,7 +1752,7 @@ void Client::OPGMSummon(const EQApplicationPacket *app)
 	}
 	else
 	{
-		if(admin < 80)
+		if(admin < AccountStatus::QuestTroupe)
 		{
 			return;
 		}
@@ -1832,7 +1867,7 @@ void Client::DoEnduranceUpkeep() {
 	uint32 buff_count = GetMaxTotalSlots();
 	for (buffs_i = 0; buffs_i < buff_count; buffs_i++) {
 		if (buffs[buffs_i].spellid != SPELL_UNKNOWN) {
-			int upkeep = spells[buffs[buffs_i].spellid].EndurUpkeep;
+			int upkeep = spells[buffs[buffs_i].spellid].endurance_upkeep;
 			if(upkeep > 0) {
 				has_effect = true;
 				if(cost_redux > 0) {

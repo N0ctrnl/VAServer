@@ -119,7 +119,6 @@ EQ::Random          emu_random;
 volatile bool       RunLoops   = true;
 uint32              numclients = 0;
 uint32              numzones   = 0;
-bool                holdzones  = false;
 const WorldConfig   *Config;
 EQEmuLogSys         LogSys;
 WorldContentService content_service;
@@ -252,13 +251,15 @@ static void GMSayHookCallBackProcessWorld(uint16 log_category, std::string messa
 
 		for (size_t iter = 0; iter < message_split.size(); ++iter) {
 			zoneserver_list.SendEmoteMessage(
-				nullptr,
 				0,
-				80,
+				0,
+				AccountStatus::QuestTroupe,
 				LogSys.GetGMSayColorFromCategory(log_category),
-				" %s%s",
-				(iter == 0 ? " ---" : ""),
-				message_split[iter].c_str()
+				fmt::format(
+					" {}{}",
+					(iter == 0 ? " ---" : ""),
+					message_split[iter]
+				).c_str()
 			);
 		}
 
@@ -266,9 +267,9 @@ static void GMSayHookCallBackProcessWorld(uint16 log_category, std::string messa
 	}
 
 	zoneserver_list.SendEmoteMessage(
-		nullptr,
 		0,
-		80,
+		0,
+		AccountStatus::QuestTroupe,
 		LogSys.GetGMSayColorFromCategory(log_category),
 		"%s",
 		message.c_str()
@@ -501,6 +502,11 @@ int main(int argc, char **argv)
 
 	LogInfo("Initializing [EventScheduler]");
 	event_scheduler.SetDatabase(&database)->LoadScheduledEvents();
+
+	LogInfo("Initializing [WorldContentService]");
+	content_service.SetDatabase(&database)
+		->SetExpansionContext()
+		->ReloadContentFlags();
 
 	LogInfo("Initializing [SharedTaskManager]");
 	shared_task_manager.SetDatabase(&database)

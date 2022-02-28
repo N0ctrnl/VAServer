@@ -57,6 +57,7 @@ QuestManager quest_manager;
 	Mob *owner = nullptr; \
 	Client *initiator = nullptr; \
 	EQ::ItemInstance* questitem = nullptr; \
+	const SPDat_Spell_Struct* questspell = nullptr; \
 	bool depop_npc = false; \
 	std::string encounter; \
 	do { \
@@ -65,6 +66,7 @@ QuestManager quest_manager;
 			owner = e.owner; \
 			initiator = e.initiator; \
 			questitem = e.questitem; \
+			questspell = e.questspell; \
 			depop_npc = e.depop_npc; \
 			encounter = e.encounter; \
 		} \
@@ -118,11 +120,12 @@ void QuestManager::Process() {
 	}
 }
 
-void QuestManager::StartQuest(Mob *_owner, Client *_initiator, EQ::ItemInstance* _questitem, std::string encounter) {
+void QuestManager::StartQuest(Mob *_owner, Client *_initiator, EQ::ItemInstance* _questitem, const SPDat_Spell_Struct* _questspell, std::string encounter) {
 	running_quest run;
 	run.owner = _owner;
 	run.initiator = _initiator;
 	run.questitem = _questitem;
+	run.questspell = _questspell;
 	run.depop_npc = false;
 	run.encounter = encounter;
 	quests_running_.push(run);
@@ -372,14 +375,14 @@ void QuestManager::castspell(int spell_id, int target_id) {
 	if (owner) {
 		Mob *tgt = entity_list.GetMob(target_id);
 		if(tgt != nullptr)
-			owner->SpellFinished(spell_id, tgt, EQ::spells::CastingSlot::Item, 0, -1, spells[spell_id].ResistDiff);
+			owner->SpellFinished(spell_id, tgt, EQ::spells::CastingSlot::Item, 0, -1, spells[spell_id].resist_difficulty);
 	}
 }
 
 void QuestManager::selfcast(int spell_id) {
 	QuestManagerCurrentQuestVars();
 	if (initiator)
-		initiator->SpellFinished(spell_id, initiator, EQ::spells::CastingSlot::Item, 0, -1, spells[spell_id].ResistDiff);
+		initiator->SpellFinished(spell_id, initiator, EQ::spells::CastingSlot::Item, 0, -1, spells[spell_id].resist_difficulty);
 }
 
 void QuestManager::addloot(int item_id, int charges, bool equipitem, int aug1, int aug2, int aug3, int aug4, int aug5, int aug6) {
@@ -762,18 +765,39 @@ void QuestManager::shout2(const char *str) {
 	if (!owner) {
 		LogQuests("QuestManager::shout2 called with nullptr owner. Probably syntax error in quest file");
 		return;
-	}
-	else {
-		worldserver.SendEmoteMessage(0,0,0,13, "%s shouts, '%s'", owner->GetCleanName(), str);
+	} else {
+		worldserver.SendEmoteMessage(
+			0,
+			0,
+			AccountStatus::Player,
+			Chat::Red,
+			fmt::format(
+				"{} shouts, '{}'",
+				owner->GetCleanName(),
+				str
+			).c_str()
+		);
 	}
 }
 
 void QuestManager::gmsay(const char *str, uint32 color, bool send_to_world, uint32 to_guilddbid, uint32 to_minstatus) {
 	QuestManagerCurrentQuestVars();
-	if(send_to_world)
-		worldserver.SendEmoteMessage(0, to_guilddbid, to_minstatus, color, "%s", str);
-	else
-		entity_list.MessageStatus(to_guilddbid, to_minstatus, color, "%s", str);
+	if(send_to_world) {
+		worldserver.SendEmoteMessage(
+			0,
+			to_guilddbid,
+			to_minstatus,
+			color,
+			str
+		);
+	} else {
+		entity_list.MessageStatus(
+			to_guilddbid,
+			to_minstatus,
+			color,
+			str
+		);
+	}
 }
 
 void QuestManager::depop(int npc_type) {
@@ -1009,15 +1033,27 @@ std::string QuestManager::getspellname(uint32 spell_id) {
 }
 
 std::string QuestManager::getskillname(int skill_id) {
-	if (skill_id >= 0 && skill_id < EQ::skills::SkillCount) {
-		std::map<EQ::skills::SkillType, std::string> Skills = EQ::skills::GetSkillTypeMap();
-		for (auto skills_iter : Skills) {
-			if (skill_id == skills_iter.first) {
-				return skills_iter.second;
-			}
-		}
-	}
-	return std::string();
+	return EQ::skills::GetSkillName(static_cast<EQ::skills::SkillType>(skill_id));
+}
+
+std::string QuestManager::getldonthemename(uint32 theme_id) {
+	return EQ::constants::GetLDoNThemeName(theme_id);
+}
+
+std::string QuestManager::getfactionname(int faction_id) {
+	return content_db.GetFactionName(faction_id);
+}
+
+std::string QuestManager::getlanguagename(int language_id) {
+	return EQ::constants::GetLanguageName(language_id);
+}
+
+std::string QuestManager::getbodytypename(uint32 bodytype_id) {
+	return EQ::constants::GetBodyTypeName(static_cast<bodyType>(bodytype_id));
+}
+
+std::string QuestManager::getconsiderlevelname(uint8 consider_level) {
+	return EQ::constants::GetConsiderLevelName(consider_level);
 }
 
 void QuestManager::safemove() {
@@ -1113,69 +1149,12 @@ void QuestManager::permagender(int gender_id) {
 
 uint16 QuestManager::scribespells(uint8 max_level, uint8 min_level) {
 	QuestManagerCurrentQuestVars();
-	int book_slot = initiator->GetNextAvailableSpellBookSlot();
-	std::vector<int> spell_ids = initiator->GetScribeableSpells(min_level, max_level);
-	int spell_count = spell_ids.size();
-	int spells_learned = 0;
-	if (spell_count > 0) {
-		for (auto spell_id : spell_ids) {
-			if (book_slot == -1) {
-				initiator->Message(
-					Chat::Red,
-					"Unable to scribe spell %s (%i) to Spell Book: Spell Book is Full.", spells[spell_id].name, spell_id
-				);
-				break;
-			}
-
-			if (initiator->HasSpellScribed(spell_id))
-				continue;
-
-			// defer saving per spell and bulk save at the end
-			initiator->ScribeSpell(spell_id, book_slot, true, true);
-			book_slot = initiator->GetNextAvailableSpellBookSlot(book_slot);
-			spells_learned++;
-		}
-	}
-
-	if (spells_learned > 0) {
-		std::string spell_message = (spells_learned == 1 ? "a new spell" : fmt::format("{} new spells", spells_learned));
-		initiator->Message(Chat::White, fmt::format("You have learned {}!", spell_message).c_str());
-
-		// bulk insert spells
-		initiator->SaveSpells();
-	}
-	return spells_learned;
+	return initiator->ScribeSpells(min_level, max_level);
 }
 
 uint16 QuestManager::traindiscs(uint8 max_level, uint8 min_level) {
 	QuestManagerCurrentQuestVars();
-	int character_id = initiator->CharacterID();
-	std::vector<int> spell_ids = initiator->GetLearnableDisciplines(min_level, max_level);
-	int discipline_count = spell_ids.size();
-	int disciplines_learned = 0;
-	if (discipline_count > 0) {
-		for (auto spell_id : spell_ids) {
-			if (initiator->HasDisciplineLearned(spell_id))
-				continue;
-
-			for (uint32 index = 0; index < MAX_PP_DISCIPLINES; index++) {
-				if (initiator->GetPP().disciplines.values[index] == 0) {
-					initiator->GetPP().disciplines.values[index] = spell_id;
-					database.SaveCharacterDisc(character_id, index, spell_id);
-					disciplines_learned++;
-					break;
-				}
-			}
-		}
-	}
-
-	if (disciplines_learned > 0) {
-		std::string discipline_message = (disciplines_learned == 1 ? "a new discipline" : fmt::format("{} new disciplines", disciplines_learned));
-		initiator->SendDisciplineUpdate();
-		initiator->Message(Chat::White, fmt::format("You have learned {}!", discipline_message).c_str());
-	}
-
-	return disciplines_learned;
+	return initiator->LearnDisciplines(min_level, max_level);
 }
 
 void QuestManager::unscribespells() {
@@ -1378,7 +1357,8 @@ void QuestManager::save() {
 
 void QuestManager::faction(int faction_id, int faction_value, int temp) {
 	QuestManagerCurrentQuestVars();
-	if (initiator && initiator->IsClient()) {
+	running_quest run = quests_running_.top();
+	if(run.owner->IsCharmed() == false && initiator && initiator->IsClient()) {
 		if(faction_id != 0 && faction_value != 0) {
 			initiator->SetFactionLevel2(
 				initiator->CharacterID(),
@@ -1411,30 +1391,66 @@ void QuestManager::setguild(uint32 new_guild_id, uint8 new_rank) {
 
 void QuestManager::CreateGuild(const char *guild_name, const char *leader) {
 	QuestManagerCurrentQuestVars();
-	uint32 cid = database.GetCharacterID(leader);
-	char hString[250];
-			if (cid == 0) {
-				worldserver.SendEmoteMessage(0, 0, 80, 15, "%s", "Guild Creation: Guild leader not found.");
-				return;
-			}
+	uint32 character_id = database.GetCharacterID(leader);
+	if (character_id == 0) {
+		worldserver.SendEmoteMessage(
+			0,
+			0,
+			AccountStatus::QuestTroupe,
+			Chat::Yellow,
+			"Guild Error | Guild leader not found."
+		);
+		return;
+	}
 
-			uint32 tmp = guild_mgr.FindGuildByLeader(cid);
-			if (tmp != GUILD_NONE) {
-				sprintf(hString, "Guild Creation: Error: %s already is the leader of DB# %u '%s'.", leader, tmp, guild_mgr.GetGuildName(tmp));
-				worldserver.SendEmoteMessage(0, 0, 80, 15, "%s", hString);
+	uint32 tmp = guild_mgr.FindGuildByLeader(character_id);
+	if (tmp != GUILD_NONE) {
+		worldserver.SendEmoteMessage(
+			0,
+			0,
+			AccountStatus::QuestTroupe,
+			Chat::Yellow,
+			fmt::format(
+				"Guild Error | {} already is the leader of {} ({}).",
+				leader,
+				guild_mgr.GetGuildName(tmp),
+				tmp
+			).c_str()
+		);
+	} else {
+		uint32 gid = guild_mgr.CreateGuild(guild_name, character_id);
+		if (gid == GUILD_NONE) {
+			worldserver.SendEmoteMessage(
+				0,
+				0,
+				AccountStatus::QuestTroupe,
+				Chat::Yellow,
+				"Guild Error | Guild creation failed."
+			);
+		} else {
+			worldserver.SendEmoteMessage(
+				0,
+				0,
+				AccountStatus::QuestTroupe,
+				Chat::Yellow,
+				fmt::format(
+					"Guild Created | Leader: {} ({}) ID: {}",
+					leader,
+					character_id,
+					gid
+				).c_str()
+			);
+			if (!guild_mgr.SetGuild(character_id, gid, GUILD_LEADER)) {
+				worldserver.SendEmoteMessage(
+					0,
+					0,
+					AccountStatus::QuestTroupe,
+					Chat::Yellow,
+					"Unable to set guild leader's guild in the database. Use #guild set."
+				);
 			}
-			else {
-				uint32 gid = guild_mgr.CreateGuild(guild_name, cid);
-				if (gid == GUILD_NONE)
-					worldserver.SendEmoteMessage(0, 0, 80, 15, "%s", "Guild Creation: Guild creation failed");
-				else {
-					sprintf(hString, "Guild Creation: Guild created: Leader: %u, number %u: %s", cid, gid, leader);
-					worldserver.SendEmoteMessage(0, 0, 80, 15, "%s", hString);
-					if(!guild_mgr.SetGuild(cid, gid, GUILD_LEADER))
-						worldserver.SendEmoteMessage(0, 0, 80, 15, "%s", "Unable to set guild leader's guild in the database. Your going to have to run #guild set");
-				}
-
-			}
+		}
+	}
 }
 
 void QuestManager::settime(uint8 new_hour, uint8 new_min, bool update_world /*= true*/)
@@ -2520,7 +2536,12 @@ void QuestManager::ze(int type, const char *str) {
 }
 
 void QuestManager::we(int type, const char *str) {
-	worldserver.SendEmoteMessage(0, 0, type, str);
+	worldserver.SendEmoteMessage(
+		0,
+		0,
+		type,
+		str
+	);
 }
 
 void QuestManager::message(int color, const char *message) {
@@ -3009,28 +3030,12 @@ std::string QuestManager::getclassname(uint8 class_id, uint8 level) {
 	return GetClassIDName(class_id, level);
 }
 
-int QuestManager::getcurrencyid(uint32 item_id) {
-	auto iter = zone->AlternateCurrencies.begin();
-	while (iter != zone->AlternateCurrencies.end()) {
-		if (item_id == (*iter).item_id) {
-			return (*iter).id;
-		}
-		++iter;
-	}
-	return 0;
+uint32 QuestManager::getcurrencyid(uint32 item_id) {
+	return zone->GetCurrencyID(item_id);
 }
 
-int QuestManager::getcurrencyitemid(int currency_id) {
-	if (currency_id > 0) {
-		auto iter = zone->AlternateCurrencies.begin();
-		while (iter != zone->AlternateCurrencies.end()) {
-			if (currency_id == (*iter).id) {
-				return (*iter).item_id;
-			}
-			++iter;
-		}
-	}
-	return 0;
+uint32 QuestManager::getcurrencyitemid(uint32 currency_id) {
+	return zone->GetCurrencyItemID(currency_id);
 }
 
 const char* QuestManager::getguildnamebyid(int guild_id) {
@@ -3105,19 +3110,19 @@ uint8 QuestManager::FactionValue()
 			case FACTION_SCOWLS:
 				newfac = 1;
 				break;
-			case FACTION_THREATENLY:
+			case FACTION_THREATENINGLY:
 				newfac = 2;
 				break;
-			case FACTION_DUBIOUS:
+			case FACTION_DUBIOUSLY:
 				newfac = 3;
 				break;
-			case FACTION_APPREHENSIVE:
+			case FACTION_APPREHENSIVELY:
 				newfac = 4;
 				break;
-			case FACTION_INDIFFERENT:
+			case FACTION_INDIFFERENTLY:
 				newfac = 5;
 				break;
-			case FACTION_AMIABLE:
+			case FACTION_AMIABLY:
 				newfac = 6;
 				break;
 			case FACTION_KINDLY:
@@ -3314,6 +3319,15 @@ EQ::ItemInstance *QuestManager::GetQuestItem() const {
 	return nullptr;
 }
 
+const SPDat_Spell_Struct *QuestManager::GetQuestSpell() {
+	if(!quests_running_.empty()) {
+		running_quest e = quests_running_.top();
+		return e.questspell;
+	}
+
+	return nullptr;
+}
+
 std::string QuestManager::GetEncounter() const {
 	if(!quests_running_.empty()) {
 		running_quest e = quests_running_.top();
@@ -3406,32 +3420,7 @@ EQ::ItemInstance *QuestManager::CreateItem(uint32 item_id, int16 charges, uint32
 }
 
 std::string QuestManager::secondstotime(int duration) {
-	int timer_length = duration;
-	int hours = int(timer_length / 3600);
-	timer_length %= 3600;
-	int minutes = int(timer_length / 60);
-	timer_length %= 60;
-	int seconds = timer_length;
-	std::string time_string = "Unknown";
-	std::string hour_string = (hours == 1 ? "Hour" : "Hours");
-	std::string minute_string = (minutes == 1 ? "Minute" : "Minutes");
-	std::string second_string = (seconds == 1 ? "Second" : "Seconds");
-	if (hours > 0 && minutes > 0 && seconds > 0) {
-		time_string = fmt::format("{} {}, {} {}, and {} {}", hours, hour_string, minutes, minute_string, seconds, second_string);
-	} else if (hours > 0 && minutes > 0 && seconds == 0) {
-		time_string = fmt::format("{} {} and {} {}", hours, hour_string, minutes, minute_string);
-	} else if (hours > 0 && minutes == 0 && seconds > 0) {
-		time_string = fmt::format("{} {} and {} {}", hours, hour_string, seconds, second_string);
-	} else if (hours > 0 && minutes == 0 && seconds == 0) {
-		time_string = fmt::format("{} {}", hours, hour_string);
-	} else if (hours == 0 && minutes > 0 && seconds > 0) {
-		time_string = fmt::format("{} {} and {} {}", minutes, minute_string, seconds, second_string);
-	} else if (hours == 0 && minutes > 0 && seconds == 0) {
-		time_string = fmt::format("{} {}", minutes, minute_string);
-	} else if (hours == 0 && minutes == 0 && seconds > 0) {
-		time_string = fmt::format("{} {}", seconds, second_string);
-	}
-	return time_string;
+	return ConvertSecondsToTime(duration);
 }
 
 std::string QuestManager::gethexcolorcode(std::string color_name) {
@@ -3705,4 +3694,16 @@ void QuestManager::WorldWideTaskUpdate(uint8 update_type, uint32 task_identifier
 	WWTU->max_status = max_status;
 	worldserver.SendPacket(pack);
 	safe_delete(pack);
+}
+
+const SPDat_Spell_Struct* QuestManager::getspell(uint32 spell_id) {
+    if (spells[spell_id].id) {
+        return &spells[spell_id];
+    }
+    return nullptr;
+}
+
+std::string QuestManager::getenvironmentaldamagename(uint8 damage_type) {
+	std::string environmental_damage_name = EQ::constants::GetEnvironmentalDamageName(damage_type);
+	return environmental_damage_name;
 }

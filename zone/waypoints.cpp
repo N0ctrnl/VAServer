@@ -76,26 +76,53 @@ void NPC::AI_SetRoambox(
 	roambox_min_delay     = min_delay;
 }
 
-void NPC::DisplayWaypointInfo(Client *c) {
+void NPC::DisplayWaypointInfo(Client *client) {
+	client->Message(
+		Chat::White,
+		fmt::format(
+			"Waypoint Info for {} ({}) | Grid: {} Waypoint: {} of {}",
+			GetCleanName(),
+			GetID(),
+			GetGrid(),
+			GetCurWp(),
+			GetMaxWp()
+		).c_str()
+	);
 
-	c->Message(Chat::White, "Mob is on grid %d, in spawn group %d, on waypoint %d/%d",
-			   GetGrid(),
-			   GetSpawnGroupId(),
-			   GetCurWp(),
-			   GetMaxWp());
+	client->Message(
+		Chat::White,
+		fmt::format(
+			"Waypoint Info for {} ({}) | Spawn Group: {} Spawn Point: {}",
+			GetCleanName(),
+			GetID(),
+			GetSpawnGroupId(),
+			GetSpawnPointID()
+		).c_str()		
+	);
 
-
-	std::vector<wplist>::iterator cur, end;
-	cur = Waypoints.begin();
-	end = Waypoints.end();
-	for (; cur != end; ++cur) {
-		c->Message(Chat::White, "Waypoint %d: (%.2f,%.2f,%.2f,%.2f) pause %d",
-			cur->index,
-			cur->x,
-			cur->y,
-			cur->z,
-			cur->heading,
-			cur->pause);
+	
+	for (const auto& current_waypoint : Waypoints) {
+		client->Message(
+			Chat::White,
+			fmt::format(
+				"Waypoint {}{} | XYZ: {:.2f}, {:.2f}, {:.2f} Heading: {:.2f}{}",
+				current_waypoint.index,
+				current_waypoint.centerpoint ? " (Center)" : "",
+				current_waypoint.x,
+				current_waypoint.y,
+				current_waypoint.z,
+				current_waypoint.heading,
+				(
+					current_waypoint.pause ?
+					fmt::format(
+						"{} ({})",
+						ConvertSecondsToTime(current_waypoint.pause),
+						current_waypoint.pause
+					) : 
+					""
+				)
+			).c_str()
+		);
 	}
 }
 
@@ -931,6 +958,7 @@ void Mob::TryMoveAlong(float distance, float angle, bool send)
 	}
 
 	new_pos.z = GetFixedZ(new_pos);
+
 	Teleport(new_pos);
 }
 
@@ -944,7 +972,6 @@ glm::vec4 Mob::TryMoveAlong(const glm::vec4 &start, float distance, float angle)
 	glm::vec3 new_pos = start;
 	new_pos.x += distance * g_Math.FastSin(angle);
 	new_pos.y += distance * g_Math.FastCos(angle);
-	new_pos.z += GetZOffset();
 
 	if (zone->HasMap()) {
 		if (zone->zonemap->LineIntersectsZone(start, new_pos, 0.0f, &tmp_pos))

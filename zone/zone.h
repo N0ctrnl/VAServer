@@ -134,7 +134,7 @@ public:
 	bool IsUCSServerAvailable() { return m_ucss_available; }
 	bool IsZone(uint32 zone_id, uint16 instance_id) const;
 	bool LoadGroundSpawns();
-	bool LoadZoneCFG(const char *filename, uint16 instance_id);
+	bool LoadZoneCFG(const char *filename, uint16 instance_version);
 	bool LoadZoneObjects();
 	bool Process();
 	bool SaveZoneCFG();
@@ -241,6 +241,9 @@ public:
 	uint32 GetSpawnKillCount(uint32 in_spawnid);
 	uint32 GetTempMerchantQuantity(uint32 NPCID, uint32 Slot);
 
+	uint32 GetCurrencyID(uint32 item_id);
+	uint32 GetCurrencyItemID(uint32 currency_id);
+
 	void AddAggroMob() { aggroedmobs++; }
 	void AddAuth(ServerZoneIncomingClient_Struct *szic);
 	void ChangeWeather();
@@ -328,24 +331,29 @@ public:
 			auto message_split = SplitString(message, '\n');
 			entity_list.MessageStatus(
 				0,
-				80,
+				AccountStatus::QuestTroupe,
 				LogSys.GetGMSayColorFromCategory(log_category),
-				"%s",
 				message_split[0].c_str()
 			);
 
 			for (size_t iter = 1; iter < message_split.size(); ++iter) {
 				entity_list.MessageStatus(
 					0,
-					80,
+					AccountStatus::QuestTroupe,
 					LogSys.GetGMSayColorFromCategory(log_category),
-					"--- %s",
-					message_split[iter].c_str()
+					fmt::format(
+						"--- {}",
+						message_split[iter]
+					).c_str()					
 				);
 			}
-		}
-		else {
-			entity_list.MessageStatus(0, 80, LogSys.GetGMSayColorFromCategory(log_category), "%s", message.c_str());
+		} else {
+			entity_list.MessageStatus(
+				0,
+				AccountStatus::QuestTroupe,
+				LogSys.GetGMSayColorFromCategory(log_category),
+				message.c_str()
+			);
 		}
 	}
 

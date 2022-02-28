@@ -163,7 +163,9 @@ public:
 	void UnmemSpellBySpellID(int32 spell_id);
 	void UnmemSpellAll();
 	void UnmemSpellAll(bool update_client);
+	int FindEmptyMemSlot();
 	uint16 FindMemmedSpellBySlot(int slot);
+	int FindMemmedSpellBySpellID(uint16 spell_id);
 	int MemmedCount();
 	luabind::object GetLearnableDisciplines(lua_State* L);
 	luabind::object GetLearnableDisciplines(lua_State* L, uint8 min_level);
@@ -176,11 +178,15 @@ public:
 	luabind::object GetScribeableSpells(lua_State* L, uint8 min_level, uint8 max_level);
 	void ScribeSpell(int spell_id, int slot);
 	void ScribeSpell(int spell_id, int slot, bool update_client);
+	uint16 ScribeSpells(uint8 min_level, uint8 max_level);
 	void UnscribeSpell(int slot);
 	void UnscribeSpell(int slot, bool update_client);
 	void UnscribeSpellAll();
 	void UnscribeSpellAll(bool update_client);
+	void UnscribeSpellBySpellID(uint16 spell_id);
+	void UnscribeSpellBySpellID(uint16 spell_id, bool update_client);
 	void TrainDisc(int itemid);
+	uint16 LearnDisciplines(uint8 min_level, uint8 max_level);
 	void TrainDiscBySpellID(int32 spell_id);
 	int GetDiscSlotBySpellID(int32 spell_id);
 	void UntrainDisc(int slot);
@@ -237,6 +243,9 @@ public:
 	void ResetTrade();
 	uint32 GetDisciplineTimer(uint32 timer_id);
 	void ResetDisciplineTimer(uint32 timer_id);
+	void ResetCastbarCooldownBySlot(int slot);
+	void ResetAllCastbarCooldowns();
+	void ResetCastbarCooldownBySpellID(uint32 spell_id);
 	void ResetAllDisciplineTimers();
 	bool UseDiscipline(int spell_id, int target_id);
 	bool HasDisciplineLearned(uint16 spell_id);
@@ -300,6 +309,8 @@ public:
 	void ClearCompassMark();
 	int GetNextAvailableSpellBookSlot();
 	int GetNextAvailableSpellBookSlot(int start);
+	int GetNextAvailableDisciplineSlot();
+	int GetNextAvailableDisciplineSlot(int starting_slot);
 	uint32 GetSpellIDByBookSlot(int book_slot);
 	int FindSpellBookSlotBySpellID(int spell_id);
 	void UpdateTaskActivity(int task, int activity, int count);

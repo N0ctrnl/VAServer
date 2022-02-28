@@ -2509,7 +2509,7 @@ struct EnvDamage2_Struct {
 /*0004*/	uint16 unknown4;
 /*0006*/	uint32 damage;
 /*0010*/	uint8 unknown10[12];
-/*0022*/	uint8 dmgtype; //FA = Lava; FC = Falling
+/*0022*/	uint8 dmgtype; // FA = Lava, FB = Drowning, FC = Falling, FD = Trap
 /*0023*/	uint8 unknown2[4];
 /*0027*/	uint16 constant; //Always FFFF
 /*0029*/	uint16 unknown29;
@@ -3673,8 +3673,8 @@ struct UseAA_Struct {
 
 struct AA_Ability {
 /*00*/	uint32 skill_id;
-/*04*/	uint32 base1;
-/*08*/	uint32 base2;
+/*04*/	uint32 base_value;
+/*08*/	uint32 limit_value;
 /*12*/	uint32 slot;
 /*16*/
 };

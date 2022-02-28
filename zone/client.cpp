@@ -145,7 +145,6 @@ Client::Client(EQStreamInterface* ieqs)
   global_channel_timer(1000),
   fishing_timer(8000),
   endupkeep_timer(1000),
-  forget_timer(0),
   autosave_timer(RuleI(Character, AutosaveIntervalS) * 1000),
   client_scan_npc_aggro_timer(RuleI(Aggro, ClientAggroCheckIdleInterval)),
   client_zone_wide_full_position_update_timer(5 * 60 * 1000),
@@ -154,6 +153,7 @@ Client::Client(EQStreamInterface* ieqs)
   TaskPeriodic_Timer(RuleI(TaskSystem, PeriodicCheckTimer) * 1000),
   charm_update_timer(6000),
   rest_timer(1),
+  pick_lock_timer(1000),
   charm_class_attacks_timer(3000),
   charm_cast_timer(3500),
   qglobal_purge_timer(30000),
@@ -185,7 +185,6 @@ Client::Client(EQStreamInterface* ieqs)
 	character_id = 0;
 	conn_state = NoPacketsReceived;
 	client_data_loaded = false;
-	feigned = false;
 	berserk = false;
 	dead = false;
 	eqs = ieqs;
@@ -200,7 +199,7 @@ Client::Client(EQStreamInterface* ieqs)
 	TrackingID = 0;
 	WID = 0;
 	account_id = 0;
-	admin = 0;
+	admin = AccountStatus::Player;
 	lsaccountid = 0;
 	guild_id = GUILD_NONE;
 	guildrank = 0;
@@ -269,6 +268,8 @@ Client::Client(EQStreamInterface* ieqs)
 	SetMerc(0);
 	if (RuleI(World, PVPMinLevel) > 0 && level >= RuleI(World, PVPMinLevel) && m_pp.pvp == 0) SetPVP(true, false);
 	dynamiczone_removal_timer.Disable();
+
+	heroforge_wearchange_timer.Disable();
 
 	//for good measure:
 	memset(&m_pp, 0, sizeof(m_pp));
@@ -1013,7 +1014,7 @@ void Client::ChannelMessageReceived(uint8 chan_num, uint8 language, uint8 lang_s
 				else
 					return;
 			}
-			if(worldserver.IsOOCMuted() && admin < 100)
+			if(worldserver.IsOOCMuted() && admin < AccountStatus::GMAdmin)
 			{
 				Message(0,"OOC has been muted. Try again later.");
 				return;
@@ -1052,7 +1053,7 @@ void Client::ChannelMessageReceived(uint8 chan_num, uint8 language, uint8 lang_s
 	}
 	case ChatChannel_Broadcast: /* Broadcast */
 	case ChatChannel_GMSAY: { /* GM Say */
-		if (!(admin >= 80))
+		if (!(admin >= AccountStatus::QuestTroupe))
 			Message(0, "Error: Only GMs can use this channel");
 		else if (!worldserver.SendChannelMessage(this, targetname, chan_num, 0, language, lang_skill, message))
 			Message(0, "Error: World server disconnected");
@@ -1230,7 +1231,7 @@ void Client::ChannelMessageReceived(uint8 chan_num, uint8 language, uint8 lang_s
 }
 
 void Client::ChannelMessageSend(const char* from, const char* to, uint8 chan_num, uint8 language, uint8 lang_skill, const char* message, ...) {
-	if ((chan_num==11 && !(this->GetGM())) || (chan_num==10 && this->Admin()<80)) // dont need to send /pr & /petition to everybody
+	if ((chan_num==11 && !(this->GetGM())) || (chan_num==10 && this->Admin() < AccountStatus::QuestTroupe)) // dont need to send /pr & /petition to everybody
 		return;
 	va_list argptr;
 	char buffer[4096];
@@ -1869,9 +1870,7 @@ void Client::CheckManaEndUpdate() {
 		mana_change->stamina = current_endurance;
 		mana_change->spell_id = casting_spell_id;
 		mana_change->keepcasting = 1;
-		mana_change->padding[0] = 0;
-		mana_change->padding[1] = 0;
-		mana_change->padding[2] = 0;
+		mana_change->slot = -1;
 		outapp->priority = 6;
 		QueuePacket(outapp);
 		safe_delete(outapp);
@@ -2076,7 +2075,13 @@ bool Client::ChangeFirstName(const char* in_firstname, const char* gmname)
 void Client::SetGM(bool toggle) {
 	m_pp.gm = toggle ? 1 : 0;
 	m_inv.SetGMInventory((bool)m_pp.gm);
-	Message(Chat::Red, "You are %s a GM.", m_pp.gm ? "now" : "no longer");
+	Message(
+		Chat::White,
+		fmt::format(
+			"You are {} flagged as a GM.",
+			m_pp.gm ? "now" : "no longer"
+		).c_str()
+	);
 	SendAppearancePacket(AT_GM, m_pp.gm);
 	Save();
 	UpdateWho();
@@ -2417,7 +2422,7 @@ bool Client::CheckIncreaseSkill(EQ::skills::SkillType skillid, Mob *against_who,
 		return false;
 	if (skillid > EQ::skills::HIGHEST_SKILL)
 		return false;
-	int skillval = GetRawSkill(skillid);
+	int skillval = GetRawSkill(skillid);	
 	int maxskill = GetMaxSkillAfterSpecializationRules(skillid, MaxSkill(skillid));
 	std::string export_string = fmt::format(
 		"{} {}",
@@ -2442,23 +2447,26 @@ bool Client::CheckIncreaseSkill(EQ::skills::SkillType skillid, Mob *against_who,
 	// Make sure we're not already at skill cap
 	if (skillval < maxskill)
 	{
-		// the higher your current skill level, the harder it is
-		int32 Chance = 10 + chancemodi + ((252 - skillval) / 20);
-
-		Chance = (Chance * RuleI(Character, SkillUpModifier) / 100);
-
-		Chance = mod_increase_skill_chance(Chance, against_who);
-
-		if(Chance < 1)
-			Chance = 1; // Make it always possible
+		double Chance = 0;		
+		if (RuleI(Character, SkillUpMaximumChancePercentage) + chancemodi - RuleI(Character, SkillUpMinimumChancePercentage) <= RuleI(Character, SkillUpMinimumChancePercentage)) {
+			Chance = RuleI(Character, SkillUpMinimumChancePercentage);
+		}
+		else {
+			// f(x) = (max - min + modification) * .99^skillval + min
+			// This results in a exponential decay where as you skill up, you lose a slight chance to skill up, ranging from your modified maximum to approaching your minimum
+			// This result is increased by the existing SkillUpModifier rule
+			double working_chance = (((RuleI(Character, SkillUpMaximumChancePercentage) - RuleI(Character, SkillUpMinimumChancePercentage) + chancemodi) * (pow(0.99, skillval))) + RuleI(Character, SkillUpMinimumChancePercentage));
+			Chance = (working_chance * RuleI(Character, SkillUpModifier) / 100);
+			Chance = mod_increase_skill_chance(Chance, against_who);
+		}
 
 		if(zone->random.Real(0, 99) < Chance)
 		{
 			SetSkill(skillid, GetRawSkill(skillid) + 1);
-			LogSkills("Skill [{}] at value [{}] successfully gain with [{}]% chance (mod [{}])", skillid, skillval, Chance, chancemodi);
+			LogSkills("Skill [{}] at value [{}] successfully gain with [{}] chance (mod [{}])", skillid, skillval, Chance, chancemodi);
 			return true;
 		} else {
-			LogSkills("Skill [{}] at value [{}] failed to gain with [{}]% chance (mod [{}])", skillid, skillval, Chance, chancemodi);
+			LogSkills("Skill [{}] at value [{}] failed to gain with [{}] chance (mod [{}])", skillid, skillval, Chance, chancemodi);
 		}
 	} else {
 		LogSkills("Skill [{}] at value [{}] cannot increase due to maxmum [{}]", skillid, skillval, maxskill);
@@ -2613,10 +2621,11 @@ void Client::SetPVP(bool toggle, bool message) {
 	m_pp.pvp = toggle ? 1 : 0;
 
 	if (message) {
-		if(GetPVP())
-			this->MessageString(Chat::Shout,PVP_ON);
-		else
-			Message(Chat::Red, "You no longer follow the ways of discord.");
+		if(GetPVP()) {
+			MessageString(Chat::Shout, PVP_ON);
+		} else {
+			Message(Chat::Shout, "You now follow the ways of Order.");
+		}
 	}
 
 	SendAppearancePacket(AT_PVP, GetPVP());
@@ -2647,43 +2656,27 @@ void Client::GMKill() {
 }
 
 bool Client::CheckAccess(int16 iDBLevel, int16 iDefaultLevel) {
-	if ((admin >= iDBLevel) || (iDBLevel == 255 && admin >= iDefaultLevel))
+	if ((admin >= iDBLevel) || (iDBLevel == AccountStatus::Max && admin >= iDefaultLevel))
 		return true;
 	else
 		return false;
 }
 
-void Client::MemorizeSpell(uint32 slot,uint32 spellid,uint32 scribing){
+void Client::MemorizeSpell(uint32 slot,uint32 spellid,uint32 scribing, uint32 reduction){
 	if (slot < 0 || slot >= EQ::spells::DynamicLookup(ClientVersion(), GetGM())->SpellbookSize)
 		return;
 	if ((spellid < 3 || spellid > EQ::spells::DynamicLookup(ClientVersion(), GetGM())->SpellIdMax) && spellid != 0xFFFFFFFF)
 		return;
-
 	auto outapp = new EQApplicationPacket(OP_MemorizeSpell, sizeof(MemorizeSpell_Struct));
 	MemorizeSpell_Struct* mss=(MemorizeSpell_Struct*)outapp->pBuffer;
 	mss->scribing=scribing;
 	mss->slot=slot;
 	mss->spell_id=spellid;
+	mss->reduction = reduction;
 	outapp->priority = 5;
 	QueuePacket(outapp);
 	safe_delete(outapp);
 }
-
-void Client::SetFeigned(bool in_feigned) {
-	if (in_feigned)
-	{
-		if(RuleB(Character, FeignKillsPet))
-		{
-			SetPet(0);
-		}
-		SetHorseId(0);
-		entity_list.ClearFeignAggro(this);
-		forget_timer.Start(FeignMemoryDuration);
-	} else {
-		forget_timer.Disable();
-	}
-	feigned=in_feigned;
- }
 
 void Client::LogMerchant(Client* player, Mob* merchant, uint32 quantity, uint32 price, const EQ::ItemData* item, bool buying)
 {
@@ -3460,8 +3453,7 @@ uint8 Client::SlotConvert2(uint8 slot){
 void Client::Escape()
 {
 	entity_list.RemoveFromTargets(this, true);
-	SetInvisible(1);
-
+	SetInvisible(Invisibility::Invisible);
 	MessageString(Chat::Skills, ESCAPE);
 }
 
@@ -3471,7 +3463,7 @@ float Client::CalcPriceMod(Mob* other, bool reverse)
 	if (other)
 	{
 		int factionlvl = GetFactionLevel(CharacterID(), other->CastToNPC()->GetNPCTypeID(), GetFactionRace(), GetClass(), GetDeity(), other->CastToNPC()->GetPrimaryFaction(), other);
-		if (factionlvl >= FACTION_APPREHENSIVE) // Apprehensive or worse.
+		if (factionlvl >= FACTION_APPREHENSIVELY) // Apprehensive or worse.
 		{
 			if (GetCHA() > 103)
 			{
@@ -3486,7 +3478,7 @@ float Client::CalcPriceMod(Mob* other, bool reverse)
 					chaformula = 1*(RuleI(Merchant, PricePenaltyPct));
 			}
 		}
-		if (factionlvl <= FACTION_INDIFFERENT) // Indifferent or better.
+		if (factionlvl <= FACTION_INDIFFERENTLY) // Indifferent or better.
 		{
 			if (GetCHA() > 75)
 			{
@@ -4005,9 +3997,9 @@ void Client::SendOPTranslocateConfirm(Mob *Caster, uint16 SpellID) {
 	else {
 		PendingTranslocateData.zone_id = ts->ZoneID = ZoneID(Spell.teleport_zone);
 		PendingTranslocateData.instance_id = 0;
-		PendingTranslocateData.y = ts->y = Spell.base[0];
-		PendingTranslocateData.x = ts->x = Spell.base[1];
-		PendingTranslocateData.z = ts->z = Spell.base[2];
+		PendingTranslocateData.y = ts->y = Spell.base_value[0];
+		PendingTranslocateData.x = ts->x = Spell.base_value[1];
+		PendingTranslocateData.z = ts->z = Spell.base_value[2];
 		PendingTranslocateData.heading = 0.0;
 	}
 
@@ -4965,7 +4957,7 @@ void Client::HandleLDoNOpen(NPC *target)
 			if(target->GetLDoNTrapSpellID() != 0)
 			{
 				MessageString(Chat::Red, LDON_ACCIDENT_SETOFF2);
-				target->SpellFinished(target->GetLDoNTrapSpellID(), this, EQ::spells::CastingSlot::Item, 0, -1, spells[target->GetLDoNTrapSpellID()].ResistDiff);
+				target->SpellFinished(target->GetLDoNTrapSpellID(), this, EQ::spells::CastingSlot::Item, 0, -1, spells[target->GetLDoNTrapSpellID()].resist_difficulty);
 				target->SetLDoNTrapSpellID(0);
 				target->SetLDoNTrapped(false);
 				target->SetLDoNTrapDetected(false);
@@ -5087,7 +5079,7 @@ void Client::HandleLDoNDisarm(NPC *target, uint16 skill, uint8 type)
 				break;
 			case -1:
 				MessageString(Chat::Red, LDON_ACCIDENT_SETOFF2);
-				target->SpellFinished(target->GetLDoNTrapSpellID(), this, EQ::spells::CastingSlot::Item, 0, -1, spells[target->GetLDoNTrapSpellID()].ResistDiff);
+				target->SpellFinished(target->GetLDoNTrapSpellID(), this, EQ::spells::CastingSlot::Item, 0, -1, spells[target->GetLDoNTrapSpellID()].resist_difficulty);
 				target->SetLDoNTrapSpellID(0);
 				target->SetLDoNTrapped(false);
 				target->SetLDoNTrapDetected(false);
@@ -5106,7 +5098,7 @@ void Client::HandleLDoNPickLock(NPC *target, uint16 skill, uint8 type)
 			if(target->IsLDoNTrapped())
 			{
 				MessageString(Chat::Red, LDON_ACCIDENT_SETOFF2);
-				target->SpellFinished(target->GetLDoNTrapSpellID(), this, EQ::spells::CastingSlot::Item, 0, -1, spells[target->GetLDoNTrapSpellID()].ResistDiff);
+				target->SpellFinished(target->GetLDoNTrapSpellID(), this, EQ::spells::CastingSlot::Item, 0, -1, spells[target->GetLDoNTrapSpellID()].resist_difficulty);
 				target->SetLDoNTrapSpellID(0);
 				target->SetLDoNTrapped(false);
 				target->SetLDoNTrapDetected(false);
@@ -5321,31 +5313,72 @@ uint32 Client::GetStartZone()
 
 void Client::ShowSkillsWindow()
 {
-	const char *WindowTitle = "Skills";
-	std::string WindowText;
-	std::map<EQ::skills::SkillType, std::string> Skills = EQ::skills::GetSkillTypeMap();
+	std::string popup_text;
+	std::map<EQ::skills::SkillType, std::string> skills_map = EQ::skills::GetSkillTypeMap();
 
-	if (ClientVersion() < EQ::versions::ClientVersion::RoF2)
-		Skills[EQ::skills::Skill1HPiercing] = "Piercing";
-
-	// print out all available skills
-	for (auto skills_iter : Skills) {
-		if (skills_iter.first == EQ::skills::Skill2HPiercing && ClientVersion() < EQ::versions::ClientVersion::RoF2)
-			continue;
-		if (!GetSkill(skills_iter.first) && !MaxSkill(skills_iter.first))
-			continue;
-
-		WindowText += skills_iter.second;
-		// line up the values
-		WindowText += "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;";
-		WindowText += itoa(this->GetSkill(skills_iter.first));
-		if (MaxSkill(skills_iter.first) > 0) {
-			WindowText += "/";
-			WindowText += itoa(this->GetMaxSkillAfterSpecializationRules(skills_iter.first, this->MaxSkill(skills_iter.first)));
-		}
-		WindowText += "<br>";
+	if (ClientVersion() < EQ::versions::ClientVersion::RoF2) {
+		skills_map[EQ::skills::Skill1HPiercing] = "Piercing";
 	}
-	this->SendPopupToClient(WindowTitle, WindowText.c_str());
+
+	// Table Start
+	popup_text += "<table>";
+
+	for (const auto& skill : skills_map) {
+		auto skill_id = skill.first;
+		auto skill_name = skill.second;
+		auto can_have_skill = CanHaveSkill(skill_id);
+		auto current_skill = GetSkill(skill_id);
+		auto max_skill = MaxSkill(skill_id);
+		auto skill_maxed = current_skill >= max_skill;
+		if (
+			skill_id == EQ::skills::Skill2HPiercing &&
+			ClientVersion() < EQ::versions::ClientVersion::RoF2
+		) {
+			continue;
+		}
+
+		if (
+			!can_have_skill ||
+			!current_skill ||
+			!max_skill
+		) {
+			continue;
+		}
+
+		// Row Start
+		popup_text += "<tr>";
+
+		// Skill Name
+		popup_text += fmt::format(
+			"<td>{}</td>",
+			skill_name
+		);
+
+		// Current Skill Level out of Max Skill Level or a Check Mark for Maxed
+		popup_text += fmt::format(
+			"<td>{}</td>",
+			(
+				skill_maxed ?
+				"<c \"#00FF00\">✔</c>" :
+				fmt::format(
+					"{}/{}",
+					current_skill,
+					max_skill
+				)
+			)
+		);
+
+		// Row End
+		popup_text += "</tr>";
+	}
+	
+	// Table End
+	popup_text += "</table>";
+	
+	SendPopupToClient(
+		"Skills",
+		popup_text.c_str()
+	);
 }
 
 void Client::Signal(uint32 data)
@@ -6228,36 +6261,44 @@ void Client::LocateCorpse()
 
 void Client::NPCSpawn(NPC *target_npc, const char *identifier, uint32 extra)
 {
-	if (!target_npc || !identifier)
+	if (!target_npc || !identifier) {
 		return;
-
-	std::string id = identifier;
-	for(int i = 0; i < id.length(); ++i)
-	{
-		id[i] = tolower(id[i]);
 	}
 
-	if (id == "create") {
-		// extra tries to create the npc_type ID within the range for the current zone (zone_id * 1000)
-		content_db.NPCSpawnDB(0, zone->GetShortName(), zone->GetInstanceVersion(), this, target_npc->CastToNPC(), extra);
-	}
-	else if (id == "add") {
-		// extra sets the respawn timer for add
-		content_db.NPCSpawnDB(1, zone->GetShortName(), zone->GetInstanceVersion(), this, target_npc->CastToNPC(), extra);
-	}
-	else if (id == "update") {
-		content_db.NPCSpawnDB(2, zone->GetShortName(), zone->GetInstanceVersion(), this, target_npc->CastToNPC());
-	}
-	else if (id == "remove") {
-		content_db.NPCSpawnDB(3, zone->GetShortName(), zone->GetInstanceVersion(), this, target_npc->CastToNPC());
-		target_npc->Depop(false);
-	}
-	else if (id == "delete") {
-		content_db.NPCSpawnDB(4, zone->GetShortName(), zone->GetInstanceVersion(), this, target_npc->CastToNPC());
-		target_npc->Depop(false);
-	}
-	else {
-		return;
+	std::string spawn_type = str_tolower(identifier);
+	bool is_add = spawn_type.find("add") != std::string::npos;
+	bool is_create = spawn_type.find("create") != std::string::npos;
+	bool is_delete = spawn_type.find("delete") != std::string::npos;
+	bool is_remove = spawn_type.find("remove") != std::string::npos;
+	bool is_update = spawn_type.find("update") != std::string::npos;
+	if (is_add || is_create) {
+		// Add: extra tries to create the NPC ID within the range for the current Zone (Zone ID * 1000)
+		// Create: extra sets the Respawn Timer for add
+		content_db.NPCSpawnDB(
+			is_add ? NPCSpawnTypes::AddNewSpawngroup : NPCSpawnTypes::CreateNewSpawn,
+			zone->GetShortName(),
+			zone->GetInstanceVersion(),
+			this,
+			target_npc->CastToNPC(),
+			extra
+		); 
+	} else if (is_delete || is_remove || is_update) {
+		uint8 spawn_update_type = (
+			is_delete ?
+			NPCSpawnTypes::DeleteSpawn :
+			(
+				is_remove ?
+				NPCSpawnTypes::RemoveSpawn :
+				NPCSpawnTypes::UpdateAppearance
+			)
+		);
+		content_db.NPCSpawnDB(
+			spawn_update_type,
+			zone->GetShortName(),
+			zone->GetInstanceVersion(),
+			this,
+			target_npc->CastToNPC()
+		);
 	}
 }
 
@@ -6443,11 +6484,12 @@ void Client::Doppelganger(uint16 spell_id, Mob *target, const char *name_overrid
 		swarm_pet_npc->StartSwarmTimer(pet_duration * 1000);
 
 		swarm_pet_npc->GetSwarmInfo()->owner_id = GetID();
+		swarm_pet_npc->SetFollowID(GetID());
 
 		// Give the pets alittle more agro than the caster and then agro them on the target
 		target->AddToHateList(swarm_pet_npc, (target->GetHateAmount(this) + 100), (target->GetDamageAmount(this) + 100));
 		swarm_pet_npc->AddToHateList(target, 1000, 1000);
-		swarm_pet_npc->GetSwarmInfo()->target = target->GetID();
+		swarm_pet_npc->GetSwarmInfo()->target = 0;
 
 		//we allocated a new NPC type object, give the NPC ownership of that memory
 		if(npc_dup != nullptr)
@@ -6882,7 +6924,7 @@ void Client::SendStatsWindow(Client* client, bool use_window)
 	for (auto iter = item_faction_bonuses.begin(); iter != item_faction_bonuses.end(); ++iter) {
 		memset(&faction_buf, 0, sizeof(faction_buf));
 
-		if(!content_db.GetFactionName((int32)((*iter).first), faction_buf, sizeof(faction_buf)))
+		if(!content_db.GetFactionName((int)((*iter).first), faction_buf, sizeof(faction_buf)))
 			strcpy(faction_buf, "Not in DB");
 
 		if((*iter).second > 0) {
@@ -6999,7 +7041,7 @@ void Client::SendStatsWindow(Client* client, bool use_window)
 	Extra_Info:
 
 	client->Message(Chat::White, " BaseRace: %i  Gender: %i  BaseGender: %i Texture: %i  HelmTexture: %i", GetBaseRace(), GetGender(), GetBaseGender(), GetTexture(), GetHelmTexture());
-	if (client->Admin() >= 100) {
+	if (client->Admin() >= AccountStatus::GMAdmin) {
 		client->Message(Chat::White, "  CharID: %i  EntityID: %i  PetID: %i  OwnerID: %i  AIControlled: %i  Targetted: %i", CharacterID(), GetID(), GetPetID(), GetOwnerID(), IsAIControlled(), targeted);
 	}
 }
@@ -7018,23 +7060,16 @@ void Client::SendAltCurrencies() {
 		altc->opcode = ALT_CURRENCY_OP_POPULATE;
 		altc->count = count;
 
-		uint32 i = 0;
-		auto iter = zone->AlternateCurrencies.begin();
-		while(iter != zone->AlternateCurrencies.end()) {
-			const EQ::ItemData* item = database.GetItem((*iter).item_id);
-			altc->entries[i].currency_number = (*iter).id;
-			altc->entries[i].unknown00 = 1;
-			altc->entries[i].currency_number2 = (*iter).id;
-			altc->entries[i].item_id = (*iter).item_id;
-			if(item) {
-				altc->entries[i].item_icon = item->Icon;
-				altc->entries[i].stack_size = item->StackSize;
-			} else {
-				altc->entries[i].item_icon = 1000;
-				altc->entries[i].stack_size = 1000;
-			}
-			i++;
-			++iter;
+		uint32 currency_id = 0;
+		for (const auto& alternate_currency : zone->AlternateCurrencies) {
+			const EQ::ItemData* item = database.GetItem(alternate_currency.item_id);
+			altc->entries[currency_id].currency_number = alternate_currency.id;
+			altc->entries[currency_id].unknown00 = 1;
+			altc->entries[currency_id].currency_number2 = alternate_currency.id;
+			altc->entries[currency_id].item_id = alternate_currency.item_id;
+			altc->entries[currency_id].item_icon = item ? item->Icon : 1000;
+			altc->entries[currency_id].stack_size = item ? item->StackSize : 1000;
+			currency_id++;
 		}
 
 		FastQueuePacket(&outapp);
@@ -7089,10 +7124,8 @@ void Client::AddAlternateCurrencyValue(uint32 currency_id, int32 amount, int8 me
 
 void Client::SendAlternateCurrencyValues()
 {
-	auto iter = zone->AlternateCurrencies.begin();
-	while(iter != zone->AlternateCurrencies.end()) {
-		SendAlternateCurrencyValue((*iter).id, false);
-		++iter;
+	for (const auto& alternate_currency : zone->AlternateCurrencies) {
+		SendAlternateCurrencyValue(alternate_currency.id, false);
 	}
 }
 
@@ -7396,7 +7429,7 @@ void Client::ProcessXTargetAutoHaters()
 	std::queue<int> empty_slots;
 	for (int i = 0; i < GetMaxXTargets(); ++i) {
 		if (XTargets[i].Type != Auto)
-			continue;
+			continue;		
 
 		if (XTargets[i].ID != 0 && !GetXTargetAutoMgr()->contains_mob(XTargets[i].ID)) {
 			XTargets[i].ID = 0;
@@ -7435,6 +7468,7 @@ void Client::ProcessXTargetAutoHaters()
 				break;
 		}
 	}
+	
 	m_dirtyautohaters = false;
 	SendXTargetUpdates();
 }
@@ -7801,7 +7835,7 @@ FACTION_VALUE Client::GetReverseFactionCon(Mob* iOther) {
 		return GetSpecialFactionCon(iOther);
 
 	if (iOther->GetPrimaryFaction() == 0)
-		return FACTION_INDIFFERENT;
+		return FACTION_INDIFFERENTLY;
 
 	return GetFactionLevel(CharacterID(), 0, GetFactionRace(), GetClass(), GetDeity(), iOther->GetPrimaryFaction(), iOther);
 }
@@ -7824,25 +7858,25 @@ FACTION_VALUE Client::GetFactionLevel(uint32 char_id, uint32 npc_id, uint32 p_ra
 {
 	if (pFaction < 0)
 		return GetSpecialFactionCon(tnpc);
-	FACTION_VALUE fac = FACTION_INDIFFERENT;
+	FACTION_VALUE fac = FACTION_INDIFFERENTLY;
 	int32 tmpFactionValue;
 	FactionMods fmods;
 
 	// few optimizations
 	if (GetFeigned())
-		return FACTION_INDIFFERENT;
+		return FACTION_INDIFFERENTLY;
 	if(!zone->CanDoCombat())
-		return FACTION_INDIFFERENT;
+		return FACTION_INDIFFERENTLY;
 	if (invisible_undead && tnpc && !tnpc->SeeInvisibleUndead())
-		return FACTION_INDIFFERENT;
+		return FACTION_INDIFFERENTLY;
 	if (IsInvisible(tnpc))
-		return FACTION_INDIFFERENT;
+		return FACTION_INDIFFERENTLY;
 	if (tnpc && tnpc->GetOwnerID() != 0) // pets con amiably to owner and indiff to rest
 	{
 		if (char_id == tnpc->GetOwner()->CastToClient()->CharacterID())
-			return FACTION_AMIABLE;
+			return FACTION_AMIABLY;
 		else
-			return FACTION_INDIFFERENT;
+			return FACTION_INDIFFERENTLY;
 	}
 
 	//First get the NPC's Primary faction
@@ -7862,15 +7896,15 @@ FACTION_VALUE Client::GetFactionLevel(uint32 char_id, uint32 npc_id, uint32 p_ra
 	}
 	else
 	{
-		return(FACTION_INDIFFERENT);
+		return(FACTION_INDIFFERENTLY);
 	}
 
 	// merchant fix
-	if (tnpc && tnpc->IsNPC() && tnpc->CastToNPC()->MerchantType && (fac == FACTION_THREATENLY || fac == FACTION_SCOWLS))
-		fac = FACTION_DUBIOUS;
+	if (tnpc && tnpc->IsNPC() && tnpc->CastToNPC()->MerchantType && (fac == FACTION_THREATENINGLY || fac == FACTION_SCOWLS))
+		fac = FACTION_DUBIOUSLY;
 
 	if (tnpc != 0 && fac != FACTION_SCOWLS && tnpc->CastToNPC()->CheckAggro(this))
-		fac = FACTION_THREATENLY;
+		fac = FACTION_THREATENINGLY;
 
 	return fac;
 }
@@ -8493,7 +8527,7 @@ void Client::Consume(const EQ::ItemData *item, uint8 type, int16 slot, bool auto
 
 		LogFood("Consuming food, points added to hunger_level: [{}] - current_hunger: [{}]", increase, m_pp.hunger_level);
 
-		DeleteItemInInventory(slot, 1, false);
+		DeleteItemInInventory(slot, 1);
 
 		if (!auto_consume) // no message if the client consumed for us
 			entity_list.MessageCloseString(this, true, 50, 0, EATING_MESSAGE, GetName(), item->Name);
@@ -8508,7 +8542,7 @@ void Client::Consume(const EQ::ItemData *item, uint8 type, int16 slot, bool auto
 
 		m_pp.thirst_level += increase;
 
-		DeleteItemInInventory(slot, 1, false);
+		DeleteItemInInventory(slot, 1);
 
 		LogFood("Consuming drink, points added to thirst_level: [{}] current_thirst: [{}]", increase, m_pp.thirst_level);
 
@@ -8558,14 +8592,25 @@ void Client::ExpeditionSay(const char *str, int ExpID) {
 		return;
 
 	if(results.RowCount() == 0) {
-		this->Message(Chat::Lime, "You say to the expedition, '%s'", str);
+		Message(Chat::Lime, "You say to the expedition, '%s'", str);
 		return;
 	}
 
 	for(auto row = results.begin(); row != results.end(); ++row) {
 		const char* charName = row[0];
-		if(strcmp(charName, this->GetCleanName()) != 0)
-			worldserver.SendEmoteMessage(charName, 0, 0, 14, "%s says to the expedition, '%s'", this->GetCleanName(), str);
+		if(strcmp(charName, GetCleanName()) != 0) {
+			worldserver.SendEmoteMessage(
+				charName,
+				0,
+				AccountStatus::Player,
+				Chat::Lime,
+				fmt::format(
+					"{} says to the expedition, '{}'",
+					GetCleanName(),
+					str
+				).c_str()
+			);
+		}
 		// ChannelList->CreateChannel(ChannelName, ChannelOwner, ChannelPassword, true, atoi(row[3]));
 	}
 
@@ -8577,8 +8622,8 @@ void Client::ShowNumHits()
 	uint32 buffcount = GetMaxTotalSlots();
 	for (uint32 buffslot = 0; buffslot < buffcount; buffslot++) {
 		const Buffs_Struct &curbuff = buffs[buffslot];
-		if (curbuff.spellid != SPELL_UNKNOWN && curbuff.numhits)
-			Message(0, "You have %d hits left on %s", curbuff.numhits, GetSpellName(curbuff.spellid));
+		if (curbuff.spellid != SPELL_UNKNOWN && curbuff.hit_number)
+			Message(0, "You have %d hits left on %s", curbuff.hit_number, GetSpellName(curbuff.spellid));
 	}
 	return;
 }
@@ -8635,7 +8680,7 @@ void Client::QuestReward(Mob* target, uint32 copper, uint32 silver, uint32 gold,
 
 	if (faction)
 	{
-		if (target && target->IsNPC())
+		if (target && target->IsNPC() && !target->IsCharmed())
 		{
 			int32 nfl_id = target->CastToNPC()->GetNPCFactionID();
 			SetFactionLevel(CharacterID(), nfl_id, GetBaseClass(), GetBaseRace(), GetDeity(), true);
@@ -8671,7 +8716,7 @@ void Client::QuestReward(Mob* target, const QuestReward_Struct &reward, bool fac
 
 	if (faction)
 	{
-		if (target && target->IsNPC())
+		if (target && target->IsNPC() && !target->IsCharmed())
 		{
 			int32 nfl_id = target->CastToNPC()->GetNPCFactionID();
 			SetFactionLevel(CharacterID(), nfl_id, GetBaseClass(), GetBaseRace(), GetDeity(), true);
@@ -9388,7 +9433,7 @@ void Client::CheckVirtualZoneLines()
 			LogZonePoints(
 				"Virtual Zone Box Sending player [{}] to [{}]",
 				GetCleanName(),
-				zone_store.GetZoneLongName(virtual_zone_point.target_zone_id)
+				ZoneLongName(virtual_zone_point.target_zone_id)
 			);
 		}
 	}
@@ -10055,7 +10100,7 @@ std::vector<int> Client::GetLearnableDisciplines(uint8 min_level, uint8 max_leve
 			continue;
 		if (spells[spell_id].skill == 52)
 			continue;
-		if (RuleB(Spells, UseCHAScribeHack) && spells[spell_id].effectid[EFFECT_COUNT - 1] == 10)
+		if (RuleB(Spells, UseCHAScribeHack) && spells[spell_id].effect_id[EFFECT_COUNT - 1] == 10)
 			continue;
 		if (HasDisciplineLearned(spell_id))
 			continue;
@@ -10121,7 +10166,7 @@ std::vector<int> Client::GetScribeableSpells(uint8 min_level, uint8 max_level) {
 			continue;
 		if (spells[spell_id].skill == 52)
 			continue;
-		if (RuleB(Spells, UseCHAScribeHack) && spells[spell_id].effectid[EFFECT_COUNT - 1] == 10)
+		if (RuleB(Spells, UseCHAScribeHack) && spells[spell_id].effect_id[EFFECT_COUNT - 1] == 10)
 			continue;
 		if (HasSpellScribed(spell_id))
 			continue;
@@ -10266,7 +10311,7 @@ void Client::RemoveItem(uint32 item_id, uint32 quantity)
 		{ EQ::invslot::SHARED_BANK_BEGIN, EQ::invslot::SHARED_BANK_END },
 		{ EQ::invbag::SHARED_BANK_BAGS_BEGIN, EQ::invbag::SHARED_BANK_BAGS_END },
 	};
-	int removed_count = 0;
+	int16 removed_count = 0;
 	const size_t size = sizeof(slots) / sizeof(slots[0]);
 	for (int slot_index = 0; slot_index < size; ++slot_index) {
 		for (int slot_id = slots[slot_index][0]; slot_id <= slots[slot_index][1]; ++slot_id) {
@@ -10276,12 +10321,13 @@ void Client::RemoveItem(uint32 item_id, uint32 quantity)
 
 			item = GetInv().GetItem(slot_id);
 			if (item && item->GetID() == item_id) {
-				int stack_size = item->IsStackable() ? item->GetCharges() : 1;
+				int16 charges = item->IsStackable() ? item->GetCharges() : 0;
+				int16 stack_size = std::max(charges, static_cast<int16>(1));
 				if ((removed_count + stack_size) <= quantity) {
 					removed_count += stack_size;
-					DeleteItemInInventory(slot_id, stack_size, true);
+					DeleteItemInInventory(slot_id, charges, true);
 				} else {
-					int amount_left = (quantity - removed_count);
+					int16 amount_left = (quantity - removed_count);
 					if (amount_left > 0 && stack_size >= amount_left) {
 						removed_count += amount_left;
 						DeleteItemInInventory(slot_id, amount_left, true);
@@ -10718,4 +10764,137 @@ void Client::SaveDisciplines()
 	if (!character_discs.empty()) {
 		CharacterDisciplinesRepository::InsertMany(database, character_discs);
 	}
+}
+
+uint16 Client::ScribeSpells(uint8 min_level, uint8 max_level)
+{
+	int available_book_slot = GetNextAvailableSpellBookSlot();
+	std::vector<int> spell_ids = GetScribeableSpells(min_level, max_level);
+	uint16 spell_count = spell_ids.size();
+	uint16 scribed_spells = 0;
+	if (spell_count > 0) {
+		for (auto spell_id : spell_ids) {
+			if (available_book_slot == -1) {
+				Message(
+					Chat::Red,
+					fmt::format(
+						"Unable to scribe {} ({}) to Spell Book because your Spell Book is full.",
+						spells[spell_id].name,
+						spell_id
+					).c_str()
+				);
+				break;
+			}
+
+			if (HasSpellScribed(spell_id)) {
+				continue;
+			}
+
+			// defer saving per spell and bulk save at the end
+			ScribeSpell(spell_id, available_book_slot, true, true);
+			available_book_slot = GetNextAvailableSpellBookSlot(available_book_slot);
+			scribed_spells++;
+		}
+	}
+
+	if (scribed_spells > 0) {
+		std::string spell_message = (
+			scribed_spells == 1 ?
+			"a new spell" :
+			fmt::format("{} new spells", scribed_spells)
+		);
+		Message(Chat::White, fmt::format("You have learned {}!", spell_message).c_str());
+
+		// bulk insert spells
+		SaveSpells();
+	}
+	return scribed_spells;
+}
+
+uint16 Client::LearnDisciplines(uint8 min_level, uint8 max_level)
+{
+	int available_discipline_slot = GetNextAvailableDisciplineSlot();
+	int character_id = CharacterID();
+	std::vector<int> spell_ids = GetLearnableDisciplines(min_level, max_level);
+	uint16 discipline_count = spell_ids.size();
+	uint16 learned_disciplines = 0;
+	if (discipline_count > 0) {
+		for (auto spell_id : spell_ids) {
+			if (available_discipline_slot == -1) {
+				Message(
+					Chat::Red,
+					fmt::format(
+						"Unable to learn {} ({}) because your Discipline slots are full.",
+						spells[spell_id].name,
+						spell_id
+					).c_str()
+				);
+				break;
+			}
+			
+			if (HasDisciplineLearned(spell_id)) {
+				continue;
+			}
+
+			GetPP().disciplines.values[available_discipline_slot] = spell_id;
+			available_discipline_slot = GetNextAvailableDisciplineSlot(available_discipline_slot);
+			learned_disciplines++;
+		}
+	}
+
+	if (learned_disciplines > 0) {
+		std::string discipline_message = (
+			learned_disciplines == 1 ?
+			"a new discipline" :
+			fmt::format("{} new disciplines", learned_disciplines)
+		);
+		Message(Chat::White, fmt::format("You have learned {}!", discipline_message).c_str());
+		SendDisciplineUpdate();
+		SaveDisciplines();
+	}
+
+	return learned_disciplines;
+}
+
+uint16 Client::GetClassTrackingDistanceMultiplier(uint16 class_) {
+	switch (class_) {
+	case WARRIOR:
+		return RuleI(Character, WarriorTrackingDistanceMultiplier);
+	case CLERIC:
+		return RuleI(Character, ClericTrackingDistanceMultiplier);
+	case PALADIN:
+		return RuleI(Character, PaladinTrackingDistanceMultiplier);
+	case RANGER:
+		return RuleI(Character, RangerTrackingDistanceMultiplier);
+	case SHADOWKNIGHT:
+		return RuleI(Character, ShadowKnightTrackingDistanceMultiplier);
+	case DRUID:
+		return RuleI(Character, DruidTrackingDistanceMultiplier);
+	case MONK:
+		return RuleI(Character, MonkTrackingDistanceMultiplier);
+	case BARD:
+		return RuleI(Character, BardTrackingDistanceMultiplier);
+	case ROGUE:
+		return RuleI(Character, RogueTrackingDistanceMultiplier);
+	case SHAMAN:
+		return RuleI(Character, ShamanTrackingDistanceMultiplier);
+	case NECROMANCER:
+		return RuleI(Character, NecromancerTrackingDistanceMultiplier);
+	case WIZARD:
+		return RuleI(Character, WizardTrackingDistanceMultiplier);
+	case MAGICIAN:
+		return RuleI(Character, MagicianTrackingDistanceMultiplier);
+	case ENCHANTER:
+		return RuleI(Character, EnchanterTrackingDistanceMultiplier);
+	case BEASTLORD:
+		return RuleI(Character, BeastlordTrackingDistanceMultiplier);
+	case BERSERKER:
+		return RuleI(Character, BerserkerTrackingDistanceMultiplier);
+	default: 
+		return 0;
+	}
+}
+
+bool Client::CanThisClassTrack() {
+	return (GetClassTrackingDistanceMultiplier(GetClass()) > 0) ? true : false;
 }

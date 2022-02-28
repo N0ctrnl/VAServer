@@ -386,11 +386,13 @@ int main(int argc, char** argv) {
 		LogInfo("Initialized dynamic dictionary entries");
 	}
 
-	content_service.SetExpansionContext();
-
-	ZoneStore::LoadContentFlags();
+	content_service.SetDatabase(&database)
+		->SetExpansionContext()
+		->ReloadContentFlags();
 
 	event_scheduler.SetDatabase(&database)->LoadScheduledEvents();
+
+	EQ::SayLinkEngine::LoadCachedSaylinks();
 
 #ifdef BOTS
 	LogInfo("Loading bot commands");
