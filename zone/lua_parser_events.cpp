@@ -376,7 +376,9 @@ void handle_player_pick_up(QuestInterface *parse, lua_State* L, Client* client, 
 
 void handle_player_cast(QuestInterface *parse, lua_State* L, Client* client, std::string data, uint32 extra_data,
 						std::vector<EQ::Any> *extra_pointers) {
-	int spell_id = std::stoi(data);
+	Seperator sep(data.c_str());
+
+	int spell_id = std::stoi(sep.arg[0]);
 	if(IsValidSpell(spell_id)) {
 		Lua_Spell l_spell(&spells[spell_id]);
 		luabind::adl::object l_spell_o = luabind::adl::object(L, l_spell);
@@ -388,6 +390,12 @@ void handle_player_cast(QuestInterface *parse, lua_State* L, Client* client, std
 	}
 
 	lua_setfield(L, -2, "spell");
+	
+	lua_pushinteger(L, std::stoi(sep.arg[1]));
+	lua_setfield(L, -2, "caster_id");
+	
+	lua_pushinteger(L, std::stoi(sep.arg[2]));
+	lua_setfield(L, -2, "caster_level");
 }
 
 void handle_player_task_fail(QuestInterface *parse, lua_State* L, Client* client, std::string data, uint32 extra_data,
@@ -398,7 +406,12 @@ void handle_player_task_fail(QuestInterface *parse, lua_State* L, Client* client
 
 void handle_player_zone(QuestInterface *parse, lua_State* L, Client* client, std::string data, uint32 extra_data,
 						std::vector<EQ::Any> *extra_pointers) {
-	lua_pushinteger(L, std::stoi(data));
+	Seperator sep(data.c_str());
+
+	lua_pushinteger(L, std::stoi(sep.arg[0]));
+	lua_setfield(L, -2, "from_zone_id");
+
+	lua_pushinteger(L, std::stoi(sep.arg[1]));
 	lua_setfield(L, -2, "zone_id");
 }
 
@@ -813,6 +826,33 @@ void handle_encounter_unload(QuestInterface *parse, lua_State* L, Encounter* enc
 void handle_encounter_null(QuestInterface *parse, lua_State* L, Encounter* encounter, std::string data, uint32 extra_data,
 						   std::vector<EQ::Any> *extra_pointers) {
 
+}
+
+void handle_player_skill_up(QuestInterface* parse, lua_State* L, Client* client, std::string data, uint32 extra_data, std::vector<EQ::Any>* extra_pointers) {
+	Seperator sep(data.c_str());
+	lua_pushinteger(L, std::stoi(sep.arg[0]));
+	lua_setfield(L, -2, "skill_id");
+
+	lua_pushinteger(L, std::stoi(sep.arg[1]));
+	lua_setfield(L, -2, "skill_value");
+
+	lua_pushinteger(L, std::stoi(sep.arg[2]));
+	lua_setfield(L, -2, "skill_max");
+
+	lua_pushinteger(L, std::stoi(sep.arg[3]));
+	lua_setfield(L, -2, "is_tradeskill");
+}
+
+void handle_player_language_skill_up(QuestInterface* parse, lua_State* L, Client* client, std::string data, uint32 extra_data, std::vector<EQ::Any>* extra_pointers) {
+	Seperator sep(data.c_str());
+	lua_pushinteger(L, std::stoi(sep.arg[0]));
+	lua_setfield(L, -2, "skill_id");
+
+	lua_pushinteger(L, std::stoi(sep.arg[1]));
+	lua_setfield(L, -2, "skill_value");
+
+	lua_pushinteger(L, std::stoi(sep.arg[2]));
+	lua_setfield(L, -2, "skill_max");
 }
 
 #endif

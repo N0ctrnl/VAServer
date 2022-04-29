@@ -5784,6 +5784,11 @@ void Client::Handle_OP_EnvDamage(const EQApplicationPacket *app)
 
 	EnvDamage2_Struct* ed = (EnvDamage2_Struct*)app->pBuffer;
 	auto damage = ed->damage;
+
+	if (GetEnvironmentDamageModifier()) {
+		damage = static_cast<int32>(damage) + (static_cast<int32>(damage) * GetEnvironmentDamageModifier() / 100);
+	}
+
 	if (ed->dmgtype == EQ::constants::EnvironmentalDamage::Falling) {
 		uint32 mod = spellbonuses.ReduceFallDamage + itembonuses.ReduceFallDamage + aabonuses.ReduceFallDamage;
 		damage -= damage * mod / 100;
@@ -5798,7 +5803,7 @@ void Client::Handle_OP_EnvDamage(const EQApplicationPacket *app)
 			Chat::Red,
 			fmt::format(
 				"Your GM status protects you from {} points of {} (Type {}) damage.",
-				ed->damage,
+				damage,
 				EQ::constants::GetEnvironmentalDamageName(ed->dmgtype),
 				ed->dmgtype
 			).c_str()
@@ -5810,12 +5815,16 @@ void Client::Handle_OP_EnvDamage(const EQApplicationPacket *app)
 			Chat::Red,
 			fmt::format(
 				"Your invulnerability protects you from {} points of {} (Type {}) damage.",
-				ed->damage,
+				damage,
 				EQ::constants::GetEnvironmentalDamageName(ed->dmgtype),
 				ed->dmgtype
 			).c_str()
 		);
 		SetHP(GetHP() - 1);//needed or else the client wont acknowledge
+		return;
+	}
+	else if (GetInvulnerableEnvironmentDamage()) {
+		SetHP(GetHP() - 1);
 		return;
 	} else if (zone->GetZoneID() == Zones::TUTORIAL || zone->GetZoneID() == Zones::LOAD) { // Hard coded tutorial and load zones for no fall damage
 		return;
@@ -12868,11 +12877,20 @@ void Client::Handle_OP_SetTitle(const EQApplicationPacket *app)
 
 	SetTitle_Struct *sts = (SetTitle_Struct *)app->pBuffer;
 
-	if (!title_manager.HasTitle(this, sts->title_id)) {
+	if (sts->title_id && !title_manager.HasTitle(this, sts->title_id)) {
 		return;
 	}
 
-	std::string title = !sts->is_suffix ? title_manager.GetPrefix(sts->title_id) : title_manager.GetSuffix(sts->title_id);
+	std::string title = (
+		sts->title_id ?
+		(
+			!sts->is_suffix ?
+			title_manager.GetPrefix(sts->title_id) :
+			title_manager.GetSuffix(sts->title_id)
+		) :
+		""
+	);
+
 	if (!sts->is_suffix) {
 		SetAATitle(title.c_str());
 	} else {

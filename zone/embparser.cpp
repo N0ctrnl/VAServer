@@ -127,7 +127,9 @@ const char *QuestEventSubroutines[_LargestEventID] = {
 	"EVENT_CONSIDER_CORPSE",
 	"EVENT_LOOT_ZONE",
 	"EVENT_EQUIP_ITEM_CLIENT",
-	"EVENT_UNEQUIP_ITEM_CLIENT"
+	"EVENT_UNEQUIP_ITEM_CLIENT",
+	"EVENT_SKILL_UP",
+	"EVENT_LANGUAGE_SKILL_UP"
 };
 
 PerlembParser::PerlembParser() : perl(nullptr)
@@ -1443,14 +1445,19 @@ void PerlembParser::ExportEventVariables(
 		}
 
 		case EVENT_ZONE: {
-			ExportVar(package_name.c_str(), "target_zone_id", data);
+			Seperator sep(data);
+			ExportVar(package_name.c_str(), "from_zone_id", sep.arg[0]);
+			ExportVar(package_name.c_str(), "target_zone_id", sep.arg[1]);
 			break;
 		}
 
 		case EVENT_CAST_ON:
 		case EVENT_CAST:
 		case EVENT_CAST_BEGIN: {
-			ExportVar(package_name.c_str(), "spell_id", data);
+			Seperator sep(data);
+			ExportVar(package_name.c_str(), "spell_id", sep.arg[0]);
+			ExportVar(package_name.c_str(), "caster_id", sep.arg[1]);
+			ExportVar(package_name.c_str(), "caster_level", sep.arg[2]);
 			break;
 		}
 
@@ -1633,6 +1640,10 @@ void PerlembParser::ExportEventVariables(
 			ExportVar(package_name.c_str(), "killer_spell", sep.arg[2]);
 			ExportVar(package_name.c_str(), "killer_skill", sep.arg[3]);
 			ExportVar(package_name.c_str(), "killed_npc_id", sep.arg[4]);
+			ExportVar(package_name.c_str(), "killed_x", sep.arg[5]);
+			ExportVar(package_name.c_str(), "killed_y", sep.arg[6]);
+			ExportVar(package_name.c_str(), "killed_z", sep.arg[7]);
+			ExportVar(package_name.c_str(), "killed_h", sep.arg[8]);
 			break;
 		}
 		case EVENT_USE_SKILL: {
@@ -1697,6 +1708,23 @@ void PerlembParser::ExportEventVariables(
 			ExportVar(package_name.c_str(), "item_id", extradata);
 			ExportVar(package_name.c_str(), "item_quantity", sep.arg[0]);
 			ExportVar(package_name.c_str(), "slot_id", sep.arg[1]);
+			break;
+		}
+
+		case EVENT_SKILL_UP: {
+			Seperator sep(data);
+			ExportVar(package_name.c_str(), "skill_id", sep.arg[0]);
+			ExportVar(package_name.c_str(), "skill_value", sep.arg[1]);
+			ExportVar(package_name.c_str(), "skill_max", sep.arg[2]);
+			ExportVar(package_name.c_str(), "is_tradeskill", sep.arg[3]);
+			break;
+		}
+
+		case EVENT_LANGUAGE_SKILL_UP: {
+			Seperator sep(data);
+			ExportVar(package_name.c_str(), "skill_id", sep.arg[0]);
+			ExportVar(package_name.c_str(), "skill_value", sep.arg[1]);
+			ExportVar(package_name.c_str(), "skill_max", sep.arg[2]);
 			break;
 		}
 

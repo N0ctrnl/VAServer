@@ -733,8 +733,12 @@ void EntityList::AddNPC(NPC *npc, bool SendSpawnPacket, bool dontqueue)
 	if (RuleB(Zone, UseZoneController)) {
 		auto controller = entity_list.GetNPCByNPCTypeID(ZONE_CONTROLLER_NPC_ID);
 		if (controller && npc->GetNPCTypeID() != ZONE_CONTROLLER_NPC_ID){
-			std::string data_pass = fmt::format("{} {}", npc->GetID(), npc->GetNPCTypeID());
-			parse->EventNPC(EVENT_SPAWN_ZONE, controller, nullptr, data_pass.c_str(), 0);
+			std::string export_string = fmt::format(
+				"{} {}",
+				npc->GetID(),
+				npc->GetNPCTypeID()
+			);
+			parse->EventNPC(EVENT_SPAWN_ZONE, controller, nullptr, export_string, 0);
 		}
 	}
 
@@ -5053,9 +5057,43 @@ void EntityList::GetClientList(std::list<Client *> &c_list)
 void EntityList::GetBotList(std::list<Bot *> &b_list)
 {
 	b_list.clear();
-	for (auto bot_iterator : bot_list) {
-		b_list.push_back(bot_iterator);
+	for (auto bot : bot_list) {
+		b_list.push_back(bot);
 	}
+}
+
+std::vector<Bot *> EntityList::GetBotListByCharacterID(uint32 character_id)
+{
+	std::vector<Bot *> client_bot_list;
+
+	if (!character_id) {
+		return client_bot_list;
+	}
+
+	for (auto bot : bot_list) {
+		if (bot->GetOwner() && bot->GetBotOwnerCharacterID() == character_id) {
+			client_bot_list.push_back(bot);
+		}
+	}
+
+	return client_bot_list;
+}
+
+std::vector<Bot *> EntityList::GetBotListByClientName(std::string client_name)
+{
+	std::vector<Bot *> client_bot_list;
+
+	if (client_name.empty()) {
+		return client_bot_list;
+	}
+
+	for (auto bot : bot_list) {
+		if (bot->GetOwner() && str_tolower(bot->GetOwner()->GetCleanName()) == str_tolower(client_name)) {
+			client_bot_list.push_back(bot);
+		}
+	}
+
+	return client_bot_list;
 }
 #endif
 

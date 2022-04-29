@@ -202,8 +202,15 @@ void Client::Handle_OP_ZoneChange(const EQApplicationPacket *app) {
 		return;
 	}
 
-	std::string export_string = fmt::format("{}", target_zone_id);
-	parse->EventPlayer(EVENT_ZONE, this, export_string, 0);
+	std::string export_string = fmt::format(
+		"{} {}",
+		zone->GetZoneID(),
+		target_zone_id
+	);
+	if (parse->EventPlayer(EVENT_ZONE, this, export_string, 0) != 0) {
+		SendZoneCancel(zc);
+		return;
+	}
 
 	//handle circumvention of zone restrictions
 	//we need the value when creating the outgoing packet as well.
@@ -526,18 +533,7 @@ void Client::MovePC(uint32 zoneID, uint32 instanceID, float x, float y, float z,
 }
 
 void Client::MoveZone(const char *zone_short_name) {
-	auto pack = new ServerPacket(ServerOP_ZoneToZoneRequest, sizeof(ZoneToZone_Struct));
-	ZoneToZone_Struct* ztz = (ZoneToZone_Struct*) pack->pBuffer;
-	ztz->response = 0;
-	ztz->current_zone_id = zone->GetZoneID();
-	ztz->current_instance_id = zone->GetInstanceID();
-	ztz->requested_zone_id = ZoneID(zone_short_name);
-	ztz->admin = Admin();
-	strcpy(ztz->name, GetName());
-	ztz->guild_id = GuildID();
-	ztz->ignorerestrictions = 3;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
+	ProcessMovePC(ZoneID(zone_short_name), 0, 0.0f, 0.0f, 0.0f, 0.0f, 3, ZoneToSafeCoords);
 }
 
 void Client::MoveZoneGroup(const char *zone_short_name) {
@@ -572,19 +568,7 @@ void Client::MoveZoneInstance(uint16 instance_id) {
 	if (!database.CharacterInInstanceGroup(instance_id, CharacterID())) {
 		database.AddClientToInstance(instance_id, CharacterID());
 	}
-	auto pack = new ServerPacket(ServerOP_ZoneToZoneRequest, sizeof(ZoneToZone_Struct));
-	ZoneToZone_Struct* ztz = (ZoneToZone_Struct*) pack->pBuffer;
-	ztz->response = 0;
-	ztz->current_zone_id = zone->GetZoneID();
-	ztz->current_instance_id = zone->GetInstanceID();
-	ztz->requested_zone_id = database.ZoneIDFromInstanceID(instance_id);
-	ztz->requested_instance_id = instance_id;
-	ztz->admin = Admin();
-	strcpy(ztz->name, GetName());
-	ztz->guild_id = GuildID();
-	ztz->ignorerestrictions = 3;
-	worldserver.SendPacket(pack);
-	safe_delete(pack);
+	ProcessMovePC(database.ZoneIDFromInstanceID(instance_id), instance_id, 0.0f, 0.0f, 0.0f, 0.0f, 3, ZoneToSafeCoords);
 }
 
 void Client::MoveZoneInstanceGroup(uint16 instance_id) {

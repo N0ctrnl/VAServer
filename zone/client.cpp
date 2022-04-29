@@ -353,6 +353,9 @@ Client::Client(EQStreamInterface* ieqs)
 	temp_pvp = false;
 	is_client_moving = false;
 
+	environment_damage_modifier = 0;
+	invulnerable_environment_damage = false;
+
 	// rate limiter
 	m_list_task_timers_rate_limit.Start(1000);
 
@@ -1497,7 +1500,6 @@ void Client::SetSkill(EQ::skills::SkillType skillid, uint16 value) {
 	m_pp.skills[skillid] = value; // We need to be able to #setskill 254 and 255 to reset skills
 
 	database.SaveCharacterSkill(this->CharacterID(), skillid, value);
-
 	auto outapp = new EQApplicationPacket(OP_SkillUpdate, sizeof(SkillUpdate_Struct));
 	SkillUpdate_Struct* skill = (SkillUpdate_Struct*)outapp->pBuffer;
 	skill->skillId=skillid;
@@ -2420,6 +2422,8 @@ bool Client::CheckIncreaseSkill(EQ::skills::SkillType skillid, Mob *against_who,
 		return false;
 	if (IsAIControlled()) // no skillups while chamred =p
 		return false;
+	if (against_who != nullptr && against_who->IsCorpse()) // no skillups on corpses
+		return false;
 	if (skillid > EQ::skills::HIGHEST_SKILL)
 		return false;
 	int skillval = GetRawSkill(skillid);	
@@ -2463,6 +2467,14 @@ bool Client::CheckIncreaseSkill(EQ::skills::SkillType skillid, Mob *against_who,
 		if(zone->random.Real(0, 99) < Chance)
 		{
 			SetSkill(skillid, GetRawSkill(skillid) + 1);
+			std::string export_string = fmt::format(
+				"{} {} {} {}",
+				skillid,
+				skillval+1,
+				maxskill,
+				0
+			);
+			parse->EventPlayer(EVENT_SKILL_UP, this, export_string, 0);
 			LogSkills("Skill [{}] at value [{}] successfully gain with [{}] chance (mod [{}])", skillid, skillval, Chance, chancemodi);
 			return true;
 		} else {
@@ -2490,6 +2502,13 @@ void Client::CheckLanguageSkillIncrease(uint8 langid, uint8 TeacherSkill) {
 
 		if(zone->random.Real(0,100) < Chance) {	// if they make the roll
 			IncreaseLanguageSkill(langid);	// increase the language skill by 1
+			std::string export_string = fmt::format(
+				"{} {} {}",
+				langid,
+				LangSkill + 1,
+				100
+			);
+			parse->EventPlayer(EVENT_LANGUAGE_SKILL_UP, this, export_string, 0);
 			LogSkills("Language [{}] at value [{}] successfully gain with [{}] % chance", langid, LangSkill, Chance);
 		}
 		else
