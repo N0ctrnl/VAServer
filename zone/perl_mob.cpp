@@ -607,7 +607,7 @@ XS(XS_Mob_Damage); /* prototype to pass -Wmissing-prototypes */
 XS(XS_Mob_Damage) {
 	dXSARGS;
 	if (items < 5 || items > 8)
-		Perl_croak(aTHX_ "Usage: Mob::Damage(THIS, Mob* from, int32 damage, uint16 spell_id, int attack_skill, [bool avoidable = true], [int8 buffslot = -1], [bool buff_tic = false])"); // @categories Script Utility
+		Perl_croak(aTHX_ "Usage: Mob::Damage(THIS, Mob* from, int64 damage, uint16 spell_id, int attack_skill, [bool avoidable = true], [int8 buffslot = -1], [bool buff_tic = false])"); // @categories Script Utility
 	{
 		Mob *THIS;
 		Mob *from;
@@ -711,10 +711,10 @@ XS(XS_Mob_HealDamage); /* prototype to pass -Wmissing-prototypes */
 XS(XS_Mob_HealDamage) {
 	dXSARGS;
 	if (items < 2 || items > 3)
-		Perl_croak(aTHX_ "Usage: Mob::HealDamage(THIS, int32 amount, [Mob* caster = 0])"); // @categories Script Utility
+		Perl_croak(aTHX_ "Usage: Mob::HealDamage(THIS, int64 amount, [Mob* caster = 0])"); // @categories Script Utility
 	{
 		Mob *THIS;
-		int32 heal_amt = (int32) SvIV(ST(1));
+		int64 heal_amt = (int64) SvIV(ST(1));
 		Mob *caster = nullptr;
 		VALIDATE_THIS_IS_MOB;
 		if (items == 3) {
@@ -767,10 +767,10 @@ XS(XS_Mob_SetHP); /* prototype to pass -Wmissing-prototypes */
 XS(XS_Mob_SetHP) {
 	dXSARGS;
 	if (items != 2)
-		Perl_croak(aTHX_ "Usage: Mob::SetHP(THIS, int32 hp)"); // @categories Stats and Attributes
+		Perl_croak(aTHX_ "Usage: Mob::SetHP(THIS, int64 hp)"); // @categories Stats and Attributes
 	{
 		Mob *THIS;
-		int32 hp = (int32) SvIV(ST(1));
+		int64 hp = (int32) SvIV(ST(1));
 		VALIDATE_THIS_IS_MOB;
 		THIS->SetHP(hp);
 	}
@@ -956,7 +956,7 @@ XS(XS_Mob_FindBuff) {
 		uint16 spellid = (uint16) SvUV(ST(1));
 		VALIDATE_THIS_IS_MOB;
 		RETVAL = THIS->FindBuff(spellid);
-		ST(0)          = boolSV(RETVAL);
+		ST(0) = boolSV(RETVAL);
 		sv_2mortal(ST(0));
 	}
 	XSRETURN(1);
@@ -1022,7 +1022,7 @@ XS(XS_Mob_FindType) {
 		}
 
 		RETVAL = THIS->FindType(type, bOffensive, threshold);
-		ST(0)       = boolSV(RETVAL);
+		ST(0) = boolSV(RETVAL);
 		sv_2mortal(ST(0));
 	}
 	XSRETURN(1);
@@ -2210,13 +2210,13 @@ XS(XS_Mob_GetActSpellDamage); /* prototype to pass -Wmissing-prototypes */
 XS(XS_Mob_GetActSpellDamage) {
 	dXSARGS;
 	if (items != 3)
-		Perl_croak(aTHX_ "Usage: Mob::GetActSpellDamage(THIS, uint16 spell_id, int32 value)"); // @categories Spells and Disciplines
+		Perl_croak(aTHX_ "Usage: Mob::GetActSpellDamage(THIS, uint16 spell_id, int64 value)"); // @categories Spells and Disciplines
 	{
 		Mob *THIS;
 		int32  RETVAL;
 		dXSTARG;
 		uint16 spell_id = (uint16) SvUV(ST(1));
-		int32  value    = (int32) SvIV(ST(2));
+		int64  value    = (int64) SvIV(ST(2));
 		VALIDATE_THIS_IS_MOB;
 		RETVAL = THIS->GetActSpellDamage(spell_id, value);
 		XSprePUSH;
@@ -2229,13 +2229,13 @@ XS(XS_Mob_GetActSpellHealing); /* prototype to pass -Wmissing-prototypes */
 XS(XS_Mob_GetActSpellHealing) {
 	dXSARGS;
 	if (items != 3)
-		Perl_croak(aTHX_ "Usage: Mob::GetActSpellHealing(THIS, uint16 spell_id, int32 value)"); // @categories Spells and Disciplines
+		Perl_croak(aTHX_ "Usage: Mob::GetActSpellHealing(THIS, uint16 spell_id, int64 value)"); // @categories Spells and Disciplines
 	{
 		Mob *THIS;
 		int32  RETVAL;
 		dXSTARG;
 		uint16 spell_id = (uint16) SvUV(ST(1));
-		int32  value    = (int32) SvIV(ST(2));
+		int64  value    = (int64) SvIV(ST(2));
 		VALIDATE_THIS_IS_MOB;
 		RETVAL = THIS->GetActSpellHealing(spell_id, value);
 		XSprePUSH;
@@ -2830,7 +2830,7 @@ XS(XS_Mob_IsImmuneToSpell) {
 			Perl_croak(aTHX_ "caster is nullptr, avoiding crash.");
 
 		RETVAL = THIS->IsImmuneToSpell(spell_id, caster);
-		ST(0)           = boolSV(RETVAL);
+		ST(0) = boolSV(RETVAL);
 		sv_2mortal(ST(0));
 	}
 	XSRETURN(1);
@@ -3579,12 +3579,12 @@ XS(XS_Mob_AddToHateList); /* prototype to pass -Wmissing-prototypes */
 XS(XS_Mob_AddToHateList) {
 	dXSARGS;
 	if (items < 2 || items > 7)
-		Perl_croak(aTHX_ "Usage: Mob::AddToHateList(THIS, Mob* other, [int32 hate = 0], [int32 damage = 0], [bool yell_for_help = true], [bool frenzy = false], [bool buff_tic = false])"); // @categories Hate and Aggro
+		Perl_croak(aTHX_ "Usage: Mob::AddToHateList(THIS, Mob* other, [int64 hate = 0], [int64 damage = 0], [bool yell_for_help = true], [bool frenzy = false], [bool buff_tic = false])"); // @categories Hate and Aggro
 	{
 		Mob *THIS;
 		Mob *other;
-		int32 hate;
-		int32 damage;
+		int64 hate;
+		int64 damage;
 		bool  iYellForHelp;
 		bool  bFrenzy;
 		bool  iBuffTic;
@@ -3600,13 +3600,13 @@ XS(XS_Mob_AddToHateList) {
 		if (items < 3)
 			hate = 0;
 		else {
-			hate = (int32) SvIV(ST(2));
+			hate = (int64) SvIV(ST(2));
 		}
 
 		if (items < 4)
 			damage = 0;
 		else {
-			damage = (int32) SvIV(ST(3));
+			damage = (int64) SvIV(ST(3));
 		}
 
 		if (items < 5)
@@ -3636,12 +3636,12 @@ XS(XS_Mob_SetHate); /* prototype to pass -Wmissing-prototypes */
 XS(XS_Mob_SetHate) {
 	dXSARGS;
 	if (items < 2 || items > 4)
-		Perl_croak(aTHX_ "Usage: Mob::SetHate(THIS, Mob* other, [int32 hate = 0], [int32 damage = 0])"); // @categories Hate and Aggro
+		Perl_croak(aTHX_ "Usage: Mob::SetHate(THIS, Mob* other, [int64 hate = 0], [int64 damage = 0])"); // @categories Hate and Aggro
 	{
 		Mob *THIS;
 		Mob *other;
-		int32 hate;
-		int32 damage;
+		int64 hate;
+		int64 damage;
 		VALIDATE_THIS_IS_MOB;
 		if (sv_derived_from(ST(1), "Mob")) {
 			IV tmp = SvIV((SV *) SvRV(ST(1)));
@@ -3654,13 +3654,13 @@ XS(XS_Mob_SetHate) {
 		if (items < 3)
 			hate = 0;
 		else {
-			hate = (int32) SvIV(ST(2));
+			hate = (int64) SvIV(ST(2));
 		}
 
 		if (items < 4)
 			damage = 0;
 		else {
-			damage = (int32) SvIV(ST(3));
+			damage = (int64) SvIV(ST(3));
 		}
 
 		THIS->SetHateAmountOnEnt(other, hate, damage);
@@ -3719,7 +3719,7 @@ XS(XS_Mob_GetHateAmount) {
 		Perl_croak(aTHX_ "Usage: Mob::GetHateAmount(THIS, Mob* mob, [bool is_damage = false])"); // @categories Hate and Aggro
 	{
 		Mob *THIS;
-		uint32 RETVAL;
+		int64 RETVAL;
 		dXSTARG;
 		Mob *tmob;
 		bool is_dam;
@@ -3752,7 +3752,7 @@ XS(XS_Mob_GetDamageAmount) {
 		Perl_croak(aTHX_ "Usage: Mob::GetDamageAmount(THIS, Mob* target_mob)"); // @categories Stats and Attributes
 	{
 		Mob *THIS;
-		uint32 RETVAL;
+		uint64 RETVAL;
 		dXSTARG;
 		Mob *tmob;
 		VALIDATE_THIS_IS_MOB;
@@ -4334,7 +4334,7 @@ XS(XS_Mob_SetAA) {
 		int  charges = (items == 4) ? (int) SvIV(ST(3)) : 0;
 		VALIDATE_THIS_IS_MOB;
 		RETVAL = THIS->SetAA(aa_id, points, charges);
-		ST(0)        = boolSV(RETVAL);
+		ST(0) = boolSV(RETVAL);
 		sv_2mortal(ST(0));
 	}
 	XSRETURN(1);
@@ -4457,7 +4457,7 @@ XS(XS_Mob_EntityVariableExists) {
 		bool RETVAL;
 		VALIDATE_THIS_IS_MOB;
 		RETVAL = THIS->EntityVariableExists(id);
-		ST(0)          = boolSV(RETVAL);
+		ST(0) = boolSV(RETVAL);
 		sv_2mortal(ST(0));
 	}
 	XSRETURN(1);
@@ -4544,7 +4544,7 @@ XS(XS_Mob_CombatRange) {
 			Perl_croak(aTHX_ "target is nullptr, avoiding crash.");
 
 		RETVAL = THIS->CombatRange(target);
-		ST(0)       = boolSV(RETVAL);
+		ST(0) = boolSV(RETVAL);
 		sv_2mortal(ST(0));
 	}
 	XSRETURN(1);
@@ -4721,7 +4721,7 @@ XS(XS_Mob_HasNPCSpecialAtk) {
 		bool RETVAL;
 		VALIDATE_THIS_IS_MOB;
 		RETVAL = THIS->HasNPCSpecialAtk(parse);
-		ST(0)       = boolSV(RETVAL);
+		ST(0) = boolSV(RETVAL);
 		sv_2mortal(ST(0));
 	}
 	XSRETURN(1);
@@ -5054,7 +5054,7 @@ XS(XS_Mob_SpellEffect) {
 		}
 		if (items > 8) { caster_id = (uint32)SvUV(ST(8)); }
 		if (items > 9) { target_id = (uint32)SvUV(ST(9)); }
-		
+
 		if (nullclient) {
 			THIS->SendSpellEffect(effect, duration, finish_delay, zone_wide, unk20, perm_effect, 0, caster_id, target_id);
 		}
@@ -5674,10 +5674,10 @@ XS(XS_Mob_GetBuffStatValueBySpell) {
 		Const_char *stat = (Const_char *)SvPV_nolen(ST(2));
 		dXSTARG;
 		VALIDATE_THIS_IS_MOB;
-	
+
 		RETVAL = THIS->GetBuffStatValueBySpell(spellid, stat);
 		XSprePUSH;
-		PUSHi((IV)RETVAL);
+		PUSHi((IV) RETVAL);
 	}
 	XSRETURN(1);
 }
@@ -5697,7 +5697,7 @@ XS(XS_Mob_GetBuffStatValueBySlot) {
 
 		RETVAL = THIS->GetBuffStatValueBySlot(slot, stat);
 		XSprePUSH;
-		PUSHi((IV)RETVAL);
+		PUSHi((IV) RETVAL);
 	}
 	XSRETURN(1);
 }
@@ -5858,7 +5858,7 @@ XS(XS_Mob_GetInvisibleLevel) {
 		VALIDATE_THIS_IS_MOB;
 		RETVAL = THIS->GetInvisibleLevel();
 		XSprePUSH;
-		PUSHu((UV)RETVAL);
+		PUSHu((UV) RETVAL);
 	}
 	XSRETURN(1);
 }
@@ -5875,7 +5875,7 @@ XS(XS_Mob_GetInvisibleUndeadLevel) {
 		VALIDATE_THIS_IS_MOB;
 		RETVAL = THIS->GetInvisibleUndeadLevel();
 		XSprePUSH;
-		PUSHu((UV)RETVAL);
+		PUSHu((UV) RETVAL);
 	}
 	XSRETURN(1);
 }
@@ -5910,7 +5910,7 @@ XS(XS_Mob_SeeInvisibleUndead) {
 		VALIDATE_THIS_IS_MOB;
 		RETVAL = THIS->SeeInvisibleUndead();
 		XSprePUSH;
-		PUSHu((UV)RETVAL);
+		PUSHu((UV) RETVAL);
 	}
 	XSRETURN(1);
 }
