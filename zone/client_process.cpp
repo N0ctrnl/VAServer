@@ -330,7 +330,7 @@ bool Client::Process() {
 			{
 				if (ranged->GetItem() && ranged->GetItem()->ItemType == EQ::item::ItemTypeBow) {
 					if (ranged_timer.Check(false)) {
-						if (GetTarget() && (GetTarget()->IsNPC() || GetTarget()->IsClient())) {
+						if (GetTarget() && (GetTarget()->IsNPC() || GetTarget()->IsClient()) && IsAttackAllowed(GetTarget())) {
 							if (GetTarget()->InFrontMob(this, GetTarget()->GetX(), GetTarget()->GetY())) {
 								if (CheckLosFN(GetTarget())) {
 									//client has built in los check, but auto fire does not.. done last.
@@ -350,7 +350,7 @@ bool Client::Process() {
 				}
 				else if (ranged->GetItem() && (ranged->GetItem()->ItemType == EQ::item::ItemTypeLargeThrowing || ranged->GetItem()->ItemType == EQ::item::ItemTypeSmallThrowing)) {
 					if (ranged_timer.Check(false)) {
-						if (GetTarget() && (GetTarget()->IsNPC() || GetTarget()->IsClient())) {
+						if (GetTarget() && (GetTarget()->IsNPC() || GetTarget()->IsClient()) && IsAttackAllowed(GetTarget())) {
 							if (GetTarget()->InFrontMob(this, GetTarget()->GetX(), GetTarget()->GetY())) {
 								if (CheckLosFN(GetTarget())) {
 									//client has built in los check, but auto fire does not.. done last.
@@ -411,7 +411,7 @@ bool Client::Process() {
 			else if (!los_status || !los_status_facing) {
 				//you can't see your target
 			}
-			else if (auto_attack_target->GetHP() > -10) // -10 so we can watch people bleed in PvP
+			else if (auto_attack_target->GetHP() > -10 && IsAttackAllowed(auto_attack_target)) // -10 so we can watch people bleed in PvP
 			{
 				EQ::ItemInstance *wpn = GetInv().GetItem(EQ::invslot::slotPrimary);
 				TryCombatProcs(wpn, auto_attack_target, EQ::invslot::slotPrimary);
@@ -456,7 +456,7 @@ bool Client::Process() {
 			{
 				//you can't see your target
 			}
-			else if (auto_attack_target->GetHP() > -10) {
+			else if (auto_attack_target->GetHP() > -10 && IsAttackAllowed(auto_attack_target)) {
 				CheckIncreaseSkill(EQ::skills::SkillDualWield, auto_attack_target, -10);
 				if (CheckDualWield()) {
 					EQ::ItemInstance *wpn = GetInv().GetItem(EQ::invslot::slotSecondary);
@@ -823,10 +823,10 @@ void Client::BulkSendMerchantInventory(int merchant_id, int npcid) {
 	const EQ::ItemData *item = nullptr;
 	auto merchant_list = zone->merchanttable[merchant_id];
 	auto npc = entity_list.GetMobByNpcTypeID(npcid);
-	if (!merchant_list.size() == 0) {
+	if (merchant_list.empty()) {
 		zone->LoadNewMerchantData(merchant_id);
 		merchant_list = zone->merchanttable[merchant_id];
-		if (!merchant_list.size()) {
+		if (merchant_list.empty()) {
 			return;
 		}
 	}
@@ -1020,7 +1020,10 @@ void Client::OPRezzAnswer(uint32 Action, uint32 SpellID, uint16 ZoneID, uint16 I
 				name, (uint16)spells[SpellID].base_value[0],
 				SpellID, ZoneID, InstanceID);
 
-		BuffFadeNonPersistDeath();
+		if (RuleB(Spells, BuffsFadeOnDeath)) {
+			BuffFadeNonPersistDeath();
+		}
+
 		int SpellEffectDescNum = GetSpellEffectDescNum(SpellID);
 		// Rez spells with Rez effects have this DescNum (first is Titanium, second is 6.2 Client)
 		if(RuleB(Character, UseResurrectionSickness) && SpellEffectDescNum == 82 || SpellEffectDescNum == 39067) {
@@ -1943,10 +1946,11 @@ void Client::CalcRestState()
 
 void Client::DoTracking()
 {
-	if (TrackingID == 0)
+	if (!TrackingID) {
 		return;
+	}
 
-	Mob *m = entity_list.GetMob(TrackingID);
+	auto *m = entity_list.GetMob(TrackingID);
 
 	if (!m || m->IsCorpse()) {
 		MessageString(Chat::Skills, TRACK_LOST_TARGET);
@@ -1954,29 +1958,43 @@ void Client::DoTracking()
 		return;
 	}
 
-	float RelativeHeading = GetHeading() - CalculateHeadingToTarget(m->GetX(), m->GetY());
+	if (DistanceNoZ(m->GetPosition(), GetPosition()) < 10) {
+		Message(
+			Chat::Skills,
+			fmt::format(
+				"You have found {}.",
+				m->GetCleanName()
+			).c_str()
+		);
+		TrackingID = 0;
+		return;
+	}
 
-	if (RelativeHeading < 0)
-		RelativeHeading += 512;
+	float relative_heading = GetHeading() - CalculateHeadingToTarget(m->GetX(), m->GetY());
 
-	if (RelativeHeading > 480)
+	if (relative_heading < 0) {
+		relative_heading += 512;
+	}
+
+	if (relative_heading > 480) {
 		MessageString(Chat::Skills, TRACK_STRAIGHT_AHEAD, m->GetCleanName());
-	else if (RelativeHeading > 416)
+	} else if (relative_heading > 416) {
 		MessageString(Chat::Skills, TRACK_AHEAD_AND_TO, m->GetCleanName(), "left");
-	else if (RelativeHeading > 352)
+	} else if (relative_heading > 352) {
 		MessageString(Chat::Skills, TRACK_TO_THE, m->GetCleanName(), "left");
-	else if (RelativeHeading > 288)
+	} else if (relative_heading > 288) {
 		MessageString(Chat::Skills, TRACK_BEHIND_AND_TO, m->GetCleanName(), "left");
-	else if (RelativeHeading > 224)
+	} else if (relative_heading > 224) {
 		MessageString(Chat::Skills, TRACK_BEHIND_YOU, m->GetCleanName());
-	else if (RelativeHeading > 160)
+	} else if (relative_heading > 160) {
 		MessageString(Chat::Skills, TRACK_BEHIND_AND_TO, m->GetCleanName(), "right");
-	else if (RelativeHeading > 96)
+	} else if (relative_heading > 96) {
 		MessageString(Chat::Skills, TRACK_TO_THE, m->GetCleanName(), "right");
-	else if (RelativeHeading > 32)
+	} else if (relative_heading > 32) {
 		MessageString(Chat::Skills, TRACK_AHEAD_AND_TO, m->GetCleanName(), "right");
-	else if (RelativeHeading >= 0)
+	} else if (relative_heading >= 0) {
 		MessageString(Chat::Skills, TRACK_STRAIGHT_AHEAD, m->GetCleanName());
+	}
 }
 
 void Client::HandleRespawnFromHover(uint32 Option)
