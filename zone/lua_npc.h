@@ -29,7 +29,7 @@ public:
 		return reinterpret_cast<NPC*>(GetLuaPtrData());
 	}
 
-	void Signal(int id);
+	void Signal(int signal_id);
 	int CheckNPCFactionAlly(int faction);
 	void AddItem(int item_id, int charges);
 	void AddItem(int item_id, int charges, bool equip);
@@ -118,7 +118,7 @@ public:
 	int GetSwarmOwner();
 	int GetSwarmTarget();
 	void SetSwarmTarget(int target);
-	void ModifyNPCStat(const char *stat, const char *value);
+	void ModifyNPCStat(std::string stat, std::string value);
 	void AddAISpell(int priority, int spell_id, int type, int mana_cost, int recast_delay, int resist_adjust);
 	void AddAISpell(int priority, int spell_id, int type, int mana_cost, int recast_delay, int resist_adjust, int min_hp, int max_hp);
 	void RemoveAISpell(int spell_id);
@@ -140,8 +140,10 @@ public:
 	void SetSimpleRoamBox(float box_size, float move_distance);
 	void SetSimpleRoamBox(float box_size, float move_distance, int move_delay);
 	void RecalculateSkills();
+	void ReloadSpells();
 	void ScaleNPC(uint8 npc_level);
 	bool IsRaidTarget();
+	bool IsRareSpawn();
 	void ChangeLastName(std::string last_name);
 	void ClearLastName();
 	bool HasItem(uint32 item_id);
@@ -154,7 +156,23 @@ public:
 	void AddAISpellEffect(int spell_effect_id, int base_value, int limit_value, int max_value);
 	void RemoveAISpellEffect(int spell_effect_id);
 	bool HasAISpellEffect(int spell_effect_id);
-	float GetNPCStat(const char* identifier);
+	float GetNPCStat(std::string stat);
+	void SendPayload(int payload_id);
+	void SendPayload(int payload_id, std::string payload_value);
+	bool GetKeepsSoldItems();
+	void SetKeepsSoldItems(bool keeps_sold_items);
+	bool IsLDoNTrapped();
+	void SetLDoNTrapped(bool is_trapped);
+	uint8 GetLDoNTrapType();
+	void SetLDoNTrapType(uint8 trap_type);
+	uint16 GetLDoNTrapSpellID();
+	void SetLDoNTrapSpellID(uint16 spell_id);
+	bool IsLDoNLocked();
+	void SetLDoNLocked(bool is_locked);
+	uint16 GetLDoNLockedSkill();
+	void SetLDoNLockedSkill(uint16 skill_value);
+	bool IsLDoNTrapDetected();
+	void SetLDoNTrapDetected(bool is_detected);
 };
 
 #endif

@@ -23,7 +23,7 @@
 #include "mob.h"
 #include "qglobals.h"
 #include "zonedb.h"
-#include "zone_store.h"
+#include "../common/zone_store.h"
 #include "zonedump.h"
 #include "../common/loottable.h"
 
@@ -35,25 +35,15 @@
 	#define M_PI	3.141592
 #endif
 
-#define LEAVECOMBAT 0
-#define ENTERCOMBAT 1
-#define	ONDEATH		2
-#define	AFTERDEATH	3
-#define HAILED		4
-#define	KILLEDPC	5
-#define	KILLEDNPC	6
-#define	ONSPAWN		7
-#define	ONDESPAWN	8
-
 typedef struct {
-	float min_x;
-	float max_x;
-	float min_y;
-	float max_y;
-	float min_z;
-	float max_z;
-	bool say;
-	bool proximity_set;
+	float	min_x;
+	float	max_x;
+	float	min_y;
+	float	max_y;
+	float	min_z;
+	float	max_z;
+	bool	say;
+	bool	proximity_set;
 } NPCProximity;
 
 struct AISpells_Struct {
@@ -76,17 +66,17 @@ struct AISpellsEffects_Struct {
 };
 
 struct AISpellsVar_Struct {
-	uint32  fail_recast;
+	uint32	fail_recast;
 	uint32	engaged_no_sp_recast_min;
 	uint32	engaged_no_sp_recast_max;
 	uint8	engaged_beneficial_self_chance;
 	uint8	engaged_beneficial_other_chance;
 	uint8	engaged_detrimental_chance;
-	uint32  pursue_no_sp_recast_min;
-	uint32  pursue_no_sp_recast_max;
-	uint8   pursue_detrimental_chance;
-	uint32  idle_no_sp_recast_min;
-	uint32  idle_no_sp_recast_max;
+	uint32	pursue_no_sp_recast_min;
+	uint32	pursue_no_sp_recast_max;
+	uint8	pursue_detrimental_chance;
+	uint32	idle_no_sp_recast_min;
+	uint32	idle_no_sp_recast_max;
 	uint8	idle_beneficial_chance;
 };
 
@@ -109,6 +99,13 @@ public:
 	static bool	SpawnZoneController();
 	static int8 GetAILevel(bool iForceReRead = false);
 
+	// loot recording / simulator
+	bool IsRecordLootStats() const;
+	void SetRecordLootStats(bool record_loot_stats);
+	void FlushLootStats();
+	const std::vector<uint32> &GetRolledItems() const;
+	int GetRolledItemCount(uint32 item_id);
+
 	NPC(const NPCType* npc_type_data, Spawn2* respawn, const glm::vec4& position, GravityBehavior iflymode, bool IsCorpse = false);
 
 	virtual ~NPC();
@@ -120,8 +117,8 @@ public:
 	//abstract virtual function implementations requird by base abstract class
 	virtual bool Death(Mob* killerMob, int64 damage, uint16 spell_id, EQ::skills::SkillType attack_skill);
 	virtual void Damage(Mob* from, int64 damage, uint16 spell_id, EQ::skills::SkillType attack_skill, bool avoidable = true, int8 buffslot = -1, bool iBuffTic = false, eSpecialAttacks special = eSpecialAttacks::None);
-	virtual bool Attack(Mob* other, int Hand = EQ::invslot::slotPrimary, bool FromRiposte = false, bool IsStrikethrough = false,
-		bool IsFromSpell = false, ExtraAttackOptions *opts = nullptr);
+	bool Attack(Mob* other, int Hand = EQ::invslot::slotPrimary, bool FromRiposte = false, bool IsStrikethrough = false,
+		bool IsFromSpell = false, ExtraAttackOptions *opts = nullptr) override;
 	virtual bool HasRaid() { return false; }
 	virtual bool HasGroup() { return false; }
 	virtual Raid* GetRaid() { return 0; }
@@ -253,7 +250,7 @@ public:
 	inline void	MerchantOpenShop() { merchant_open = true; }
 	inline void	MerchantCloseShop() { merchant_open = false; }
 	inline bool	IsMerchantOpen() { return merchant_open; }
-	void	Depop(bool StartSpawnTimer = false);
+	void	Depop(bool start_spawn_timer = false);
 	void	Stun(int duration);
 	void	UnStun();
 	uint32	GetSwarmOwner();
@@ -264,12 +261,16 @@ public:
 	void	PetOnSpawn(NewSpawn_Struct* ns);
 
 	void	SignalNPC(int _signal_id);
+	void	SendPayload(int payload_id, std::string payload_value = std::string());
 
 	inline int32 GetNPCFactionID() const
 	{ return npc_faction_id; }
 
 	inline int32 GetPrimaryFaction() const
 	{ return primary_faction; }
+
+	inline int32 GetFactionAmount() const
+	{ return faction_amount; }
 
 	int64 GetNPCHate(Mob *in_ent)
 	{ return hate_list.GetEntHateAmount(in_ent); }
@@ -282,8 +283,6 @@ public:
 		npc_faction_id = in;
 		content_db.GetFactionIdsForNPC(npc_faction_id, &faction_list, &primary_faction);
 	}
-
-	int64 GetFocusEffect(focusType type, uint16 spell_id, Mob* caster = nullptr);
 
     glm::vec4 m_SpawnPoint;
 
@@ -320,8 +319,9 @@ public:
 
 	bool MeetsLootDropLevelRequirements(LootDropEntries_Struct loot_drop, bool verbose=false);
 
+	void CheckSignal();
+
 	virtual void DoClassAttacks(Mob *target);
-	void	CheckSignal();
 	inline bool IsNotTargetableWithHotkey() const { return no_target_hotkey; }
 	int64 GetNPCHPRegen() const { return hp_regen + itembonuses.HPRegen + spellbonuses.HPRegen; }
 	inline const char* GetAmmoIDfile() const { return ammo_idfile; }
@@ -409,26 +409,26 @@ public:
 	void	SetAvoidanceRating(int32 d) { avoidance_rating = d;}
 	int32 GetRawAC() const { return AC; }
 
-	float	GetNPCStat(const char *identifier);
-	void	ModifyNPCStat(const char *identifier, const char *new_value);
+	float	GetNPCStat(std::string stat);
+	void	ModifyNPCStat(std::string stat, std::string value);
 	virtual void SetLevel(uint8 in_level, bool command = false);
 
-	bool IsLDoNTrapped() const { return (ldon_trapped); }
+	bool IsLDoNTrapped() const { return ldon_trapped; }
 	void SetLDoNTrapped(bool n) { ldon_trapped = n; }
 
-	uint8 GetLDoNTrapType() const { return (ldon_trap_type); }
+	uint8 GetLDoNTrapType() const { return ldon_trap_type; }
 	void SetLDoNTrapType(uint8 n) { ldon_trap_type = n; }
 
-	uint16 GetLDoNTrapSpellID() const { return (ldon_spell_id); }
+	uint16 GetLDoNTrapSpellID() const { return ldon_spell_id; }
 	void SetLDoNTrapSpellID(uint16 n) { ldon_spell_id = n; }
 
-	bool IsLDoNLocked() const { return (ldon_locked); }
+	bool IsLDoNLocked() const { return ldon_locked; }
 	void SetLDoNLocked(bool n) { ldon_locked = n; }
 
-	uint16 GetLDoNLockedSkill() const { return (ldon_locked_skill); }
+	uint16 GetLDoNLockedSkill() const { return ldon_locked_skill; }
 	void SetLDoNLockedSkill(uint16 n) { ldon_locked_skill = n; }
 
-	bool IsLDoNTrapDetected() const { return (ldon_trap_detected); }
+	bool IsLDoNTrapDetected() const { return ldon_trap_detected; }
 	void SetLDoNTrapDetected(bool n) { ldon_trap_detected = n; }
 
 	const bool GetCombatEvent() const { return combat_event; }
@@ -458,8 +458,8 @@ public:
 	Timer *GetRefaceTimer() const { return reface_timer; }
 	const uint32 GetAltCurrencyType() const { return NPCTypedata->alt_currency_type; }
 
-	NPC_Emote_Struct* GetNPCEmote(uint16 emoteid, uint8 event_);
-	void DoNPCEmote(uint8 event_, uint16 emoteid);
+	NPC_Emote_Struct* GetNPCEmote(uint32 emoteid, uint8 event_);
+	void DoNPCEmote(uint8 event_, uint32 emoteid);
 	bool CanTalk();
 	void DoQuestPause(Mob *other);
 
@@ -488,6 +488,7 @@ public:
 	void	SetHeroForgeModel(uint32 model) { herosforgemodel = model; }
 
 	bool IsRaidTarget() const { return raid_target; };
+	bool IsRareSpawn() const { return rare_spawn; }
 	void ResetHPUpdateTimer() { send_hp_update_timer.Start(); }
 
 	bool IgnoreDespawn() { return ignore_despawn; }
@@ -533,8 +534,10 @@ public:
 	void ScaleNPC(uint8 npc_level);
 
 	void RecalculateSkills();
+	void ReloadSpells();
 
 	static LootDropEntries_Struct NewLootDropEntry();
+
 protected:
 
 	const NPCType*	NPCTypedata;
@@ -553,6 +556,7 @@ protected:
 
 	int32	npc_faction_id;
 	int32	primary_faction;
+	int32	faction_amount;
 
 	Timer	attacked_timer;		//running while we are being attacked (damaged)
 	Timer	swarm_timer;
@@ -576,7 +580,7 @@ protected:
 	virtual bool AICastSpell(Mob* tar, uint8 iChance, uint32 iSpellTypes, bool bInnates = false);
 	virtual bool AIDoSpellCast(uint8 i, Mob* tar, int32 mana_cost, uint32* oDontDoAgainBefore = 0);
 	AISpellsVar_Struct AISpellVar;
-	int64 GetFocusEffect(focusType type, uint16 spell_id, Mob* caster, bool from_buff_tic = false);
+	int64 GetFocusEffect(focusType type, uint16 spell_id, Mob *caster = nullptr, bool from_buff_tic = false) override;
 	uint16 innate_proc_spell_id;
 
 	uint32	npc_spells_effects_id;
@@ -677,10 +681,12 @@ protected:
 
 
 private:
-	uint32 loottable_id;
-	bool   skip_global_loot;
-	bool   skip_auto_scale;
-	bool   p_depop;
+	uint32              loottable_id;
+	bool                skip_global_loot;
+	bool                skip_auto_scale;
+	bool                p_depop;
+	bool                m_record_loot_stats;
+	std::vector<uint32> m_rolled_items = {};
 };
 
 #endif

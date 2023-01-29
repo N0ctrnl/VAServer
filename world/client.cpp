@@ -31,10 +31,11 @@
 #include "../common/languages.h"
 #include "../common/skills.h"
 #include "../common/extprofile.h"
-#include "../common/string_util.h"
+#include "../common/strings.h"
 #include "../common/emu_versions.h"
 #include "../common/random.h"
 #include "../common/shareddb.h"
+#include "../common/opcodemgr.h"
 
 #include "client.h"
 #include "worlddb.h"
@@ -46,7 +47,7 @@
 #include "clientlist.h"
 #include "wguild_mgr.h"
 #include "sof_char_create_data.h"
-#include "world_store.h"
+#include "../common/zone_store.h"
 #include "../common/repositories/account_repository.h"
 
 #include <iostream>
@@ -156,11 +157,31 @@ void Client::SendLogServer()
 	if(RuleB(World, IsGMPetitionWindowEnabled))
 		l->enable_petition_wnd = 1;
 
-	if((RuleI(World, FVNoDropFlag) == 1 || RuleI(World, FVNoDropFlag) == 2) && GetAdmin() > RuleI(Character, MinStatusForNoDropExemptions))
+	if (CanTradeFVNoDropItem()) {
 		l->enable_FV = 1;
+	}
 
 	QueuePacket(outapp);
 	safe_delete(outapp);
+}
+
+bool Client::CanTradeFVNoDropItem()
+{
+	const int16 admin_status             = GetAdmin();
+	const int   no_drop_flag             = RuleI(World, FVNoDropFlag);
+	const int   no_drop_min_admin_status = RuleI(Character, MinStatusForNoDropExemptions);
+	switch (no_drop_flag) {
+		case FVNoDropFlagRule::Disabled:
+			return false;
+		case FVNoDropFlagRule::Enabled:
+			return true;
+		case FVNoDropFlagRule::AdminOnly:
+			return admin_status >= no_drop_min_admin_status;
+		default:
+			LogWarning("Invalid value {0} set for FVNoDropFlag", no_drop_flag);
+			return false;
+	}
+	return false;
 }
 
 void Client::SendEnterWorld(std::string name)
@@ -217,7 +238,7 @@ void Client::SendCharInfo() {
 		QueuePacket(outapp);
 	}
 	else {
-		LogInfo("[Error] Database did not return an OP_SendCharInfo packet for account [{}]", GetAccountID());
+		LogError("Database did not return an OP_SendCharInfo packet for account [{}]", GetAccountID());
 	}
 	safe_delete(outapp);
 }
@@ -436,10 +457,10 @@ bool Client::HandleSendLoginInfoPacket(const EQApplicationPacket *app)
 		return false;
 	}
 
-	LogClientLogin("[HandleSendLoginInfoPacket] Checking Auth id [{}]", id);
+	LogClientLogin("Checking authentication id [{}]", id);
 
 	if ((cle = client_list.CheckAuth(id, password))) {
-		LogClientLogin("[HandleSendLoginInfoPacket] Checking Auth id [{}] passed", id);
+		LogClientLogin("Checking authentication id [{}] passed", id);
 		if (!is_player_zoning) {
 			// Track who is in and who is out of the game
 			char *inout= (char *) "";
@@ -768,7 +789,7 @@ bool Client::HandleEnterWorldPacket(const EQApplicationPacket *app) {
 		}
 
 		if (eqs->ClientVersion() == EQ::versions::ClientVersion::Titanium) {
-			character_limit = Titanium::constants::CHARACTER_CREATION_LIMIT; 
+			character_limit = Titanium::constants::CHARACTER_CREATION_LIMIT;
 		}
 
 		auto query = fmt::format(
@@ -968,7 +989,7 @@ bool Client::HandleDeleteCharacterPacket(const EQApplicationPacket *app) {
 
 	uint32 char_acct_id = database.GetAccountIDByChar((char*)app->pBuffer);
 	if(char_acct_id == GetAccountID()) {
-		LogInfo("Delete character: [{}]", app->pBuffer);
+		LogInfo("Delete character: [{}]", (const char*)app->pBuffer);
 		database.DeleteCharacter((char *)app->pBuffer);
 		SendCharInfo();
 	}
@@ -989,7 +1010,13 @@ bool Client::HandlePacket(const EQApplicationPacket *app) {
 
 	EmuOpcode opcode = app->GetOpcode();
 
-	LogNetcode("Received EQApplicationPacket [{:#04x}]", opcode);
+	LogPacketClientServer(
+		"[{}] [{:#06x}] Size [{}] {}",
+		OpcodeManager::EmuToName(app->GetOpcode()),
+		eqs->GetOpcodeManager()->EmuToEQ(app->GetOpcode()),
+		app->Size(),
+		(LogSys.IsLogEnabled(Logs::Detail, Logs::PacketClientServer) ? DumpPacketToString(app) : "")
+	);
 
 	if (!eqs->CheckState(ESTABLISHED)) {
 		LogInfo("Client disconnected (net inactive on send)");
@@ -1229,7 +1256,7 @@ bool Client::ChecksumVerificationCRCEQGame(uint64 checksum)
 		checksumint = atoll(checksumvar.c_str());
 	}
 	else {
-		LogChecksumVerification("[checksum_crc1_eqgame] variable not set in variables table.");
+		LogChecksumVerification("variable not set in variables table.");
 		return true;
 	}
 
@@ -1275,7 +1302,7 @@ bool Client::ChecksumVerificationCRCBaseData(uint64 checksum)
 		checksumint = atoll(checksumvar.c_str());
 	}
 	else {
-		LogChecksumVerification("[checksum_crc3_basedata] variable not set in variables table.");
+		LogChecksumVerification("variable not set in variables table.");
 		return true;
 	}
 
@@ -1577,17 +1604,38 @@ bool Client::OPCharCreate(char *name, CharCreate_Struct *cc)
 
 	in.s_addr = GetIP();
 
-	LogInfo("Character creation request from [{}] LS#[{}] ([{}]:[{}]) : ", GetCLE()->LSName(), GetCLE()->LSID(), inet_ntoa(in), GetPort());
-	LogInfo("Name: [{}]", name);
-	Log(Logs::Detail, Logs::WorldServer, "Race: %d  Class: %d  Gender: %d  Deity: %d  Start zone: %d  Tutorial: %s",
-		cc->race, cc->class_, cc->gender, cc->deity, cc->start_zone, cc->tutorial ? "true" : "false");
-	LogInfo("STR  STA  AGI  DEX  WIS  INT  CHA    Total");
-	Log(Logs::Detail, Logs::WorldServer, "%3d  %3d  %3d  %3d  %3d  %3d  %3d     %3d",
-		cc->STR, cc->STA, cc->AGI, cc->DEX, cc->WIS, cc->INT, cc->CHA,
-		stats_sum);
-	LogInfo("Face: [{}]  Eye colors: [{}] [{}]", cc->face, cc->eyecolor1, cc->eyecolor2);
-	LogInfo("Hairstyle: [{}]  Haircolor: [{}]", cc->hairstyle, cc->haircolor);
-	LogInfo("Beard: [{}]  Beardcolor: [{}]", cc->beard, cc->beardcolor);
+	LogInfo(
+		"Character creation request from [{}] LS [{}] [{}] [{}]",
+		GetCLE()->LSName(),
+		GetCLE()->LSID(),
+		inet_ntoa(in),
+		GetPort()
+	);
+	LogInfo("Name [{}]", name);
+	LogInfo(
+		"Race [{}] Class [{}] Gender [{}] Deity [{}] Start zone [{}] Tutorial [{}]",
+		cc->race,
+		cc->class_,
+		cc->gender,
+		cc->deity,
+		cc->start_zone,
+		cc->tutorial ? "true" : "false"
+	);
+	LogInfo("STR STA AGI DEX WIS INT CHA Total");
+	LogInfo(
+		" [{}] [{}] [{}] [{}] [{}] [{}] [{}] [{}]",
+		cc->STR,
+		cc->STA,
+		cc->AGI,
+		cc->DEX,
+		cc->WIS,
+		cc->INT,
+		cc->CHA,
+		stats_sum
+	);
+	LogInfo("Face [{}] Eye colors [{}] [{}]", cc->face, cc->eyecolor1, cc->eyecolor2);
+	LogInfo("Hairstyle [{}] Haircolor [{}]", cc->hairstyle, cc->haircolor);
+	LogInfo("Beard [{}] Beardcolor [{}]", cc->beard, cc->beardcolor);
 
 	/* Validate the char creation struct */
 	if (m_ClientVersionBit & EQ::versions::maskSoFAndLater) {
@@ -1658,14 +1706,14 @@ bool Client::OPCharCreate(char *name, CharCreate_Struct *cc)
 
 	/* If it is an SoF Client and the SoF Start Zone rule is set, send new chars there */
 	if (m_ClientVersionBit & EQ::versions::maskSoFAndLater) {
-		LogInfo("Found 'SoFStartZoneID' rule setting: [{}]", RuleI(World, SoFStartZoneID));
+		LogInfo("Found [SoFStartZoneID] rule setting [{}]", RuleI(World, SoFStartZoneID));
 		if (RuleI(World, SoFStartZoneID) > 0) {
 			pp.zone_id = RuleI(World, SoFStartZoneID);
 			cc->start_zone = pp.zone_id;
 		}
 	}
 	else {
-		LogInfo("Found 'TitaniumStartZoneID' rule setting: [{}]", RuleI(World, TitaniumStartZoneID));
+		LogInfo("Found [TitaniumStartZoneID] rule setting [{}]", RuleI(World, TitaniumStartZoneID));
 		if (RuleI(World, TitaniumStartZoneID) > 0) { 	/* if there's a startzone variable put them in there */
 
 			pp.zone_id = RuleI(World, TitaniumStartZoneID);
@@ -1713,7 +1761,12 @@ bool Client::OPCharCreate(char *name, CharCreate_Struct *cc)
 	/* Overrides if we have the tutorial flag set! */
 	if (cc->tutorial && RuleB(World, EnableTutorialButton)) {
 		pp.zone_id = RuleI(World, TutorialZoneID);
-		content_db.GetSafePoints(ZoneName(pp.zone_id), 0, &pp.x, &pp.y, &pp.z);
+		auto z = GetZone(pp.zone_id);
+		if (z) {
+			pp.x = z->safe_x;
+			pp.y = z->safe_y;
+			pp.z = z->safe_z;
+		}
 	}
 
 	/*  Will either be the same as home or tutorial if enabled. */
@@ -1725,12 +1778,39 @@ bool Client::OPCharCreate(char *name, CharCreate_Struct *cc)
 		pp.binds[0].heading = pp.heading;
 	}
 
-	Log(Logs::Detail, Logs::WorldServer, "Current location: %s (%d)  %0.2f, %0.2f, %0.2f, %0.2f",
-		ZoneName(pp.zone_id), pp.zone_id, pp.x, pp.y, pp.z, pp.heading);
-	Log(Logs::Detail, Logs::WorldServer, "Bind location: %s (%d) %0.2f, %0.2f, %0.2f",
-		ZoneName(pp.binds[0].zone_id), pp.binds[0].zone_id, pp.binds[0].x, pp.binds[0].y, pp.binds[0].z);
-	Log(Logs::Detail, Logs::WorldServer, "Home location: %s (%d) %0.2f, %0.2f, %0.2f",
-		ZoneName(pp.binds[4].zone_id), pp.binds[4].zone_id, pp.binds[4].x, pp.binds[4].y, pp.binds[4].z);
+	if (GetZone(pp.zone_id)) {
+		LogInfo(
+			"Current location [{}] [{}] [{:.2f}] [{:.2f}] [{:.2f}] [{:.2f}]",
+			ZoneName(pp.zone_id),
+			pp.zone_id,
+			pp.x,
+			pp.y,
+			pp.z,
+			pp.heading
+		);
+	}
+
+	if (GetZone(pp.binds[0].zone_id)) {
+		LogInfo(
+			"Bind location [{}] [{}] [{:.2f}] [{:.2f}] [{:.2f}]",
+			ZoneName(pp.binds[0].zone_id),
+			pp.binds[0].zone_id,
+			pp.binds[0].x,
+			pp.binds[0].y,
+			pp.binds[0].z
+		);
+	}
+
+	if (GetZone(pp.binds[4].zone_id)) {
+		LogInfo(
+			"Home location [{}] [{}] [{:.2f}] [{:.2f}] [{:.2f}]",
+			ZoneName(pp.binds[4].zone_id),
+			pp.binds[4].zone_id,
+			pp.binds[4].x,
+			pp.binds[4].y,
+			pp.binds[4].z
+		);
+	}
 
 	/* Starting Items inventory */
 	content_db.SetStartingItems(&pp, &inv, pp.race, pp.class_, pp.deity, pp.zone_id, pp.name, GetAdmin());
@@ -1934,16 +2014,16 @@ bool CheckCharCreateInfoTitanium(CharCreate_Struct *cc)
 	// if out of range looking it up in the table would crash stuff
 	// so we return from these
 	if (classtemp >= PLAYER_CLASS_COUNT) {
-		LogInfo("  class is out of range");
+		LogInfo(" class is out of range");
 		return false;
 	}
 	if (racetemp >= _TABLE_RACES) {
-		LogInfo("  race is out of range");
+		LogInfo(" race is out of range");
 		return false;
 	}
 
 	if (!ClassRaceLookupTable[classtemp][racetemp]) { //Lookup table better than a bunch of ifs?
-		LogInfo("  invalid race/class combination");
+		LogInfo(" invalid race/class combination");
 		// we return from this one, since if it's an invalid combination our table
 		// doesn't have meaningful values for the stats
 		return false;
@@ -1971,36 +2051,36 @@ bool CheckCharCreateInfoTitanium(CharCreate_Struct *cc)
 	// that are messed up not just the first hit
 
 	if (bTOTAL + stat_points != cTOTAL) {
-		LogInfo("  stat points total doesn't match expected value: expecting [{}] got [{}]", bTOTAL + stat_points, cTOTAL);
+		LogInfo(" stat points total doesn't match expected value: expecting [{}] got [{}]", bTOTAL + stat_points, cTOTAL);
 		Charerrors++;
 	}
 
 	if (cc->STR > bSTR + stat_points || cc->STR < bSTR) {
-		LogInfo("  stat STR is out of range");
+		LogInfo(" stat STR is out of range");
 		Charerrors++;
 	}
 	if (cc->STA > bSTA + stat_points || cc->STA < bSTA) {
-		LogInfo("  stat STA is out of range");
+		LogInfo(" stat STA is out of range");
 		Charerrors++;
 	}
 	if (cc->AGI > bAGI + stat_points || cc->AGI < bAGI) {
-		LogInfo("  stat AGI is out of range");
+		LogInfo(" stat AGI is out of range");
 		Charerrors++;
 	}
 	if (cc->DEX > bDEX + stat_points || cc->DEX < bDEX) {
-		LogInfo("  stat DEX is out of range");
+		LogInfo(" stat DEX is out of range");
 		Charerrors++;
 	}
 	if (cc->WIS > bWIS + stat_points || cc->WIS < bWIS) {
-		LogInfo("  stat WIS is out of range");
+		LogInfo(" stat WIS is out of range");
 		Charerrors++;
 	}
 	if (cc->INT > bINT + stat_points || cc->INT < bINT) {
-		LogInfo("  stat INT is out of range");
+		LogInfo(" stat INT is out of range");
 		Charerrors++;
 	}
 	if (cc->CHA > bCHA + stat_points || cc->CHA < bCHA) {
-		LogInfo("  stat CHA is out of range");
+		LogInfo(" stat CHA is out of range");
 		Charerrors++;
 	}
 

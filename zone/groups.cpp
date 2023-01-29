@@ -23,7 +23,7 @@
 #include "npc_ai.h"
 #include "../common/packet_functions.h"
 #include "../common/packet_dump.h"
-#include "../common/string_util.h"
+#include "../common/strings.h"
 #include "worldserver.h"
 #include "string_ids.h"
 
@@ -180,7 +180,7 @@ void Group::SplitMoney(uint32 copper, uint32 silver, uint32 gold, uint32 platinu
 			members[i]->CastToClient()->MessageString(
 				Chat::MoneySplit,
 				YOU_RECEIVE_AS_SPLIT,
-				ConvertMoneyToString(
+				Strings::Money(
 					platinum_split,
 					gold_split,
 					silver_split,
@@ -343,9 +343,9 @@ bool Group::AddMember(Mob* newmember, const char *NewMemberName, uint32 Characte
 
 	safe_delete(outapp);
 
-#ifdef BOTS
-	Bot::UpdateGroupCastingRoles(this);
-#endif
+	if (RuleB(Bots, Enabled)) {
+		Bot::UpdateGroupCastingRoles(this);
+	}
 
 	return true;
 }
@@ -524,9 +524,9 @@ bool Group::UpdatePlayer(Mob* update){
 	if (update->IsClient() && !mentoree && mentoree_name.length() && !mentoree_name.compare(update->GetName()))
 		mentoree = update->CastToClient();
 
-#ifdef BOTS
-	Bot::UpdateGroupCastingRoles(this);
-#endif
+	if (RuleB(Bots, Enabled)) {
+		Bot::UpdateGroupCastingRoles(this);
+	}
 
 	return updateSuccess;
 }
@@ -561,9 +561,9 @@ void Group::MemberZoned(Mob* removemob) {
 	if (removemob->IsClient() && removemob == mentoree)
 		mentoree = nullptr;
 
-#ifdef BOTS
-	Bot::UpdateGroupCastingRoles(this);
-#endif
+	if (RuleB(Bots, Enabled)) {
+		Bot::UpdateGroupCastingRoles(this);
+	}
 }
 
 void Group::SendGroupJoinOOZ(Mob* NewMember) {
@@ -782,9 +782,9 @@ bool Group::DelMember(Mob* oldmember, bool ignoresender)
 		ClearAllNPCMarks();
 	}
 
-#ifdef BOTS
-	Bot::UpdateGroupCastingRoles(this);
-#endif
+	if (RuleB(Bots, Enabled)) {
+		Bot::UpdateGroupCastingRoles(this);
+	}
 
 	return true;
 }
@@ -833,26 +833,28 @@ void Group::CastGroupSpell(Mob* caster, uint16 spell_id) {
 	disbandcheck = true;
 }
 
-bool Group::IsGroupMember(Mob* client)
+bool Group::IsGroupMember(Mob* c)
 {
-	bool Result = false;
-
-	if(client) {
-		for (uint32 i = 0; i < MAX_GROUP_MEMBERS; i++) {
-			if (members[i] == client)
-				Result = true;
+	if (c) {
+		for (const auto &m: members) {
+			if (m == c) {
+				return true;
+			}
 		}
 	}
 
-	return Result;
+	return false;
 }
 
-bool Group::IsGroupMember(const char *Name)
+bool Group::IsGroupMember(const char *name)
 {
-	if(Name)
-		for(uint32 i = 0; i < MAX_GROUP_MEMBERS; i++)
-			if((strlen(Name) == strlen(membername[i])) && !strncmp(membername[i], Name, strlen(Name)))
+	if (name) {
+		for (const auto& m : membername) {
+			if (!strcmp(m, name)) {
 				return true;
+			}
+		}
+	}
 
 	return false;
 }
@@ -893,9 +895,9 @@ uint32 Group::GetTotalGroupDamage(Mob* other) {
 }
 
 void Group::DisbandGroup(bool joinraid) {
-#ifdef BOTS
-	Bot::UpdateGroupCastingRoles(this, true);
-#endif
+	if (RuleB(Bots, Enabled)) {
+		Bot::UpdateGroupCastingRoles(this, true);
+	}
 
 	auto outapp = new EQApplicationPacket(OP_GroupUpdate, sizeof(GroupUpdate_Struct));
 
@@ -988,7 +990,6 @@ void Group::GetClientList(std::list<Client*>& client_list, bool clear_list)
 	}
 }
 
-#ifdef BOTS
 void Group::GetBotList(std::list<Bot*>& bot_list, bool clear_list)
 {
 	if (clear_list)
@@ -999,7 +1000,6 @@ void Group::GetBotList(std::list<Bot*>& bot_list, bool clear_list)
 			bot_list.push_back(bot_iter->CastToBot());
 	}
 }
-#endif
 
 bool Group::Process() {
 	if(disbandcheck && !GroupCount())
@@ -2472,5 +2472,17 @@ bool Group::DoesAnyMemberHaveExpeditionLockout(
 			}
 		}
 	}
+	return false;
+}
+
+bool Group::IsLeader(const char* name) {
+	if (name) {
+		for (const auto& m : membername) {
+			if (!strcmp(m, name)) {
+				return true;
+			}
+		}
+	}
+
 	return false;
 }

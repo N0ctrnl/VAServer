@@ -1,7 +1,7 @@
 #include "discord_manager.h"
 #include "../common/discord/discord.h"
 #include "../common/eqemu_logsys.h"
-#include "../common/string_util.h"
+#include "../common/strings.h"
 
 void DiscordManager::QueueWebhookMessage(uint32 webhook_id, const std::string &message)
 {
@@ -22,7 +22,12 @@ void DiscordManager::ProcessMessageQueue()
 	for (auto &q: webhook_message_queue) {
 		LogDiscord("Processing [{}] messages in queue for webhook ID [{}]...", q.second.size(), q.first);
 
-		auto        webhook  = LogSys.discord_webhooks[q.first];
+		if (q.first >= MAX_DISCORD_WEBHOOK_ID) {
+			LogDiscord("Out of bounds webhook ID [{}] max [{}]", q.first, MAX_DISCORD_WEBHOOK_ID);
+			continue;
+		}
+
+		auto        webhook  = LogSys.GetDiscordWebhooks()[q.first];
 		std::string message;
 
 		for (auto &m: q.second) {
@@ -58,8 +63,7 @@ void DiscordManager::ProcessMessageQueue()
 				webhook.webhook_url
 			);
 		}
-
-		webhook_message_queue.erase(q.first);
 	}
+	webhook_message_queue.clear();
 	webhook_queue_lock.unlock();
 }

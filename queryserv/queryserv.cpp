@@ -24,25 +24,29 @@
 #include "../common/servertalk.h"
 #include "../common/platform.h"
 #include "../common/crash.h"
-#include "../common/string_util.h"
+#include "../common/strings.h"
 #include "../common/event/event_loop.h"
 #include "../common/timer.h"
 #include "database.h"
 #include "queryservconfig.h"
 #include "lfguild.h"
 #include "worldserver.h"
+#include "../common/path_manager.h"
+#include "../common/zone_store.h"
 #include <list>
 #include <signal.h>
 #include <thread>
 
 volatile bool RunLoops = true;
 
-Database              database;
+QSDatabase              database;
 LFGuildManager        lfguildmanager;
 std::string           WorldShortName;
 const queryservconfig *Config;
 WorldServer           *worldserver = 0;
 EQEmuLogSys           LogSys;
+PathManager           path;
+ZoneStore             zone_store;
 
 void CatchSignal(int sig_num)
 {
@@ -55,6 +59,8 @@ int main()
 	LogSys.LoadLogSettingsDefaults();
 	set_exception_handler();
 	Timer LFGuildExpireTimer(60000);
+
+	path.LoadPaths();
 
 	LogInfo("Starting EQEmu QueryServ");
 	if (!queryservconfig::LoadConfig()) {
@@ -80,6 +86,7 @@ int main()
 	}
 
 	LogSys.SetDatabase(&database)
+		->SetLogPath(path.GetLogPath())
 		->LoadLogDatabaseSettings()
 		->StartFileLogs();
 
@@ -99,15 +106,24 @@ int main()
 	/* Load Looking For Guild Manager */
 	lfguildmanager.LoadDatabase();
 
-	while (RunLoops) {
+	auto loop_fn = [&](EQ::Timer* t) {
 		Timer::SetCurrentTime();
+
+		if (!RunLoops) {
+			EQ::EventLoop::Get().Shutdown();
+			return;
+		}
+
 		if (LFGuildExpireTimer.Check()) {
 			lfguildmanager.ExpireEntries();
 		}
+	};
 
-		EQ::EventLoop::Get().Process();
-		Sleep(5);
-	}
+	EQ::Timer process_timer(loop_fn);
+	process_timer.Start(32, true);
+
+	EQ::EventLoop::Get().Run();
+
 	LogSys.CloseFileLogs();
 }
 

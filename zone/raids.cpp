@@ -16,7 +16,7 @@
 	Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 */
 
-#include "../common/string_util.h"
+#include "../common/strings.h"
 
 #include "client.h"
 #include "entity.h"
@@ -354,12 +354,26 @@ void Raid::UpdateRaidAAs()
 	SaveRaidLeaderAA();
 }
 
-bool Raid::IsGroupLeader(const char *who)
+bool Raid::IsGroupLeader(const char* name)
 {
-	for(int x = 0; x < MAX_RAID_MEMBERS; x++)
-	{
-		if(strcmp(who, members[x].membername) == 0){
-			return members[x].IsGroupLeader;
+	if (name) {
+		for (const auto &m: members) {
+			if (!strcmp(m.membername, name)) {
+				return m.IsGroupLeader;
+			}
+		}
+	}
+
+	return false;
+}
+
+bool Raid::IsGroupLeader(Client *c)
+{
+	if (c) {
+		for (const auto &m: members) {
+			if (m.member == c) {
+				return true;
+			}
 		}
 	}
 
@@ -803,7 +817,7 @@ void Raid::SplitMoney(uint32 gid, uint32 copper, uint32 silver, uint32 gold, uin
 			members[i].member->MessageString(
 				Chat::MoneySplit,
 				YOU_RECEIVE_AS_SPLIT,
-				ConvertMoneyToString(
+				Strings::Money(
 					platinum_split,
 					gold_split,
 					silver_split,
@@ -890,12 +904,29 @@ void Raid::RemoveRaidLooter(const char* looter)
 	safe_delete(pack);
 }
 
-bool Raid::IsRaidMember(const char *name){
-	for(int x = 0; x < MAX_RAID_MEMBERS; x++)
-	{
-		if(strcmp(name, members[x].membername) == 0)
-			return true;
+bool Raid::IsRaidMember(const char *name)
+{
+	if (name) {
+		for (const auto &m: members) {
+			if (!strcmp(m.membername, name)) {
+				return true;
+			}
+		}
 	}
+
+	return false;
+}
+
+bool Raid::IsRaidMember(Client* c)
+{
+	if (c) {
+		for (const auto &m: members) {
+			if (m.member == c) {
+				return true;
+			}
+		}
+	}
+
 	return false;
 }
 
@@ -1435,7 +1466,7 @@ void Raid::GetRaidDetails()
 void Raid::SaveRaidMOTD()
 {
 	std::string query = StringFormat("UPDATE raid_details SET motd = '%s' WHERE raidid = %lu",
-			EscapeString(motd).c_str(), (unsigned long)GetID());
+			Strings::Escape(motd).c_str(), (unsigned long)GetID());
 
 	auto results = database.QueryDatabase(query);
 }
@@ -1768,7 +1799,7 @@ void Raid::QueueClients(Mob *sender, const EQApplicationPacket *app, bool ack_re
 		uint32 group_id = GetGroup(sender->CastToClient());
 
 		/* If this is a group only packet and we're not in a group -- return */
-		if (!group_id == 0xFFFFFFFF && group_only)
+		if (group_id == 0xFFFFFFFF && group_only)
 			return;
 
 		for (uint32 i = 0; i < MAX_RAID_MEMBERS; i++) {

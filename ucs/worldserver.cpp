@@ -21,7 +21,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "../common/misc_functions.h"
 #include "../common/packet_functions.h"
 #include "../common/md5.h"
-#include "../common/string_util.h"
+#include "../common/strings.h"
 #include "worldserver.h"
 #include "clientlist.h"
 #include "ucsconfig.h"
@@ -39,7 +39,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 extern WorldServer     worldserver;
 extern Clientlist      *g_Clientlist;
 extern const ucsconfig *Config;
-extern Database        database;
+extern UCSDatabase       database;
 extern DiscordManager  discord_manager;
 
 void ProcessMailTo(Client *c, std::string from, std::string subject, std::string message);
@@ -72,6 +72,10 @@ void WorldServer::ProcessMessage(uint16 opcode, EQ::Net::Packet &p)
 	}
 	case ServerOP_KeepAlive:
 	{
+		break;
+	}
+	case ServerOP_ReloadLogs: {
+		LogSys.LoadLogDatabaseSettings();
 		break;
 	}
 	case ServerOP_DiscordWebhookMessage: {
@@ -134,7 +138,7 @@ void WorldServer::ProcessMessage(uint16 opcode, EQ::Net::Packet &p)
 		}
 		else if (Message[0] == '[')
 		{
-			g_Clientlist->ProcessOPMailCommand(c, Message.substr(1, std::string::npos));
+			g_Clientlist->ProcessOPMailCommand(c, Message.substr(1, std::string::npos), true); // Flag as command_directed
 		}
 
 		break;
@@ -159,7 +163,7 @@ void Client45ToServerSayLink(std::string& serverSayLink, const std::string& clie
 		return;
 	}
 
-	auto segments = SplitString(clientSayLink, '\x12');
+	auto segments = Strings::Split(clientSayLink, '\x12');
 
 	for (size_t segment_iter = 0; segment_iter < segments.size(); ++segment_iter) {
 		if (segment_iter & 1) {
@@ -196,7 +200,7 @@ void Client50ToServerSayLink(std::string& serverSayLink, const std::string& clie
 		return;
 	}
 
-	auto segments = SplitString(clientSayLink, '\x12');
+	auto segments = Strings::Split(clientSayLink, '\x12');
 
 	for (size_t segment_iter = 0; segment_iter < segments.size(); ++segment_iter) {
 		if (segment_iter & 1) {
@@ -231,7 +235,7 @@ void Client55ToServerSayLink(std::string& serverSayLink, const std::string& clie
 		return;
 	}
 
-	auto segments = SplitString(clientSayLink, '\x12');
+	auto segments = Strings::Split(clientSayLink, '\x12');
 
 	for (size_t segment_iter = 0; segment_iter < segments.size(); ++segment_iter) {
 		if (segment_iter & 1) {

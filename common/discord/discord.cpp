@@ -1,7 +1,7 @@
 #include "discord.h"
 #include "../http/httplib.h"
 #include "../json/json.h"
-#include "../string_util.h"
+#include "../strings.h"
 #include "../eqemu_logsys.h"
 
 constexpr int MAX_RETRIES = 10;
@@ -21,11 +21,11 @@ void Discord::SendWebhookMessage(const std::string &message, const std::string &
 	}
 
 	// split
-	auto s = SplitString(webhook_url, '/');
+	auto s = Strings::Split(webhook_url, '/');
 
 	// url
 	std::string base_url = fmt::format("{}//{}", s[0], s[2]);
-	std::string endpoint = replace_string(webhook_url, base_url, "");
+	std::string endpoint = Strings::Replace(webhook_url, base_url, "");
 
 	// client
 	httplib::Client cli(base_url.c_str());
@@ -48,7 +48,7 @@ void Discord::SendWebhookMessage(const std::string &message, const std::string &
 	while (retry) {
 		if (auto res = cli.Post(endpoint.c_str(), payload.str(), "application/json")) {
 			if (res->status != 200 && res->status != 204) {
-				LogError("[Discord Client] Code [{}] Error [{}]", res->status, res->body);
+				LogError("Code [{}] Error [{}]", res->status, res->body);
 			}
 			if (res->status == 429) {
 				if (!res->body.empty()) {

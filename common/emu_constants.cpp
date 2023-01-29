@@ -1,5 +1,5 @@
 /*	EQEMu:  Everquest Server Emulator
-	
+
 	Copyright (C) 2001-2016 EQEMu Development Team (http://eqemulator.net)
 
 	This program is free software; you can redistribute it and/or modify
@@ -18,9 +18,12 @@
 */
 
 #include "emu_constants.h"
-#include "languages.h"
-#include "data_verification.h"
 #include "bodytypes.h"
+#include "data_verification.h"
+#include "eqemu_logsys.h"
+#include "eqemu_logsys_log_aliases.h"
+#include "languages.h"
+#include "rulesys.h"
 
 int16 EQ::invtype::GetInvTypeSize(int16 inv_type) {
 	static const int16 local_array[] = {
@@ -117,7 +120,7 @@ EQ::bug::CategoryID EQ::bug::CategoryNameToCategoryID(const char* category_name)
 		return catLoNTCG;
 	if (!strcmp(category_name, "Mercenaries"))
 		return catMercenaries;
-	
+
 	return catOther;
 }
 
@@ -221,7 +224,7 @@ std::string EQ::constants::GetLDoNThemeName(uint32 theme_id)
 		return EQ::constants::GetLDoNThemeMap().find(theme_id)->second;
 	}
 
-	return std::string();	
+	return std::string();
 }
 
 const std::map<int8, std::string>& EQ::constants::GetFlyModeMap()
@@ -321,7 +324,7 @@ const std::map<uint8, std::string>& EQ::constants::GetAccountStatusMap()
 		{ AccountStatus::GMAreas, "GM Areas" },
 		{ AccountStatus::GMCoder, "GM Coder" },
 		{ AccountStatus::GMMgmt, "GM Mgmt" },
-		{ AccountStatus::GMImpossible, "GM Impossible" },	
+		{ AccountStatus::GMImpossible, "GM Impossible" },
 		{ AccountStatus::Max, "GM Max" }
 	};
 
@@ -428,6 +431,150 @@ std::string EQ::constants::GetSpawnAnimationName(uint8 animation_id)
 {
 	if (EQ::ValueWithin(animation_id, SpawnAnimations::Standing, SpawnAnimations::Looting)) {
 		return EQ::constants::GetSpawnAnimationMap().find(animation_id)->second;
+	}
+
+	return std::string();
+}
+
+const std::map<int, std::string>& EQ::constants::GetObjectTypeMap()
+{
+	static const std::map<int, std::string> object_type_map = {
+		{ ObjectTypes::SmallBag, "Small Bag" },
+		{ ObjectTypes::LargeBag, "Large Bag" },
+		{ ObjectTypes::Quiver, "Quiver" },
+		{ ObjectTypes::BeltPouch, "Belt Pouch" },
+		{ ObjectTypes::WristPouch, "Wrist Pouch" },
+		{ ObjectTypes::Backpack, "Backpack" },
+		{ ObjectTypes::SmallChest, "Small Chest" },
+		{ ObjectTypes::LargeChest, "Large Chest" },
+		{ ObjectTypes::Bandolier, "Bandolier" },
+		{ ObjectTypes::Medicine, "Medicine" },
+		{ ObjectTypes::Tinkering, "Tinkering" },
+		{ ObjectTypes::Lexicon, "Lexicon" },
+		{ ObjectTypes::PoisonMaking, "Mortar and Pestle" },
+		{ ObjectTypes::Quest, "Quest" },
+		{ ObjectTypes::MixingBowl, "Mixing Bowl" },
+		{ ObjectTypes::Baking, "Baking" },
+		{ ObjectTypes::Tailoring, "Tailoring" },
+		{ ObjectTypes::Blacksmithing, "Blacksmithing" },
+		{ ObjectTypes::Fletching, "Fletching" },
+		{ ObjectTypes::Brewing, "Brewing" },
+		{ ObjectTypes::JewelryMaking, "Jewelry Making" },
+		{ ObjectTypes::Pottery, "Pottery" },
+		{ ObjectTypes::Kiln, "Kiln" },
+		{ ObjectTypes::KeyMaker, "Key Maker" },
+		{ ObjectTypes::ResearchWIZ, "Lexicon" },
+		{ ObjectTypes::ResearchMAG, "Lexicon" },
+		{ ObjectTypes::ResearchNEC, "Lexicon" },
+		{ ObjectTypes::ResearchENC, "Lexicon" },
+		{ ObjectTypes::Unknown, "Unknown" },
+		{ ObjectTypes::ResearchPractice, "Lexicon" },
+		{ ObjectTypes::Alchemy, "Alchemy" },
+		{ ObjectTypes::HighElfForge, "High Elf Forge" },
+		{ ObjectTypes::DarkElfForge, "Dark Elf Forge" },
+		{ ObjectTypes::OgreForge, "Ogre Forge" },
+		{ ObjectTypes::DwarfForge, "Dwarf Forge" },
+		{ ObjectTypes::GnomeForge, "Gnome Forge" },
+		{ ObjectTypes::BarbarianForge, "Barbarian Forge" },
+		{ ObjectTypes::IksarForge, "Iksar Forge" },
+		{ ObjectTypes::HumanForgeOne, "Human Forge" },
+		{ ObjectTypes::HumanForgeTwo, "Human Forge" },
+		{ ObjectTypes::HalflingTailoringOne, "Halfling Tailoring" },
+		{ ObjectTypes::HalflingTailoringTwo, "Halfling Tailoring" },
+		{ ObjectTypes::EruditeTailoring, "Erudite Tailoring" },
+		{ ObjectTypes::WoodElfTailoring, "Wood Elf Tailoring" },
+		{ ObjectTypes::WoodElfFletching, "Wood Elf Fletching" },
+		{ ObjectTypes::IksarPottery, "Iksar Pottery" },
+		{ ObjectTypes::Fishing, "Fishing" },
+		{ ObjectTypes::TrollForge, "Troll Forge" },
+		{ ObjectTypes::WoodElfForge, "Wood Elf Forge" },
+		{ ObjectTypes::HalflingForge, "Halfling Forge" },
+		{ ObjectTypes::EruditeForge, "Erudite Forge" },
+		{ ObjectTypes::Merchant, "Merchant" },
+		{ ObjectTypes::FroglokForge, "Froglok Forge" },
+		{ ObjectTypes::Augmenter, "Augmenter" },
+		{ ObjectTypes::Churn, "Churn" },
+		{ ObjectTypes::TransformationMold, "Transformation Mold" },
+		{ ObjectTypes::DetransformationMold, "Detransformation Mold" },
+		{ ObjectTypes::Unattuner, "Unattuner" },
+		{ ObjectTypes::TradeskillBag, "Tradeskill Bag" },
+		{ ObjectTypes::CollectibleBag, "Collectible Bag" },
+		{ ObjectTypes::NoDeposit, "No Deposit" }
+	};
+
+	return object_type_map;
+}
+
+std::string EQ::constants::GetObjectTypeName(int object_type)
+{
+	if (EQ::ValueWithin(object_type, ObjectTypes::SmallBag, ObjectTypes::NoDeposit)) {
+		return EQ::constants::GetObjectTypeMap().find(object_type)->second;
+	}
+
+	return std::string();
+}
+
+const std::map<uint8, std::string> &EQ::constants::GetWeatherTypeMap()
+{
+	static const std::map<uint8, std::string> weather_type_map = {
+		{WeatherTypes::None,    "None"},
+		{WeatherTypes::Raining, "Raining"},
+		{WeatherTypes::Snowing, "Snowing"}
+	};
+
+	return weather_type_map;
+}
+
+std::string EQ::constants::GetWeatherTypeName(uint8 weather_type)
+{
+	if (EQ::ValueWithin(weather_type, WeatherTypes::None, WeatherTypes::Snowing)) {
+		return EQ::constants::GetWeatherTypeMap().find(weather_type)->second;
+	}
+
+	return std::string();
+}
+
+const std::map<uint8, std::string> &EQ::constants::GetEmoteEventTypeMap()
+{
+	static const std::map<uint8, std::string> emote_event_type_map = {
+		{ EmoteEventTypes::LeaveCombat, "Leave Combat" },
+		{ EmoteEventTypes::EnterCombat, "Enter Combat" },
+		{ EmoteEventTypes::OnDeath, "On Death" },
+		{ EmoteEventTypes::AfterDeath, "After Death" },
+		{ EmoteEventTypes::Hailed, "Hailed" },
+		{ EmoteEventTypes::KilledPC, "Killed PC" },
+		{ EmoteEventTypes::KilledNPC, "Killed NPC" },
+		{ EmoteEventTypes::OnSpawn, "On Spawn" },
+		{ EmoteEventTypes::OnDespawn, "On Despawn" }
+	};
+
+	return emote_event_type_map;
+}
+
+std::string EQ::constants::GetEmoteEventTypeName(uint8 emote_event_type)
+{
+	if (EQ::ValueWithin(emote_event_type, EmoteEventTypes::LeaveCombat, EmoteEventTypes::OnDespawn)) {
+		return EQ::constants::GetEmoteEventTypeMap().find(emote_event_type)->second;
+	}
+
+	return std::string();
+}
+
+const std::map<uint8, std::string> &EQ::constants::GetEmoteTypeMap()
+{
+	static const std::map<uint8, std::string> emote_type_map = {
+		{ EmoteTypes::Emote, "Emote" },
+		{ EmoteTypes::Shout, "Shout" },
+		{ EmoteTypes::Proximity, "Proximity" }
+	};
+
+	return emote_type_map;
+}
+
+std::string EQ::constants::GetEmoteTypeName(uint8 emote_type)
+{
+	if (EQ::ValueWithin(emote_type, EmoteTypes::Emote, EmoteTypes::Proximity)) {
+		return EQ::constants::GetEmoteTypeMap().find(emote_type)->second;
 	}
 
 	return std::string();

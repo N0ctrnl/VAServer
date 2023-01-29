@@ -63,7 +63,7 @@ namespace EQ
 #include "questmgr.h"
 #include "zone.h"
 #include "zonedb.h"
-#include "zone_store.h"
+#include "../common/zone_store.h"
 #include "task_manager.h"
 #include "task_client_state.h"
 #include "cheat_manager.h"
@@ -87,6 +87,7 @@ namespace EQ
 #define CLIENT_LD_TIMEOUT 30000 // length of time client stays in zone after LDing
 #define TARGETING_RANGE 200 // range for /assist and /target
 #define XTARGET_HARDCAP 20
+#define MAX_SPECIALIZED_SKILL 50
 
 extern Zone* zone;
 extern TaskManager *task_manager;
@@ -208,6 +209,7 @@ const std::string DIAWIND_RESPONSE_TWO_KEY       = "diawind_npc_response_two";
 const uint32      POPUPID_DIAWIND_ONE            = 99999;
 const uint32      POPUPID_DIAWIND_TWO            = 100000;
 const uint32      POPUPID_UPDATE_SHOWSTATSWINDOW = 1000000;
+const uint32      POPUPID_REPLACE_SPELLWINDOW    = 1000001;
 
 struct ClientReward
 {
@@ -229,8 +231,6 @@ public:
 	Client(EQStreamInterface * ieqs);
 	~Client();
 
-	bool is_client_moving;
-
 	void ReconnectUCS();
 
 	void SetDisplayMobInfoWindow(bool display_mob_info_window);
@@ -239,18 +239,21 @@ public:
 	bool IsDevToolsEnabled() const;
 	void SetDevToolsEnabled(bool in_dev_tools_enabled);
 
+	bool IsEXPEnabled() const;
+	void SetEXPEnabled(bool is_exp_enabled);
+
 	void SetPrimaryWeaponOrnamentation(uint32 model_id);
 	void SetSecondaryWeaponOrnamentation(uint32 model_id);
 
 	void SendChatLineBreak(uint16 color = Chat::White);
 
 	bool GotoPlayer(std::string player_name);
+	bool GotoPlayerGroup(const std::string& player_name);
+	bool GotoPlayerRaid(const std::string& player_name);
 
 	//abstract virtual function implementations required by base abstract class
 	virtual bool Death(Mob* killerMob, int64 damage, uint16 spell_id, EQ::skills::SkillType attack_skill);
 	virtual void Damage(Mob* from, int64 damage, uint16 spell_id, EQ::skills::SkillType attack_skill, bool avoidable = true, int8 buffslot = -1, bool iBuffTic = false, eSpecialAttacks special = eSpecialAttacks::None);
-	virtual bool Attack(Mob* other, int Hand = EQ::invslot::slotPrimary, bool FromRiposte = false, bool IsStrikethrough = false, bool IsFromSpell = false,
-			ExtraAttackOptions *opts = nullptr);
 	virtual bool HasRaid() { return (GetRaid() ? true : false); }
 	virtual bool HasGroup() { return (GetGroup() ? true : false); }
 	virtual Raid* GetRaid() { return entity_list.GetRaidByClient(this); }
@@ -259,7 +262,6 @@ public:
 	virtual void SetAttackTimer();
 	int GetQuiverHaste(int delay);
 	void DoAttackRounds(Mob *target, int hand, bool IsFromSpell = false);
-	int64 DoDamageCaps(int64 base_damage);
 
 	void AI_Init();
 	void AI_Start(uint32 iMoveDelay = 0);
@@ -328,13 +330,15 @@ public:
 	void LogMerchant(Client* player, Mob* merchant, uint32 quantity, uint32 price, const EQ::ItemData* item, bool buying);
 	void QueuePacket(const EQApplicationPacket* app, bool ack_req = true, CLIENT_CONN_STATUS = CLIENT_CONNECTINGALL, eqFilterType filter=FilterNone);
 	void FastQueuePacket(EQApplicationPacket** app, bool ack_req = true, CLIENT_CONN_STATUS = CLIENT_CONNECTINGALL);
-	void ChannelMessageReceived(uint8 chan_num, uint8 language, uint8 lang_skill, const char* orig_message, const char* targetname=nullptr);
+	void ChannelMessageReceived(uint8 chan_num, uint8 language, uint8 lang_skill, const char* orig_message, const char* targetname = nullptr, bool is_silent = false);
 	void ChannelMessageSend(const char* from, const char* to, uint8 chan_num, uint8 language, uint8 lang_skill, const char* message, ...);
 	void Message(uint32 type, const char* message, ...);
 	void FilteredMessage(Mob *sender, uint32 type, eqFilterType filter, const char* message, ...);
 	void VoiceMacroReceived(uint32 Type, char *Target, uint32 MacroNumber);
 	void SendSound();
-	void LearnRecipe(uint32 recipeID);
+	void LearnRecipe(uint32 recipe_id);
+	int GetRecipeMadeCount(uint32 recipe_id);
+	bool HasRecipeLearned(uint32 recipe_id);
 	bool CanIncreaseTradeskill(EQ::skills::SkillType tradeskill);
 
 	EQApplicationPacket* ReturnItemPacket(int16 slot_id, const EQ::ItemInstance* inst, ItemPacketType packet_type);
@@ -346,7 +350,7 @@ public:
 	int GetIPExemption();
 	void SetIPExemption(int exemption_amount);
 	inline bool GetHideMe() const { return gm_hide_me; }
-	void SetHideMe(bool hm);
+	void SetHideMe(bool flag);
 	inline uint16 GetPort() const { return port; }
 	bool IsDead() const { return(dead); }
 	bool IsUnconscious() const { return ((current_hp <= 0) ? true : false); }
@@ -409,7 +413,7 @@ public:
 	inline void SetBaseRace(uint32 i) { m_pp.race=i; }
 	inline void SetBaseGender(uint32 i) { m_pp.gender=i; }
 	inline void SetDeity(uint32 i) {m_pp.deity=i;deity=i;}
-	
+
 	void SetTrackingID(uint32 entity_id);
 
 	inline uint8 GetLevel2() const { return m_pp.level2; }
@@ -552,9 +556,7 @@ public:
 
 	inline virtual int32 GetDelayDeath() const { return aabonuses.DelayDeath + spellbonuses.DelayDeath + itembonuses.DelayDeath + 11; }
 
-	int32 GetActSpellCost(uint16 spell_id, int32);
 	virtual bool CheckFizzle(uint16 spell_id);
-	virtual bool CheckSpellLevelRestriction(uint16 spell_id);
 	virtual int GetCurrentBuffSlots() const;
 	virtual int GetCurrentSongSlots() const;
 	virtual int GetCurrentDiscSlots() const { return 1; }
@@ -602,10 +604,10 @@ public:
 
 	inline uint32 GetEXP() const { return m_pp.exp; }
 
-	inline double GetAAEXPModifier(uint32 zone_id) const { return database.GetAAEXPModifier(CharacterID(), zone_id); };
-	inline double GetEXPModifier(uint32 zone_id) const { return database.GetEXPModifier(CharacterID(), zone_id); };
-	inline void SetAAEXPModifier(uint32 zone_id, double aa_modifier) { database.SetAAEXPModifier(CharacterID(), zone_id, aa_modifier); };
-	inline void SetEXPModifier(uint32 zone_id, double exp_modifier) { database.SetEXPModifier(CharacterID(), zone_id, exp_modifier); };
+	inline double GetAAEXPModifier(uint32 zone_id, int16 instance_version = -1) const { return database.GetAAEXPModifier(CharacterID(), zone_id, instance_version); };
+	inline double GetEXPModifier(uint32 zone_id, int16 instance_version = -1) const { return database.GetEXPModifier(CharacterID(), zone_id, instance_version); };
+	inline void SetAAEXPModifier(uint32 zone_id, double aa_modifier, int16 instance_version = -1) { database.SetAAEXPModifier(CharacterID(), zone_id, aa_modifier, instance_version); };
+	inline void SetEXPModifier(uint32 zone_id, double exp_modifier, int16 instance_version = -1) { database.SetEXPModifier(CharacterID(), zone_id, exp_modifier, instance_version); };
 
 	bool UpdateLDoNPoints(uint32 theme_id, int points);
 	void SetPVPPoints(uint32 Points) { m_pp.PVPCurrentPoints = Points; }
@@ -618,17 +620,17 @@ public:
 	void AddCrystals(uint32 Radiant, uint32 Ebon);
 	void SendCrystalCounts();
 
-	uint32 GetExperienceForKill(Mob *against);
-	void AddEXP(uint32 in_add_exp, uint8 conlevel = 0xFF, bool resexp = false);
-	uint32 CalcEXP(uint8 conlevel = 0xFF);
-	void CalculateNormalizedAAExp(uint32 &add_aaxp, uint8 conlevel, bool resexp);
-	void CalculateStandardAAExp(uint32 &add_aaxp, uint8 conlevel, bool resexp);
-	void CalculateLeadershipExp(uint32 &add_exp, uint8 conlevel);
-	void CalculateExp(uint32 in_add_exp, uint32 &add_exp, uint32 &add_aaxp, uint8 conlevel, bool resexp);
-	void SetEXP(uint32 set_exp, uint32 set_aaxp, bool resexp=false);
+	uint64 GetExperienceForKill(Mob *against);
+	void AddEXP(uint64 in_add_exp, uint8 conlevel = 0xFF, bool resexp = false);
+	uint64 CalcEXP(uint8 conlevel = 0xFF, bool ignore_mods = false);
+	void CalculateNormalizedAAExp(uint64 &add_aaxp, uint8 conlevel, bool resexp);
+	void CalculateStandardAAExp(uint64 &add_aaxp, uint8 conlevel, bool resexp);
+	void CalculateLeadershipExp(uint64 &add_exp, uint8 conlevel);
+	void CalculateExp(uint64 in_add_exp, uint64 &add_exp, uint64 &add_aaxp, uint8 conlevel, bool resexp);
+	void SetEXP(uint64 set_exp, uint64 set_aaxp, bool resexp=false);
 	void AddLevelBasedExp(uint8 exp_percentage, uint8 max_level = 0, bool ignore_mods = false);
-	void SetLeadershipEXP(uint32 group_exp, uint32 raid_exp);
-	void AddLeadershipEXP(uint32 group_exp, uint32 raid_exp);
+	void SetLeadershipEXP(uint64 group_exp, uint64 raid_exp);
+	void AddLeadershipEXP(uint64 group_exp, uint64 raid_exp);
 	void SendLeadershipEXPUpdate();
 	bool IsLeadershipEXPOn();
 	inline int GetLeadershipAA(int AAID) { return m_pp.leader_abilities.ranks[AAID]; }
@@ -658,12 +660,12 @@ public:
 	void MovePC(uint32 zoneID, float x, float y, float z, float heading, uint8 ignorerestrictions = 0, ZoneMode zm = ZoneSolicited);
 	void MovePC(float x, float y, float z, float heading, uint8 ignorerestrictions = 0, ZoneMode zm = ZoneSolicited);
 	void MovePC(uint32 zoneID, uint32 instanceID, float x, float y, float z, float heading, uint8 ignorerestrictions = 0, ZoneMode zm = ZoneSolicited);
-	void MoveZone(const char *zone_short_name);
-	void MoveZoneGroup(const char *zone_short_name);
-	void MoveZoneRaid(const char *zone_short_name);
-	void MoveZoneInstance(uint16 instance_id);
-	void MoveZoneInstanceGroup(uint16 instance_id);
-	void MoveZoneInstanceRaid(uint16 instance_id);
+	void MoveZone(const char *zone_short_name, const glm::vec4& location = glm::vec4(0.f));
+	void MoveZoneGroup(const char *zone_short_name, const glm::vec4& location = glm::vec4(0.f));
+	void MoveZoneRaid(const char *zone_short_name, const glm::vec4& location = glm::vec4(0.f));
+	void MoveZoneInstance(uint16 instance_id, const glm::vec4& location = glm::vec4(0.f));
+	void MoveZoneInstanceGroup(uint16 instance_id, const glm::vec4& location = glm::vec4(0.f));
+	void MoveZoneInstanceRaid(uint16 instance_id, const glm::vec4& location = glm::vec4(0.f));
 	void SendToGuildHall();
 	void SendToInstance(std::string instance_type, std::string zone_short_name, uint32 instance_version, float x, float y, float z, float heading, std::string instance_identifier, uint32 duration);
 	void AssignToInstance(uint16 instance_id);
@@ -704,7 +706,7 @@ public:
 	inline int GetAccountCreation() const { return account_creation; }
 	inline int16 Admin() const { return admin; }
 	inline uint32 CharacterID() const { return character_id; }
-	void UpdateAdmin(bool iFromDB = true);
+	void UpdateAdmin(bool from_database = true);
 	void UpdateWho(uint8 remove = 0);
 	bool GMHideMe(Client* client = 0);
 
@@ -750,6 +752,8 @@ public:
 	uint32 GetMoney(uint8 type, uint8 subtype);
 	int GetAccountAge();
 
+	void SendPath(Mob* target);
+
 	bool IsDiscovered(uint32 itemid);
 	void DiscoverItem(uint32 itemid);
 
@@ -780,6 +784,7 @@ public:
 	uint16 MaxSkill(EQ::skills::SkillType skillid, uint16 class_, uint16 level) const;
 	inline uint16 MaxSkill(EQ::skills::SkillType skillid) const { return MaxSkill(skillid, GetClass(), GetLevel()); }
 	uint8 SkillTrainLevel(EQ::skills::SkillType skillid, uint16 class_);
+	void MaxSkills();
 
 	void SendTradeskillSearchResults(const std::string &query, unsigned long objtype, unsigned long someid);
 	void SendTradeskillDetails(uint32 recipe_id);
@@ -833,7 +838,7 @@ public:
 	uint8 GetCharMaxLevelFromQGlobal();
 	uint8 GetCharMaxLevelFromBucket();
 
-	void Fling(float value, float target_x, float target_y, float target_z, bool ignore_los = false, bool clipping = false);
+	void Fling(float value, float target_x, float target_y, float target_z, bool ignore_los = false, bool clip_through_walls = false, bool calculate_speed = false);
 
 	inline bool IsStanding() const {return (playeraction == 0);}
 	inline bool IsSitting() const {return (playeraction == 1);}
@@ -900,10 +905,39 @@ public:
 	void ResetOnDeathAlternateAdvancement();
 
 	void SetAAPoints(uint32 points) { m_pp.aapoints = points; SendAlternateAdvancementStats(); }
-	void AddAAPoints(uint32 points) { m_pp.aapoints += points; SendAlternateAdvancementStats(); }
+	void AddAAPoints(uint32 points);
 	int GetAAPoints() { return m_pp.aapoints; }
 	int GetSpentAA() { return m_pp.aapoints_spent; }
 	uint32 GetRequiredAAExperience();
+
+	bool SendGMCommand(std::string message, bool ignore_status = false);
+
+	void RegisterBug(BugReport_Struct* r);
+
+	std::vector<Mob*> GetApplySpellList(
+		ApplySpellType apply_type,
+		bool allow_pets,
+		bool is_raid_group_only,
+		bool allow_bots
+	);
+
+	void ApplySpell(
+		int spell_id,
+		int duration = 0,
+		ApplySpellType apply_type = ApplySpellType::Solo,
+		bool allow_pets = false,
+		bool is_raid_group_only = true,
+		bool allow_bots = false
+	);
+
+	void SetSpellDuration(
+		int spell_id,
+		int duration = 0,
+		ApplySpellType apply_type = ApplySpellType::Solo,
+		bool allow_pets = false,
+		bool is_raid_group_only = true,
+		bool allow_bots = false
+	);
 
 	//old AA methods that we still use
 	void ResetAA();
@@ -913,7 +947,6 @@ public:
 	void SendClearPlayerAA();
 	inline uint32 GetAAXP() const { return m_pp.expAA; }
 	inline uint32 GetAAPercent() const { return m_epp.perAA; }
-	int64 CalcAAFocus(focusType type, const AA::Rank &rank, uint16 spell_id);
 	void SetAATitle(std::string title);
 	void SetTitleSuffix(std::string suffix);
 	void MemorizeSpell(uint32 slot, uint32 spellid, uint32 scribing, uint32 reduction = 0);
@@ -933,6 +966,8 @@ public:
 	void SendCursorBuffer();
 	void DeleteItemInInventory(int16 slot_id, int16 quantity = 0, bool client_update = false, bool update_db = true);
 	int CountItem(uint32 item_id);
+	void ResetItemCooldown(uint32 item_id);
+	void SetItemCooldown(uint32 item_id, bool use_saved_timer = false, uint32 in_seconds = 1);
 	void RemoveItem(uint32 item_id, uint32 quantity = 1);
 	bool SwapItem(MoveItem_Struct* move_in);
 	void SwapItemResync(MoveItem_Struct* move_slots);
@@ -977,7 +1012,6 @@ public:
 	bool CheckTradeLoreConflict(Client* other);
 	bool CheckTradeNonDroppable();
 	void LinkDead();
-	void Insight(uint32 t_id);
 	bool CheckDoubleAttack();
 	bool CheckTripleAttack();
 	bool CheckDoubleRangedAttack();
@@ -997,12 +1031,14 @@ public:
 	void DoClassAttacks(Mob *ca_target, uint16 skill = -1, bool IsRiposte=false);
 
 	void ClearZoneFlag(uint32 zone_id);
+	inline std::set<uint32> GetZoneFlags() { return zone_flags; } ;
 	bool HasZoneFlag(uint32 zone_id) const;
 	void LoadZoneFlags();
 	void SendZoneFlagInfo(Client *to) const;
 	void SetZoneFlag(uint32 zone_id);
 
 	void ClearPEQZoneFlag(uint32 zone_id);
+	inline std::set<uint32> GetPEQZoneFlags() { return peqzone_flags; };
 	bool HasPEQZoneFlag(uint32 zone_id) const;
 	void LoadPEQZoneFlags();
 	void SendPEQZoneFlagInfo(Client *to) const;
@@ -1042,6 +1078,7 @@ public:
 	void SendRules();
 
 	const bool GetGMSpeed() const { return (gmspeed > 0); }
+	const bool GetGMInvul() const { return gminvul; }
 	bool CanUseReport;
 
 	//This is used to later set the buff duration of the spell, in slot to duration.
@@ -1058,6 +1095,7 @@ public:
 	inline uint32 GetSpellByBookSlot(int book_slot) { return m_pp.spell_book[book_slot]; }
 	inline bool HasSpellScribed(int spellid) { return FindSpellBookSlotBySpellID(spellid) != -1; }
 	uint32 GetHighestScribedSpellinSpellGroup(uint32 spell_group);
+	std::unordered_map<uint32, std::vector<uint16>> LoadSpellGroupCache(uint8 min_level, uint8 max_level);
 	uint16 GetMaxSkillAfterSpecializationRules(EQ::skills::SkillType skillid, uint16 maxSkill);
 	void SendPopupToClient(const char *Title, const char *Text, uint32 PopupID = 0, uint32 Buttons = 0, uint32 Duration = 0);
 	void SendFullPopup(const char *Title, const char *Text, uint32 PopupID = 0, uint32 NegativeID = 0, uint32 Buttons = 0, uint32 Duration = 0, const char *ButtonName0 = 0, const char *ButtonName1 = 0, uint32 SoundControls = 0);
@@ -1134,72 +1172,46 @@ public:
 			);
 		}
 	}
-	inline void UpdateTasksForItem(
-		TaskActivityType activity_type,
-		int item_id,
-		int count = 1
-	)
+	inline void UpdateTasksForItem(TaskActivityType type, int item_id, int count = 1)
 	{
 		if (task_state) {
-			task_state->UpdateTasksForItem(this, activity_type, item_id, count);
+			task_state->UpdateTasksForItem(this, type, item_id, count);
 		}
 	}
-	inline void UpdateTasksOnExplore(int explore_id)
+	inline void UpdateTasksOnLoot(Corpse* corpse, int item_id, int count = 1)
 	{
 		if (task_state) {
-			task_state->UpdateTasksOnExplore(
-				this,
-				explore_id
-			);
+			task_state->UpdateTasksOnLoot(this, corpse, item_id, count);
 		}
 	}
-	inline bool UpdateTasksOnSpeakWith(int npc_type_id)
+	inline void UpdateTasksOnExplore(const glm::vec4& pos)
 	{
 		if (task_state) {
-			return task_state->UpdateTasksOnSpeakWith(
-				this,
-				npc_type_id
-			);
-		}
-		else { return false; }
-	}
-	inline bool UpdateTasksOnDeliver(
-		std::list<EQ::ItemInstance *> &items,
-		int cash,
-		int npc_type_id
-	)
-	{
-		if (task_state) {
-			return task_state->UpdateTasksOnDeliver(
-				this,
-				items,
-				cash,
-				npc_type_id
-			);
-		}
-		else { return false; }
-	}
-	inline void TaskSetSelector(Mob *mob, int task_set_id)
-	{
-		if (task_manager) {
-			task_manager->TaskSetSelector(
-				this,
-				task_state,
-				mob,
-				task_set_id
-			);
+			task_state->UpdateTasksOnExplore(this, pos);
 		}
 	}
-	inline void TaskQuestSetSelector(Mob *mob, int count, int *tasks)
+	inline bool UpdateTasksOnSpeakWith(NPC* npc)
 	{
-		if (task_manager) {
-			task_manager->TaskQuestSetSelector(
-				this,
-				task_state,
-				mob,
-				count,
-				tasks
-			);
+		return task_state && task_state->UpdateTasksOnSpeakWith(this, npc);
+	}
+	inline bool UpdateTasksOnDeliver(std::vector<EQ::ItemInstance*>& items, Trade& trade, NPC* npc)
+	{
+		return task_state && task_state->UpdateTasksOnDeliver(this, items, trade, npc);
+	}
+	void UpdateTasksOnTouchSwitch(int dz_switch_id)
+	{
+		if (task_state) { task_state->UpdateTasksOnTouch(this, dz_switch_id); }
+	}
+	inline void TaskSetSelector(Mob* mob, int task_set_id, bool ignore_cooldown)
+	{
+		if (task_manager && task_state) {
+			task_manager->TaskSetSelector(this, mob, task_set_id, ignore_cooldown);
+		}
+	}
+	inline void TaskQuestSetSelector(Mob* mob, const std::vector<int>& tasks, bool ignore_cooldown)
+	{
+		if (task_manager && task_state) {
+			task_manager->TaskQuestSetSelector(this, mob, tasks, ignore_cooldown);
 		}
 	}
 	inline void EnableTask(int task_count, int *task_list)
@@ -1228,12 +1240,7 @@ public:
 	inline void ProcessTaskProximities(float x, float y, float z)
 	{
 		if (task_state) {
-			task_state->ProcessTaskProximities(
-				this,
-				x,
-				y,
-				z
-			);
+			task_state->ProcessTaskProximities(this, x, y, z);
 		}
 	}
 	inline void AssignTask(
@@ -1245,22 +1252,19 @@ public:
 			task_state->AcceptNewTask(this, task_id, npc_id, std::time(nullptr), enforce_level_requirement);
 		}
 	}
-	inline int ActiveSpeakTask(int npc_type_id)
+	inline int ActiveSpeakTask(NPC* npc)
 	{
 		if (task_state) {
-			return task_state->ActiveSpeakTask(npc_type_id);
+			return task_state->ActiveSpeakTask(this, npc);
 		}
 		else {
 			return 0;
 		}
 	}
-	inline int ActiveSpeakActivity(int npc_type_id, int task_id)
+	inline int ActiveSpeakActivity(NPC* npc, int task_id)
 	{
 		if (task_state) {
-			return task_state->ActiveSpeakActivity(
-				npc_type_id,
-				task_id
-			);
+			return task_state->ActiveSpeakActivity(this, npc, task_id);
 		}
 		else { return 0; }
 	}
@@ -1303,6 +1307,8 @@ public:
 		return (task_state ? task_state->CompletedTasksInSet(task_set_id) : 0);
 	}
 	void PurgeTaskTimers();
+	void LockSharedTask(bool lock) { if (task_state) { task_state->LockSharedTask(this, lock); } }
+	void EndSharedTask(bool fail = false) { if (task_state) { task_state->EndSharedTask(this, fail); } }
 
 	// shared task shims / middleware
 	// these variables are used as a shim to intercept normal localized task functionality
@@ -1345,6 +1351,8 @@ public:
 	void ClearPendingAdventureDoorClick() { safe_delete(adventure_door_timer); }
 	void ClearPendingAdventureData();
 
+	bool CanEnterZone(const std::string& zone_short_name = "", int16 instance_version = -1);
+
 	int GetAggroCount();
 	void IncrementAggroCount(bool raid_target = false);
 	void DecrementAggroCount();
@@ -1385,6 +1393,7 @@ public:
 	Expedition* CreateExpedition(const std::string& zone_name,
 		uint32 version, uint32 duration, const std::string& expedition_name,
 		uint32 min_players, uint32 max_players, bool disable_messages = false);
+	Expedition* CreateExpeditionFromTemplate(uint32_t dz_template_id);
 	Expedition* GetExpedition() const;
 	uint32 GetExpeditionID() const { return m_expedition_id; }
 	const ExpeditionLockoutTimer* GetExpeditionLockout(
@@ -1405,8 +1414,9 @@ public:
 	void SetDzRemovalTimer(bool enable_timer);
 	void SendDzCompassUpdate();
 	void GoToDzSafeReturnOrBind(const DynamicZone* dynamic_zone);
-	void MovePCDynamicZone(uint32 zone_id, int zone_version = -1, bool msg_if_invalid = true);
-	void MovePCDynamicZone(const std::string& zone_name, int zone_version = -1, bool msg_if_invalid = true);
+	void MovePCDynamicZone(uint32 zone_id, int zone_version = -1, bool msg_if_invalid = false);
+	void MovePCDynamicZone(const std::string& zone_name, int zone_version = -1, bool msg_if_invalid = false);
+	bool TryMovePCDynamicZoneSwitch(int dz_switch_id);
 	std::vector<DynamicZone*> GetDynamicZones(uint32_t zone_id = 0, int zone_version = -1);
 	std::unique_ptr<EQApplicationPacket> CreateDzSwitchListPacket(const std::vector<DynamicZone*>& dzs);
 	std::unique_ptr<EQApplicationPacket> CreateCompassPacket(const std::vector<DynamicZoneCompassEntry_Struct>& entries);
@@ -1431,7 +1441,8 @@ public:
 	void SuspendMinion(int value);
 	void Doppelganger(uint16 spell_id, Mob *target, const char *name_override, int pet_count, int pet_duration);
 	void NotifyNewTitlesAvailable();
-	void Signal(uint32 data);
+	void Signal(int signal_id);
+	void SendPayload(int payload_id, std::string payload_value = std::string());
 	Mob *GetBindSightTarget() { return bind_sight_target; }
 	void SetBindSightTarget(Mob *n) { bind_sight_target = n; }
 	const uint16 GetBoatID() const { return controlling_boat_id; }
@@ -1507,8 +1518,9 @@ public:
 
 	void SendReloadCommandMessages();
 
-	void SendItemRecastTimer(int32 recast_type, uint32 recast_delay = 0);
+	void SendItemRecastTimer(int32 recast_type, uint32 recast_delay = 0, bool in_ignore_casting_requirement = false);
 	void SetItemRecastTimer(int32 spell_id, uint32 inventory_slot);
+	void DeleteItemRecastTimer(uint32 item_id);
 	bool HasItemRecastTimer(int32 spell_id, uint32 inventory_slot);
 
 	inline bool AggroMeterAvailable() const { return ((m_ClientVersionBit & EQ::versions::maskRoF2AndLater)) && RuleB(Character, EnableAggroMeter); } // RoF untested
@@ -1554,7 +1566,8 @@ public:
 	const char* GetRacePlural(Client* client);
 	const char* GetClassPlural(Client* client);
 	void SendWebLink(const char* website);
-	void SendMarqueeMessage(uint32 type, uint32 priority, uint32 fade_in, uint32 fade_out, uint32 duration, std::string msg);
+	void SendMarqueeMessage(uint32 type, std::string message, uint32 duration = 3000);
+	void SendMarqueeMessage(uint32 type, uint32 priority, uint32 fade_in, uint32 fade_out, uint32 duration, std::string message);
 	void SendSpellAnim(uint16 targetid, uint16 spell_id);
 
 	void DuplicateLoreMessage(uint32 ItemID);
@@ -1576,7 +1589,7 @@ public:
 	void LoadAccountFlags();
 	void SetAccountFlag(std::string flag, std::string val);
 	std::string GetAccountFlag(std::string flag);
-	void SetGMStatus(int newStatus);
+	void SetGMStatus(int16 new_status);
 	float GetDamageMultiplier(EQ::skills::SkillType how_long_has_this_been_missing);
 	void Consume(const EQ::ItemData *item, uint8 type, int16 slot, bool auto_consume);
 	void PlayMP3(const char* fname);
@@ -1597,7 +1610,7 @@ public:
 	void mod_client_death_npc(Mob* killerMob);
 	void mod_client_death_duel(Mob* killerMob);
 	void mod_client_death_env();
-	int32 mod_client_xp(int32 in_exp, NPC *npc);
+	int64 mod_client_xp(int64 in_exp, NPC *npc);
 	uint32 mod_client_xp_for_level(uint32 xp, uint16 check_level);
 	int mod_client_haste_cap(int cap);
 	int mod_consume(EQ::ItemData *item, EQ::item::ItemType type, int change);
@@ -1631,7 +1644,9 @@ public:
 	uint32 GetNextInvSnapshotTime() { return m_epp.next_invsnapshot_time; }
 
 	void QuestReward(Mob* target, uint32 copper = 0, uint32 silver = 0, uint32 gold = 0, uint32 platinum = 0, uint32 itemid = 0, uint32 exp = 0, bool faction = false);
-	void QuestReward(Mob* target, const QuestReward_Struct &reward, bool faction); // TODO: Fix faction processing
+	void QuestReward(Mob* target, const QuestReward_Struct &reward, bool faction = false);
+	void CashReward(uint32 copper, uint32 silver, uint32 gold, uint32 platinum);
+	void RewardFaction(int id, int amount);
 
 	void ResetHPUpdateTimer() { hpupdate_timer.Start(); }
 
@@ -1657,7 +1672,8 @@ public:
 	Timer m_list_task_timers_rate_limit = {};
 
 	std::map<std::string,std::string> GetMerchantDataBuckets();
-	bool CheckMerchantDataBucket(uint8 bucket_comparison, std::string bucket_value, std::string player_value);
+
+	std::string GetGuildPublicNote();
 
 protected:
 	friend class Mob;
@@ -1670,7 +1686,6 @@ protected:
 	void MakeBuffFadePacket(uint16 spell_id, int slot_id, bool send_message = true);
 	bool client_data_loaded;
 
-	int64 GetFocusEffect(focusType type, uint16 spell_id, Mob *caster = nullptr, bool from_buff_tic = false);
 	uint16 GetSympatheticFocusEffect(focusType type, uint16 spell_id);
 
 	void FinishAlternateAdvancementPurchase(AA::Rank *rank, bool ignore_cost);
@@ -1787,6 +1802,7 @@ private:
 	bool auto_fire;
 	bool runmode;
 	uint8 gmspeed;
+	bool gminvul;
 	bool medding;
 	uint16 horseId;
 	bool revoked;
@@ -1827,6 +1843,13 @@ private:
 	int32 max_end;
 	int32 current_endurance;
 
+	// https://github.com/EQEmu/Server/pull/2479
+	bool m_lock_save_position = false;
+public:
+	bool IsLockSavePosition() const;
+	void SetLockSavePosition(bool lock_save_position);
+private:
+
 	PlayerProfile_Struct m_pp;
 	ExtendedProfile_Struct m_epp;
 	EQ::InventoryProfile m_inv;
@@ -1840,7 +1863,6 @@ private:
 	void NPCSpawn(const Seperator* sep);
 	uint32 GetEXPForLevel(uint16 level);
 
-	bool CanBeInZone();
 	void SendLogoutPackets();
 	void SendZoneInPackets();
 	bool AddPacket(const EQApplicationPacket *, bool);
@@ -1945,6 +1967,8 @@ public:
 	int64 GetSharedTaskId() const;
 private:
 
+	bool m_exp_enabled;
+
 	//Anti Spam Stuff
 	Timer *KarmaUpdateTimer;
 	uint32 TotalKarma;
@@ -2019,7 +2043,6 @@ private:
 	bool m_has_quest_compass = false;
 	std::vector<uint32_t> m_dynamic_zone_ids;
 
-#ifdef BOTS
 
 public:
 	enum BotOwnerOption : size_t {
@@ -2044,12 +2067,21 @@ public:
 	bool GetBotPrecombat() { return m_bot_precombat; }
 	void SetBotPrecombat(bool flag = true) { m_bot_precombat = flag; }
 
+	int GetBotRequiredLevel(uint8 class_id = NO_CLASS);
+	uint32 GetBotCreationLimit(uint8 class_id = NO_CLASS);
+	int GetBotSpawnLimit(uint8 class_id = NO_CLASS);
+	void SetBotCreationLimit(uint32 new_creation_limit, uint8 class_id = NO_CLASS);
+	void SetBotRequiredLevel(int new_required_level, uint8 class_id = NO_CLASS);
+	void SetBotSpawnLimit(int new_spawn_limit, uint8 class_id = NO_CLASS);
+
+	void CampAllBots(uint8 class_id = NO_CLASS);
+
 private:
 	bool bot_owner_options[_booCount];
 	bool m_bot_pulling;
 	bool m_bot_precombat;
 
-#endif
+	bool CanTradeFVNoDropItem();
 };
 
 #endif
