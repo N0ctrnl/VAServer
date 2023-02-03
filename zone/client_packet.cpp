@@ -468,7 +468,7 @@ int Client::HandlePacket(const EQApplicationPacket *app)
 		if (ConnectingOpcodes.count(opcode) != 1) {
 			//Hate const cast but everything in lua needs to be non-const even if i make it non-mutable
 			std::vector<std::any> args;
-			args.emplace_back(const_cast<EQApplicationPacket*>(app));
+			args.push_back(const_cast<EQApplicationPacket*>(app));
 			parse->EventPlayer(EVENT_UNHANDLED_OPCODE, this, "", 1, &args);
 
 			break;
@@ -492,7 +492,7 @@ int Client::HandlePacket(const EQApplicationPacket *app)
 		p = ConnectedOpcodes[opcode];
 		if (p == nullptr) {
 			std::vector<std::any> args;
-			args.emplace_back(const_cast<EQApplicationPacket*>(app));
+			args.push_back(const_cast<EQApplicationPacket*>(app));
 			parse->EventPlayer(EVENT_UNHANDLED_OPCODE, this, "", 0, &args);
 
 			break;
@@ -3092,11 +3092,11 @@ void Client::Handle_OP_AugmentItem(const EQApplicationPacket *app)
 							CalcBonuses();
 
 							std::vector<std::any> args;
-							args.emplace_back(old_aug);
+							args.push_back(old_aug);
 							parse->EventItem(EVENT_UNAUGMENT_ITEM, this, tobe_auged, nullptr, "", in_augment->augment_index, &args);
 
 							args.assign(1, tobe_auged);
-							args.emplace_back(false);
+							args.push_back(false);
 							parse->EventItem(EVENT_AUGMENT_REMOVE, this, old_aug, nullptr, "", in_augment->augment_index, &args);
 
 							const auto export_string = fmt::format(
@@ -3108,7 +3108,7 @@ void Client::Handle_OP_AugmentItem(const EQApplicationPacket *app)
 								false
 							);
 
-							args.emplace_back(old_aug);
+							args.push_back(old_aug);
 
 							parse->EventPlayer(EVENT_AUGMENT_REMOVE_CLIENT, this, export_string, 0, &args);
 						}
@@ -3119,13 +3119,13 @@ void Client::Handle_OP_AugmentItem(const EQApplicationPacket *app)
 						aug = tobe_auged->GetAugment(in_augment->augment_index);
 						if (aug) {
 							std::vector<std::any> args;
-							args.emplace_back(aug);
+							args.push_back(aug);
 							parse->EventItem(EVENT_AUGMENT_ITEM, this, tobe_auged, nullptr, "", in_augment->augment_index, &args);
 
 							args.assign(1, tobe_auged);
 							parse->EventItem(EVENT_AUGMENT_INSERT, this, aug, nullptr, "", in_augment->augment_index, &args);
 
-							args.emplace_back(aug);
+							args.push_back(aug);
 
 							const auto export_string = fmt::format(
 								"{} {} {} {}",
@@ -3187,14 +3187,14 @@ void Client::Handle_OP_AugmentItem(const EQApplicationPacket *app)
 				aug = tobe_auged->GetAugment(in_augment->augment_index);
 				if (aug) {
 					std::vector<std::any> args;
-					args.emplace_back(aug);
+					args.push_back(aug);
 					parse->EventItem(EVENT_UNAUGMENT_ITEM, this, tobe_auged, nullptr, "", in_augment->augment_index, &args);
 
 					args.assign(1, tobe_auged);
-					args.emplace_back(false);
+					args.push_back(false);
 					parse->EventItem(EVENT_AUGMENT_REMOVE, this, aug, nullptr, "", in_augment->augment_index, &args);
 
-					args.emplace_back(aug);
+					args.push_back(aug);
 
 					const auto export_string = fmt::format(
 						"{} {} {} {} {}",
@@ -3251,14 +3251,14 @@ void Client::Handle_OP_AugmentItem(const EQApplicationPacket *app)
 				aug = tobe_auged->GetAugment(in_augment->augment_index);
 				if (aug) {
 					std::vector<std::any> args;
-					args.emplace_back(aug);
+					args.push_back(aug);
 					parse->EventItem(EVENT_UNAUGMENT_ITEM, this, tobe_auged, nullptr, "", in_augment->augment_index, &args);
 
 					args.assign(1, tobe_auged);
-					args.emplace_back(true);
+					args.push_back(true);
 					parse->EventItem(EVENT_AUGMENT_REMOVE, this, aug, nullptr, "", in_augment->augment_index, &args);
 
-					args.emplace_back(aug);
+					args.push_back(aug);
 
 					const auto export_string = fmt::format(
 						"{} {} {} {} {}",
@@ -4168,8 +4168,26 @@ void Client::Handle_OP_CastSpell(const EQApplicationPacket *app)
 					{
 						if (GetLevel() >= item->Click.Level2)
 						{
-							EQ::ItemInstance* p_inst = (EQ::ItemInstance*)inst;
-							int i = parse->EventItem(EVENT_ITEM_CLICK_CAST, this, p_inst, nullptr, "", castspell->inventoryslot);
+							auto* p_inst = (EQ::ItemInstance*) inst;
+							int i = 0;
+
+							if (parse->ItemHasQuestSub(p_inst, EVENT_ITEM_CLICK_CAST)) {
+								i = parse->EventItem(
+									EVENT_ITEM_CLICK_CAST,
+									this,
+									p_inst,
+									nullptr,
+									"",
+									castspell->inventoryslot
+								);
+							}
+
+							if (parse->PlayerHasQuestSub(EVENT_ITEM_CLICK_CAST_CLIENT)) {
+								std::vector<std::any> args;
+								args.emplace_back(p_inst);
+								i = parse->EventPlayer(EVENT_ITEM_CLICK_CAST_CLIENT, this, std::to_string(castspell->inventoryslot), 0, &args);
+							}
+
 							if (i == 0) {
 								CastSpell(item->Click.Effect, castspell->target_id, slot, item->CastTime, 0, 0, castspell->inventoryslot);
 							}
@@ -4187,8 +4205,26 @@ void Client::Handle_OP_CastSpell(const EQApplicationPacket *app)
 					}
 					else
 					{
-						EQ::ItemInstance* p_inst = (EQ::ItemInstance*)inst;
-						int i = parse->EventItem(EVENT_ITEM_CLICK_CAST, this, p_inst, nullptr, "", castspell->inventoryslot);
+						auto* p_inst = (EQ::ItemInstance*) inst;
+
+						int i = 0;
+
+						if (parse->ItemHasQuestSub(p_inst, EVENT_ITEM_CLICK_CAST)) {
+							i = parse->EventItem(
+								EVENT_ITEM_CLICK_CAST,
+								this,
+								p_inst,
+								nullptr,
+								"",
+								castspell->inventoryslot
+							);
+						}
+
+						if (parse->PlayerHasQuestSub(EVENT_ITEM_CLICK_CAST_CLIENT)) {
+							std::vector<std::any> args;
+							args.emplace_back(p_inst);
+							i = parse->EventPlayer(EVENT_ITEM_CLICK_CAST_CLIENT, this, std::to_string(castspell->inventoryslot), 0, &args);
+						}
 
 						if (i == 0) {
 							CastSpell(item->Click.Effect, castspell->target_id, slot, item->CastTime, 0, 0, castspell->inventoryslot);
@@ -4359,7 +4395,7 @@ void Client::Handle_OP_ClickDoor(const EQApplicationPacket *app)
 
 	std::string export_string = fmt::format("{}", cd->doorid);
 	std::vector<std::any> args;
-	args.emplace_back(currentdoor);
+	args.push_back(currentdoor);
 	if (parse->EventPlayer(EVENT_CLICK_DOOR, this, export_string, 0, &args) == 0)
 	{
 		currentdoor->HandleClick(this, 0);
@@ -4382,7 +4418,7 @@ void Client::Handle_OP_ClickObject(const EQApplicationPacket *app)
 		object->HandleClick(this, click_object);
 
 		std::vector<std::any> args;
-		args.emplace_back(object);
+		args.push_back(object);
 
 		std::string export_string = fmt::format("{}", click_object->drop_id);
 		parse->EventPlayer(EVENT_CLICK_OBJECT, this, export_string, GetID(), &args);
@@ -8836,9 +8872,18 @@ void Client::Handle_OP_ItemVerifyRequest(const EQApplicationPacket *app)
 
 	if (m_inv.SupportsClickCasting(slot_id) || ((item->ItemType == EQ::item::ItemTypePotion || item->PotionBelt) && m_inv.SupportsPotionBeltCasting(slot_id))) // sanity check
 	{
-		EQ::ItemInstance* p_inst = (EQ::ItemInstance*)inst;
+		auto* p_inst = (EQ::ItemInstance*) inst;
 
-		parse->EventItem(EVENT_ITEM_CLICK, this, p_inst, nullptr, "", slot_id);
+		if (parse->ItemHasQuestSub(p_inst, EVENT_ITEM_CLICK)) {
+			parse->EventItem(EVENT_ITEM_CLICK, this, p_inst, nullptr, "", slot_id);
+		}
+
+		if (parse->PlayerHasQuestSub(EVENT_ITEM_CLICK_CLIENT)) {
+			std::vector<std::any> args;
+			args.emplace_back(p_inst);
+			parse->EventPlayer(EVENT_ITEM_CLICK_CLIENT, this, std::to_string(slot_id), 0, &args);
+		}
+
 		inst = m_inv[slot_id];
 		if (!inst)
 		{
@@ -8940,7 +8985,25 @@ void Client::Handle_OP_ItemVerifyRequest(const EQApplicationPacket *app)
 						}
 					}
 
-					int i = parse->EventItem(EVENT_ITEM_CLICK_CAST, this, p_inst, nullptr, "", slot_id);
+					int i = 0;
+
+					if (parse->ItemHasQuestSub(p_inst, EVENT_ITEM_CLICK_CAST)) {
+						i = parse->EventItem(
+							EVENT_ITEM_CLICK_CAST,
+							this,
+							p_inst,
+							nullptr,
+							"",
+							slot_id
+						);
+					}
+
+					if (parse->PlayerHasQuestSub(EVENT_ITEM_CLICK_CAST_CLIENT)) {
+						std::vector<std::any> args;
+						args.emplace_back(p_inst);
+						i = parse->EventPlayer(EVENT_ITEM_CLICK_CAST_CLIENT, this, std::to_string(slot_id), 0, &args);
+					}
+
 					inst = m_inv[slot_id];
 					if (!inst)
 					{
@@ -8989,7 +9052,25 @@ void Client::Handle_OP_ItemVerifyRequest(const EQApplicationPacket *app)
 						}
 					}
 
-					int i = parse->EventItem(EVENT_ITEM_CLICK_CAST, this, clickaug, nullptr, "", slot_id);
+					int i = 0;
+
+					if (parse->ItemHasQuestSub(p_inst, EVENT_ITEM_CLICK_CAST)) {
+						i = parse->EventItem(
+							EVENT_ITEM_CLICK_CAST,
+							this,
+							clickaug,
+							nullptr,
+							"",
+							slot_id
+						);
+					}
+
+					if (parse->PlayerHasQuestSub(EVENT_ITEM_CLICK_CAST_CLIENT)) {
+						std::vector<std::any> args;
+						args.emplace_back(clickaug);
+						i = parse->EventPlayer(EVENT_ITEM_CLICK_CAST_CLIENT, this, std::to_string(slot_id), 0, &args);
+					}
+
 					inst = m_inv[slot_id];
 					if (!inst)
 					{

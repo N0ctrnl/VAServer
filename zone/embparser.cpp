@@ -173,6 +173,8 @@ const char *QuestEventSubroutines[_LargestEventID] = {
 	"EVENT_UNEQUIP_ITEM_BOT",
 	"EVENT_DAMAGE_GIVEN",
 	"EVENT_DAMAGE_TAKEN",
+	"EVENT_ITEM_CLICK_CLIENT",
+	"EVENT_ITEM_CLICK_CAST_CLIENT",
 	// Add new events before these or Lua crashes
 	"EVENT_SPELL_EFFECT_BOT",
 	"EVENT_SPELL_EFFECT_BUFF_TIC_BOT"
@@ -361,7 +363,7 @@ int PerlembParser::EventCommon(
 }
 
 int PerlembParser::EventNPC(
-	QuestEventID evt, NPC *npc, Mob *mob, const std::string& data, uint32 extra_data,
+	QuestEventID evt, NPC *npc, Mob *mob, std::string data, uint32 extra_data,
 	std::vector<std::any> *extra_pointers
 )
 {
@@ -369,7 +371,7 @@ int PerlembParser::EventNPC(
 }
 
 int PerlembParser::EventGlobalNPC(
-	QuestEventID evt, NPC *npc, Mob *mob, const std::string& data, uint32 extra_data,
+	QuestEventID evt, NPC *npc, Mob *mob, std::string data, uint32 extra_data,
 	std::vector<std::any> *extra_pointers
 )
 {
@@ -377,7 +379,7 @@ int PerlembParser::EventGlobalNPC(
 }
 
 int PerlembParser::EventPlayer(
-	QuestEventID evt, Client *client, const std::string& data, uint32 extra_data,
+	QuestEventID evt, Client *client, std::string data, uint32 extra_data,
 	std::vector<std::any> *extra_pointers
 )
 {
@@ -385,7 +387,7 @@ int PerlembParser::EventPlayer(
 }
 
 int PerlembParser::EventGlobalPlayer(
-	QuestEventID evt, Client *client, const std::string& data, uint32 extra_data,
+	QuestEventID evt, Client *client, std::string data, uint32 extra_data,
 	std::vector<std::any> *extra_pointers
 )
 {
@@ -393,7 +395,7 @@ int PerlembParser::EventGlobalPlayer(
 }
 
 int PerlembParser::EventItem(
-	QuestEventID evt, Client *client, EQ::ItemInstance *item, Mob *mob, const std::string& data, uint32 extra_data,
+	QuestEventID evt, Client *client, EQ::ItemInstance *item, Mob *mob, std::string data, uint32 extra_data,
 	std::vector<std::any> *extra_pointers
 )
 {
@@ -402,7 +404,7 @@ int PerlembParser::EventItem(
 }
 
 int PerlembParser::EventSpell(
-	QuestEventID evt, Mob *mob, Client *client, uint32 spell_id, const std::string& data, uint32 extra_data,
+	QuestEventID evt, Mob *mob, Client *client, uint32 spell_id, std::string data, uint32 extra_data,
 	std::vector<std::any> *extra_pointers
 )
 {
@@ -1713,6 +1715,20 @@ void PerlembParser::ExportEventVariables(
 			break;
 		}
 
+		case EVENT_ITEM_CLICK_CAST_CLIENT:
+		case EVENT_ITEM_CLICK_CLIENT: {
+			ExportVar(package_name.c_str(), "slot_id", data);
+			if (extra_pointers && extra_pointers->size() == 1) {
+				auto* item = std::any_cast<EQ::ItemInstance*>(extra_pointers->at(0));
+				if (item) {
+					ExportVar(package_name.c_str(), "item_id", item->GetID());
+					ExportVar(package_name.c_str(), "item_name", item->GetItem()->Name);
+					ExportVar(package_name.c_str(), "spell_id", item->GetItem()->Click.Effect);
+				}
+			}
+			break;
+		}
+
 		case EVENT_GROUP_CHANGE: {
 			if (mob && mob->IsClient()) {
 				ExportVar(package_name.c_str(), "grouped", mob->IsGrouped());
@@ -2152,7 +2168,7 @@ int PerlembParser::EventBot(
 	QuestEventID evt,
 	Bot *bot,
 	Mob *mob,
-	const std::string& data,
+	std::string data,
 	uint32 extra_data,
 	std::vector<std::any> *extra_pointers
 ) {
@@ -2163,7 +2179,7 @@ int PerlembParser::EventGlobalBot(
 	QuestEventID evt,
 	Bot *bot,
 	Mob *mob,
-	const std::string& data,
+	std::string data,
 	uint32 extra_data,
 	std::vector<std::any> *extra_pointers
 ) {
