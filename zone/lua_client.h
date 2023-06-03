@@ -34,7 +34,6 @@ public:
 	void Sit();
 	void Save();
 	void Save(int commit_now);
-	void SaveBackup();
 	bool Connected();
 	bool InZone();
 	void Kick();
@@ -396,6 +395,7 @@ public:
 	void QueuePacket(Lua_Packet app, bool ack_req, int client_connection_status, int filter);
 	int GetHunger();
 	int GetThirst();
+	int GetIntoxication();
 	void SetHunger(int in_hunger);
 	void SetThirst(int in_thirst);
 	void SetConsumption(int in_hunger, int in_thirst);
@@ -465,6 +465,9 @@ public:
 	void ResetItemCooldown(uint32 item_id);
 	void SetItemCooldown(uint32 item_id, uint32 in_time);
 	uint32 GetItemCooldown(uint32 item_id);
+	void UseAugmentContainer(int container_slot);
+	bool IsAutoAttackEnabled();
+	bool IsAutoFireEnabled();
 
 	void ApplySpell(int spell_id);
 	void ApplySpell(int spell_id, int duration);
@@ -531,6 +534,8 @@ public:
 	void CampAllBots(uint8 class_id);
 
 	void DialogueWindow(std::string markdown);
+
+	bool ReloadDataBuckets();
 
 	Lua_Expedition  CreateExpedition(luabind::object expedition_info);
 	Lua_Expedition  CreateExpedition(std::string zone_name, uint32 version, uint32 duration, std::string expedition_name, uint32 min_players, uint32 max_players);

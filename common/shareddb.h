@@ -81,7 +81,11 @@ public:
 	bool SetGMInvul(uint32 account_id, bool gminvul);
 	bool SetGMFlymode(uint32 account_id, uint8 flymode);
 	void SetMailKey(int CharID, int IPAddress, int MailKey);
-	std::string GetMailKey(int CharID, bool key_only = false);
+	struct MailKeys {
+		std::string mail_key;
+		std::string mail_key_full;
+	};
+	MailKeys GetMailKey(int character_id);
 	bool SaveCursor(
 		uint32 char_id,
 		std::list<EQ::ItemInstance *>::const_iterator &start,
@@ -126,7 +130,11 @@ public:
 		uint32 aug4 = 0,
 		uint32 aug5 = 0,
 		uint32 aug6 = 0,
-		bool attuned = 0
+		bool attuned = false,
+		const std::string& custom_data = "",
+		uint32 ornamenticon = 0,
+		uint32 ornamentidfile = 0,
+		uint32 ornament_hero_model = 0
 	);
 	EQ::ItemInstance *CreateItem(
 		const EQ::ItemData *item,
@@ -137,7 +145,11 @@ public:
 		uint32 aug4 = 0,
 		uint32 aug5 = 0,
 		uint32 aug6 = 0,
-		bool attuned = 0
+		bool attuned = false,
+		const std::string &custom_data = "",
+		uint32 ornamenticon = 0,
+		uint32 ornamentidfile = 0,
+		uint32 ornament_hero_model = 0
 	);
 	EQ::ItemInstance *CreateBaseItem(const EQ::ItemData *item, int16 charges = 0);
 

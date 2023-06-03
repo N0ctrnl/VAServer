@@ -18,7 +18,6 @@
 
 #include "../common/global_define.h"
 #include "../common/loottable.h"
-#include "../common/misc_functions.h"
 #include "../common/data_verification.h"
 
 #include "client.h"
@@ -26,13 +25,8 @@
 #include "mob.h"
 #include "npc.h"
 #include "zonedb.h"
-#include "../common/zone_store.h"
 #include "global_loot_manager.h"
 #include "../common/repositories/criteria/content_filter_criteria.h"
-#include "../common/say_link.h"
-
-#include <iostream>
-#include <stdlib.h>
 
 #ifdef _WINDOWS
 #define snprintf	_snprintf
@@ -367,11 +361,12 @@ void NPC::AddLootDrop(
 		SetArrowEquipped(true);
 	}
 
+	bool found = false; // track if we found an empty slot we fit into
+
 	if (loot_drop.equip_item > 0) {
 		uint8 eslot = 0xFF;
 		char newid[20];
 		const EQ::ItemData* compitem = nullptr;
-		bool found = false; // track if we found an empty slot we fit into
 		int32 foundslot = -1; // for multi-slot items
 
 		// Equip rules are as follows:
@@ -400,9 +395,15 @@ void NPC::AddLootDrop(
 								foundslot = i;
 							}
 							else {
+								// Unequip old item
+								auto* olditem = GetItem(i);
+
+								olditem->equip_slot = EQ::invslot::SLOT_INVALID;
+
 								equipment[i] = item2->ID;
+
 								foundslot = i;
-								found = true;
+								found     = true;
 							}
 						} // end if ac
 					}
@@ -434,7 +435,7 @@ void NPC::AddLootDrop(
 				}
 			}
 
-			emat = atoi(newid);
+			emat = Strings::ToInt(newid);
 		} else {
 			emat = item2->Material;
 		}
@@ -485,12 +486,12 @@ void NPC::AddLootDrop(
 		what was this about???
 
 		if (((npc->GetRace()==127) && (npc->CastToMob()->GetOwnerID()!=0)) && (item2->Slots==24576) || (item2->Slots==8192) || (item2->Slots==16384)){
-			npc->d_melee_texture2=atoi(newid);
+			npc->d_melee_texture2=Strings::ToInt(newid);
 			wc->wear_slot_id=8;
 			if (item2->Material >0)
 				wc->material=item2->Material;
 			else
-				wc->material=atoi(newid);
+				wc->material=Strings::ToInt(newid);
 			npc->AC+=item2->AC;
 			npc->STR+=item2->STR;
 			npc->INT+=item2->INT;
@@ -506,7 +507,6 @@ void NPC::AddLootDrop(
 
 		}
 		if (found) {
-			CalcBonuses(); // This is less than ideal for bulk adding of items
 			item->equip_slot = foundslot;
 		}
 	}
@@ -515,6 +515,10 @@ void NPC::AddLootDrop(
 		itemlist->push_back(item);
 	}
 	else safe_delete(item);
+
+	if (found) {
+		CalcBonuses();
+	}
 
 	if (IsRecordLootStats()) {
 		m_rolled_items.emplace_back(item->item_id);
@@ -633,52 +637,52 @@ void ZoneDatabase::LoadGlobalLoot()
 			}
 		}
 
-		GlobalLootEntry e(atoi(row[0]), atoi(row[1]), row[2] ? row[2] : "");
+		GlobalLootEntry e(Strings::ToInt(row[0]), Strings::ToInt(row[1]), row[2] ? row[2] : "");
 
-		auto min_level = atoi(row[3]);
+		auto min_level = Strings::ToInt(row[3]);
 		if (min_level) {
 			e.AddRule(GlobalLoot::RuleTypes::LevelMin, min_level);
 		}
 
-		auto max_level = atoi(row[4]);
+		auto max_level = Strings::ToInt(row[4]);
 		if (max_level) {
 			e.AddRule(GlobalLoot::RuleTypes::LevelMax, max_level);
 		}
 
 		// null is not used
 		if (row[5]) {
-			e.AddRule(GlobalLoot::RuleTypes::Rare, atoi(row[5]));
+			e.AddRule(GlobalLoot::RuleTypes::Rare, Strings::ToInt(row[5]));
 		}
 
 		// null is not used
 		if (row[6]) {
-			e.AddRule(GlobalLoot::RuleTypes::Raid, atoi(row[6]));
+			e.AddRule(GlobalLoot::RuleTypes::Raid, Strings::ToInt(row[6]));
 		}
 
 		if (row[7]) {
 			auto races = Strings::Split(row[7], '|');
 
 			for (auto &r : races)
-				e.AddRule(GlobalLoot::RuleTypes::Race, std::stoi(r));
+				e.AddRule(GlobalLoot::RuleTypes::Race, Strings::ToInt(r));
 		}
 
 		if (row[8]) {
 			auto classes = Strings::Split(row[8], '|');
 
 			for (auto &c : classes)
-				e.AddRule(GlobalLoot::RuleTypes::Class, std::stoi(c));
+				e.AddRule(GlobalLoot::RuleTypes::Class, Strings::ToInt(c));
 		}
 
 		if (row[9]) {
 			auto bodytypes = Strings::Split(row[9], '|');
 
 			for (auto &b : bodytypes)
-				e.AddRule(GlobalLoot::RuleTypes::BodyType, std::stoi(b));
+				e.AddRule(GlobalLoot::RuleTypes::BodyType, Strings::ToInt(b));
 		}
 
 		// null is not used
 		if (row[11]) {
-			e.AddRule(GlobalLoot::RuleTypes::HotZone, atoi(row[11]));
+			e.AddRule(GlobalLoot::RuleTypes::HotZone, Strings::ToInt(row[11]));
 		}
 
 		zone->AddGlobalLootEntry(e);

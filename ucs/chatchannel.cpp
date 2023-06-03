@@ -32,7 +32,7 @@ void ServerToClient45SayLink(std::string& clientSayLink, const std::string& serv
 void ServerToClient50SayLink(std::string& clientSayLink, const std::string& serverSayLink);
 void ServerToClient55SayLink(std::string& clientSayLink, const std::string& serverSayLink);
 
-ChatChannel::ChatChannel(std::string inName, std::string inOwner, std::string inPassword, bool inPermanent, int inMinimumStatus) :
+ChatChannel::ChatChannel(const std::string& inName, const std::string& inOwner, const std::string& inPassword, bool inPermanent, int inMinimumStatus) :
 	m_delete_timer(0) {
 
 	m_name = inName;
@@ -48,10 +48,10 @@ ChatChannel::ChatChannel(std::string inName, std::string inOwner, std::string in
 	m_moderated = false;
 
 	LogDebug(
-		"New ChatChannel created: Name: [{}], Owner: [{}], Password: [{}], MinStatus: [{}]",
-		m_name.c_str(),
-		m_owner.c_str(),
-		m_password.c_str(),
+		"New ChatChannel created: Name: [{}] Owner: [{}] Password: [{}] MinStatus: [{}]",
+		m_name,
+		m_owner,
+		m_password,
 		m_minimum_status
 	);
 
@@ -78,7 +78,7 @@ ChatChannel *ChatChannelList::CreateChannel(
 {
 	uint8 max_perm_player_channels = RuleI(Chat, MaxPermanentPlayerChannels);
 
-	if (!database.CheckChannelNameFilter(name)) {
+	if (!RuleB(Chat, ChannelsIgnoreNameFilter) && !database.CheckChannelNameFilter(name)) {
 		if (!(owner == SYSTEM_OWNER)) {
 			return nullptr;
 		}
@@ -137,7 +137,7 @@ ChatChannel *ChatChannelList::CreateChannel(
 	return new_channel;
 }
 
-ChatChannel* ChatChannelList::FindChannel(std::string Name) {
+ChatChannel* ChatChannelList::FindChannel(const std::string& Name) {
 
 	std::string normalized_name = CapitaliseName(Name);
 
@@ -283,7 +283,7 @@ void ChatChannel::SetPassword(const std::string& in_password) {
 	}
 }
 
-void ChatChannel::SetOwner(std::string& in_owner) {
+void ChatChannel::SetOwner(const std::string& in_owner) {
 
 	m_owner = in_owner;
 
@@ -393,13 +393,15 @@ bool ChatChannel::RemoveClient(Client *c) {
 
 void ChatChannel::SendOPList(Client *c)
 {
-	if (!c)
+	if (!c) {
 		return;
+	}
 
 	c->GeneralChannelMessage("Channel " + m_name + " op-list: (Owner=" + m_owner + ")");
 
-	for (auto &&m : m_moderators)
+	for (auto &&m : m_moderators) {
 		c->GeneralChannelMessage(m);
+	}
 }
 
 void ChatChannel::SendChannelMembers(Client *c) {
@@ -657,7 +659,7 @@ ChatChannel *ChatChannelList::RemoveClientFromChannel(const std::string& in_chan
 	std::string channel_name = in_channel_name;
 
 	if (in_channel_name.length() > 0 && isdigit(channel_name[0])) {
-		channel_name = c->ChannelSlotName(atoi(in_channel_name.c_str()));
+		channel_name = c->ChannelSlotName(Strings::ToInt(in_channel_name));
 	}
 
 	auto *required_channel = FindChannel(channel_name);
@@ -667,7 +669,7 @@ ChatChannel *ChatChannelList::RemoveClientFromChannel(const std::string& in_chan
 	}
 
 	LogDebug("Client [{}] removed from channel [{}]. Channel is owned by {}. Command directed: {}", c->GetName(), channel_name, required_channel->GetOwnerName(), command_directed);
-	if (c->GetName() == required_channel->GetOwnerName() && command_directed) { // Check if the client that is leaving is the the channel owner
+	if (c->GetName() == required_channel->GetOwnerName() && command_directed) { // Check if the client that is leaving is the channel owner
 		LogDebug("Owner left the channel [{}], removing channel from database...", channel_name);
 		database.DeleteChatChannel(channel_name); // Remove the channel from the database.
 		LogDebug("Flagging [{}] channel as temporary...", channel_name);
@@ -699,11 +701,11 @@ void ChatChannelList::Process() {
 			LogDebug("Empty temporary password protected channel [{}] being destroyed",
 				CurrentChannel->GetName().c_str());
 
-			RemoveChannel(CurrentChannel);
+			iterator.RemoveCurrent();
 		}
-
-		iterator.Advance();
-
+		else {
+			iterator.Advance();
+		}
 	}
 }
 
@@ -782,7 +784,7 @@ bool ChatChannel::HasVoice(std::string inVoiced)
 	return std::find(std::begin(m_voiced), std::end(m_voiced), inVoiced) != std::end(m_voiced);
 }
 
-std::string CapitaliseName(std::string inString) {
+std::string CapitaliseName(const std::string& inString) {
 
 	std::string NormalisedName = inString;
 

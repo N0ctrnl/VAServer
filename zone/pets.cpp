@@ -19,7 +19,6 @@
 #include "../common/global_define.h"
 #include "../common/spdat.h"
 #include "../common/strings.h"
-#include "../common/types.h"
 
 #include "entity.h"
 #include "client.h"
@@ -27,7 +26,6 @@
 
 #include "pets.h"
 #include "zonedb.h"
-#include "../common/zone_store.h"
 
 #include <string>
 
@@ -77,103 +75,6 @@ void GetRandPetName(char *name)
 	strn0cpy(name, temp.c_str(), 64);
 }
 
-//not used anymore
-/*int CalcPetHp(int levelb, int classb, int STA)
-{
-	int multiplier = 0;
-	int base_hp = 0;
-	switch(classb) {
-		case WARRIOR:{
-			if (levelb < 20)
-				multiplier = 22;
-			else if (levelb < 30)
-				multiplier = 23;
-			else if (levelb < 40)
-				multiplier = 25;
-			else if (levelb < 53)
-				multiplier = 27;
-			else if (levelb < 57)
-				multiplier = 28;
-			else
-				multiplier = 30;
-			break;
-		}
-		case DRUID:
-		case CLERIC:
-		case SHAMAN:{
-			multiplier = 15;
-			break;
-		}
-		case PALADIN:
-		case SHADOWKNIGHT:{
-			if (levelb < 35)
-				multiplier = 21;
-			else if (levelb < 45)
-				multiplier = 22;
-			else if (levelb < 51)
-				multiplier = 23;
-			else if (levelb < 56)
-				multiplier = 24;
-			else if (levelb < 60)
-				multiplier = 25;
-			else
-				multiplier = 26;
-			break;
-		}
-		case MONK:
-		case BARD:
-		case ROGUE:
-		case BEASTLORD:{
-			if (levelb < 51)
-				multiplier = 18;
-			else if (levelb < 58)
-				multiplier = 19;
-			else
-				multiplier = 20;
-			break;
-		}
-		case RANGER:{
-			if (levelb < 58)
-				multiplier = 20;
-			else
-				multiplier = 21;
-			break;
-		}
-		case MAGICIAN:
-		case WIZARD:
-		case NECROMANCER:
-		case ENCHANTER:{
-			multiplier = 12;
-			break;
-		}
-		default:{
-			if (levelb < 35)
-				multiplier = 21;
-			else if (levelb < 45)
-				multiplier = 22;
-			else if (levelb < 51)
-				multiplier = 23;
-			else if (levelb < 56)
-				multiplier = 24;
-			else if (levelb < 60)
-				multiplier = 25;
-			else
-				multiplier = 26;
-			break;
-		}
-	}
-
-	if (multiplier == 0)
-	{
-		LogFile->write(EQEMuLog::Error, "Multiplier == 0 in CalcPetHp,using Generic....");;
-		multiplier=12;
-	}
-
-	base_hp = 5 + (multiplier*levelb) + ((multiplier*levelb*STA) + 1)/300;
-	return base_hp;
-}
-*/
-
 void Mob::MakePet(uint16 spell_id, const char* pettype, const char *petname) {
 	// petpower of -1 is used to get the petpower based on whichever focus is currently
 	// equipped. This should replicate the old functionality for the most part.
@@ -194,7 +95,6 @@ void Mob::MakePoweredPet(uint16 spell_id, const char* pettype, int16 petpower,
 	if (petpower == -1) {
 		if (IsClient()) {
 			act_power = CastToClient()->GetFocusEffect(focusPetPower, spell_id);//Client only
-			act_power = CastToClient()->mod_pet_power(act_power, spell_id);
 		}
 		else if (IsBot())
 			act_power = CastToBot()->GetFocusEffect(focusPetPower, spell_id);
@@ -328,7 +228,7 @@ void Mob::MakePoweredPet(uint16 spell_id, const char* pettype, int16 petpower,
 
 		if (results.RowCount() != 0) {
 			auto row = results.begin();
-			monsterid = atoi(row[0]);
+			monsterid = Strings::ToInt(row[0]);
 		}
 
 		// since we don't have any monsters, just make it look like an earth pet for now
@@ -444,22 +344,24 @@ Pet::Pet(NPCType *type_data, Mob *owner, PetType type, uint16 spell_id, int16 po
 : NPC(type_data, 0, owner->GetPosition() + glm::vec4(2.0f, 2.0f, 0.0f, 0.0f), GravityBehavior::Water)
 {
 	GiveNPCTypeData(type_data);
-	typeofpet = type;
-	petpower = power;
-	SetOwnerID(owner->GetID());
+	SetPetType(type);
+	SetPetPower(power);
+	SetOwnerID(owner ? owner->GetID() : 0);
 	SetPetSpellID(spell_id);
 
 	// All pets start at false on newer clients. The client
 	// turns it on and tracks the state.
-	taunting=false;
+	SetTaunting(false);
 
 	// Older clients didn't track state, and default taunting is on (per @mackal)
 	// Familiar and animation pets don't get taunt until an AA.
 	if (owner && owner->IsClient()) {
 		if (!(owner->CastToClient()->ClientVersionBit() & EQ::versions::maskUFAndLater)) {
-			if ((typeofpet != petFamiliar && typeofpet != petAnimation) ||
-				aabonuses.PetCommands[PET_TAUNT]) {
-				taunting=true;
+			if (
+				(GetPetType() != petFamiliar && GetPetType() != petAnimation) ||
+				aabonuses.PetCommands[PET_TAUNT]
+			) {
+				SetTaunting(true);
 			}
 		}
 	}
@@ -492,33 +394,34 @@ bool ZoneDatabase::GetPoweredPetEntry(const char *pet_type, int16 petpower, PetR
 
 	auto row = results.begin();
 
-	into->npc_type = atoi(row[0]);
-	into->temporary = atoi(row[1]);
-	into->petpower = atoi(row[2]);
-	into->petcontrol = atoi(row[3]);
-	into->petnaming = atoi(row[4]);
-	into->monsterflag = atoi(row[5]);
-	into->equipmentset = atoi(row[6]);
+	into->npc_type = Strings::ToInt(row[0]);
+	into->temporary = Strings::ToInt(row[1]);
+	into->petpower = Strings::ToInt(row[2]);
+	into->petcontrol = Strings::ToInt(row[3]);
+	into->petnaming = Strings::ToInt(row[4]);
+	into->monsterflag = Strings::ToInt(row[5]);
+	into->equipmentset = Strings::ToInt(row[6]);
 
 	return true;
 }
 
 Mob* Mob::GetPet() {
-	if(GetPetID() == 0)
-		return(nullptr);
-
-	Mob* tmp = entity_list.GetMob(GetPetID());
-	if(tmp == nullptr) {
-		SetPetID(0);
-		return(nullptr);
+	if (!GetPetID()) {
+		return nullptr;
 	}
 
-	if(tmp->GetOwnerID() != GetID()) {
+	const auto m = entity_list.GetMob(GetPetID());
+	if (!m) {
 		SetPetID(0);
-		return(nullptr);
+		return nullptr;
 	}
 
-	return(tmp);
+	if (m->GetOwnerID() != GetID()) {
+		SetPetID(0);
+		return nullptr;
+	}
+
+	return m;
 }
 
 bool Mob::HasPet() const {
@@ -575,7 +478,7 @@ void NPC::GetPetState(SpellBuff_Struct *pet_buffs, uint32 *items, char *name) {
 
 	//save their buffs.
 	for (int i=EQ::invslot::EQUIPMENT_BEGIN; i < GetPetMaxTotalSlots(); i++) {
-		if (buffs[i].spellid != SPELL_UNKNOWN) {
+		if (IsValidSpell(buffs[i].spellid)) {
 			pet_buffs[i].spellid = buffs[i].spellid;
 			pet_buffs[i].effect_type = i+1;
 			pet_buffs[i].duration = buffs[i].ticsremaining;
@@ -601,7 +504,7 @@ void NPC::SetPetState(SpellBuff_Struct *pet_buffs, uint32 *items) {
 	for (i = 0; i < GetPetMaxTotalSlots(); i++) {
 		for(int z = 0; z < GetPetMaxTotalSlots(); z++) {
 		// check for duplicates
-			if(buffs[z].spellid != SPELL_UNKNOWN && buffs[z].spellid == pet_buffs[i].spellid) {
+			if(IsValidSpell(buffs[z].spellid) && buffs[z].spellid == pet_buffs[i].spellid) {
 				buffs[z].spellid = SPELL_UNKNOWN;
 				pet_buffs[i].spellid = 0xFFFFFFFF;
 			}
@@ -720,20 +623,20 @@ bool ZoneDatabase::GetBasePetItems(int32 equipmentset, uint32 *items) {
 		}
 
 		auto row = results.begin();
-		nextset = atoi(row[0]);
+		nextset = Strings::ToInt(row[0]);
 
 		query = StringFormat("SELECT slot, item_id FROM pets_equipmentset_entries WHERE set_id='%d'", curset);
 		results = QueryDatabase(query);
 		if (results.Success()) {
 			for (row = results.begin(); row != results.end(); ++row)
 			{
-				slot = atoi(row[0]);
+				slot = Strings::ToInt(row[0]);
 
 				if (slot > EQ::invslot::EQUIPMENT_END)
 					continue;
 
 				if (items[slot] == 0)
-					items[slot] = atoi(row[1]);
+					items[slot] = Strings::ToInt(row[1]);
 			}
 		}
 
@@ -769,11 +672,11 @@ BeastlordPetData::PetStruct ZoneDatabase::GetBeastlordPetData(uint16 race_id) {
 	}
 
 	auto row = results.begin();
-	beastlord_pet_data.race_id = atoi(row[0]);
-	beastlord_pet_data.texture = atoi(row[1]);
-	beastlord_pet_data.helm_texture = atoi(row[2]);
-	beastlord_pet_data.gender = atoi(row[3]);
-	beastlord_pet_data.size_modifier = atof(row[4]);
-	beastlord_pet_data.face = atoi(row[5]);
+	beastlord_pet_data.race_id = Strings::ToInt(row[0]);
+	beastlord_pet_data.texture = Strings::ToInt(row[1]);
+	beastlord_pet_data.helm_texture = Strings::ToInt(row[2]);
+	beastlord_pet_data.gender = Strings::ToInt(row[3]);
+	beastlord_pet_data.size_modifier = Strings::ToFloat(row[4]);
+	beastlord_pet_data.face = Strings::ToInt(row[5]);
 	return beastlord_pet_data;
 }

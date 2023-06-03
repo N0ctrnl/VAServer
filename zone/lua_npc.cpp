@@ -761,16 +761,20 @@ void Lua_NPC::ScaleNPC(uint8 npc_level)
 	self->ScaleNPC(npc_level);
 }
 
-void Lua_NPC::ScaleNPC(uint8 npc_level, bool always_scale_stats)
+void Lua_NPC::ScaleNPC(uint8 npc_level, bool override_special_abilities)
 {
 	Lua_Safe_Call_Void();
-	self->ScaleNPC(npc_level, always_scale_stats);
+	self->ScaleNPC(npc_level, true, override_special_abilities);
 }
 
-void Lua_NPC::ScaleNPC(uint8 npc_level, bool always_scale_stats, bool always_scale_special_abilities)
-{
-	Lua_Safe_Call_Void();
-	self->ScaleNPC(npc_level, always_scale_stats, always_scale_special_abilities);
+bool Lua_NPC::IsUnderwaterOnly() {
+	Lua_Safe_Call_Bool();
+	return self->IsUnderwaterOnly();
+}
+
+bool Lua_NPC::HasSpecialAbilities() {
+	Lua_Safe_Call_Bool();
+	return self->HasSpecialAbilities();
 }
 
 luabind::scope lua_register_npc() {
@@ -866,6 +870,7 @@ luabind::scope lua_register_npc() {
 	.def("IsRaidTarget", (bool(Lua_NPC::*)(void))&Lua_NPC::IsRaidTarget)
 	.def("IsRareSpawn", (bool(Lua_NPC::*)(void))&Lua_NPC::IsRareSpawn)
 	.def("IsTaunting", (bool(Lua_NPC::*)(void))&Lua_NPC::IsTaunting)
+	.def("IsUnderwaterOnly", (bool(Lua_NPC::*)(void))&Lua_NPC::IsUnderwaterOnly)
 	.def("MerchantCloseShop", (void(Lua_NPC::*)(void))&Lua_NPC::MerchantCloseShop)
 	.def("MerchantOpenShop", (void(Lua_NPC::*)(void))&Lua_NPC::MerchantOpenShop)
 	.def("ModifyNPCStat", (void(Lua_NPC::*)(std::string,std::string))&Lua_NPC::ModifyNPCStat)
@@ -887,7 +892,6 @@ luabind::scope lua_register_npc() {
 	.def("SaveGuardSpot", (void(Lua_NPC::*)(float,float,float,float))&Lua_NPC::SaveGuardSpot)
 	.def("ScaleNPC", (void(Lua_NPC::*)(uint8))&Lua_NPC::ScaleNPC)
 	.def("ScaleNPC", (void(Lua_NPC::*)(uint8,bool))&Lua_NPC::ScaleNPC)
-	.def("ScaleNPC", (void(Lua_NPC::*)(uint8,bool,bool))&Lua_NPC::ScaleNPC)
 	.def("SendPayload", (void(Lua_NPC::*)(int))&Lua_NPC::SendPayload)
 	.def("SendPayload", (void(Lua_NPC::*)(int,std::string))&Lua_NPC::SendPayload)
 	.def("SetCopper", (void(Lua_NPC::*)(uint32))&Lua_NPC::SetCopper)

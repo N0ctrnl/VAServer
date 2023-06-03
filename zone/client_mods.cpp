@@ -22,8 +22,6 @@
 #include "../common/rulesys.h"
 #include "../common/spdat.h"
 
-#include "../common/data_verification.h"
-
 #include "client.h"
 #include "mob.h"
 
@@ -51,7 +49,7 @@ int32 Client::GetMaxStat() const
 	else {
 		base = 330;
 	}
-	return (base);
+	return base;
 }
 
 int32 Client::GetMaxResist() const
@@ -234,7 +232,7 @@ int32 Client::LevelRegen()
 int64 Client::CalcHPRegen(bool bCombat)
 {
 	int64 item_regen = itembonuses.HPRegen; // worn spells and +regen, already capped
-	item_regen += GetHeroicSTA() / 20;
+	item_regen += itembonuses.heroic_hp_regen;
 
 	item_regen += aabonuses.HPRegen;
 
@@ -290,7 +288,7 @@ int64 Client::CalcHPRegen(bool bCombat)
 
 	if (!bCombat && CanFastRegen() && (IsSitting() || CanMedOnHorse())) {
 		auto max_hp = GetMaxHP();
-		int fast_regen = 6 * (max_hp / zone->newzone_data.fast_regen_hp);
+		int64 fast_regen = 6 * (max_hp / (zone ? zone->newzone_data.fast_regen_hp : 180));
 		if (base < fast_regen) // weird, but what the client is doing
 			base = fast_regen;
 	}
@@ -491,7 +489,7 @@ int64 Client::CalcBaseHP()
 		auto base_data = database.GetBaseData(GetLevel(), GetClass());
 		if (base_data) {
 			base_hp += base_data->base_hp + (base_data->hp_factor * stats);
-			base_hp += (GetHeroicSTA() * 10);
+			base_hp += itembonuses.heroic_max_hp;
 		}
 	}
 	else {
@@ -506,50 +504,6 @@ int64 Client::CalcBaseHP()
 		base_hp = (5) + (GetLevel() * lm / 10) + (((GetSTA() - Post255) * GetLevel() * lm / 3000)) + ((Post255 * GetLevel()) * lm / 6000);
 	}
 	return base_hp;
-}
-
-// This is for calculating Base HPs + STA bonus for SoD or later clients.
-uint64 Client::GetClassHPFactor()
-{
-	int factor;
-	// Note: Base HP factor under level 41 is equal to factor / 12, and from level 41 to 80 is factor / 6.
-	// Base HP over level 80 is factor / 10
-	// HP per STA point per level is factor / 30 for level 80+
-	// HP per STA under level 40 is the level 80 HP Per STA / 120, and for over 40 it is / 60.
-	switch (GetClass()) {
-		case DRUID:
-		case ENCHANTER:
-		case NECROMANCER:
-		case MAGICIAN:
-		case WIZARD:
-			factor = 240;
-			break;
-		case BEASTLORD:
-		case BERSERKER:
-		case MONK:
-		case ROGUE:
-		case SHAMAN:
-			factor = 255;
-			break;
-		case BARD:
-		case CLERIC:
-			factor = 264;
-			break;
-		case SHADOWKNIGHT:
-		case PALADIN:
-			factor = 288;
-			break;
-		case RANGER:
-			factor = 276;
-			break;
-		case WARRIOR:
-			factor = 300;
-			break;
-		default:
-			factor = 240;
-			break;
-	}
-	return factor;
 }
 
 // This should return the combined AC of all the items the player is wearing.
@@ -623,7 +577,8 @@ int64 Client::CalcBaseMana()
 				}
 				auto base_data = database.GetBaseData(GetLevel(), GetClass());
 				if (base_data) {
-					max_m = base_data->base_mana + (ConvertedWisInt * base_data->mana_factor) + (GetHeroicINT() * 10);
+					max_m = base_data->base_mana +
+						(ConvertedWisInt * base_data->mana_factor) + itembonuses.heroic_max_mana;
 				}
 			}
 			else {
@@ -655,7 +610,8 @@ int64 Client::CalcBaseMana()
 				}
 				auto base_data = database.GetBaseData(GetLevel(), GetClass());
 				if (base_data) {
-					max_m = base_data->base_mana + (ConvertedWisInt * base_data->mana_factor) + (GetHeroicWIS() * 10);
+					max_m = base_data->base_mana +
+						(ConvertedWisInt * base_data->mana_factor) + itembonuses.heroic_max_mana;
 				}
 			}
 			else {
@@ -748,18 +704,7 @@ int64 Client::CalcManaRegen(bool bCombat)
 	// add in + 1 bonus for SE_CompleteHeal, but we don't do anything for it yet?
 
 	int item_bonus = itembonuses.ManaRegen; // this is capped already
-	int heroic_bonus = 0;
-
-	switch (GetCasterClass()) {
-	case 'W':
-		heroic_bonus = GetHeroicWIS();
-		break;
-	default:
-		heroic_bonus = GetHeroicINT();
-		break;
-	}
-
-	item_bonus += heroic_bonus / 25;
+	item_bonus += itembonuses.heroic_mana_regen;
 	regen += item_bonus;
 
 	if (level <= 70 && regen > 65)
@@ -852,10 +797,10 @@ uint32 Client::CalcCurrentWeight()
 
 int32 Client::CalcAlcoholPhysicalEffect()
 {
-	if (m_pp.intoxication <= 55) {
+	if (GetIntoxication() <= 55) {
 		return 0;
 	}
-	return (m_pp.intoxication - 40) / 16;
+	return (GetIntoxication() - 40) / 16;
 }
 
 int32 Client::CalcSTR()
@@ -933,8 +878,8 @@ int32 Client::CalcINT()
 	int32 val = m_pp.INT + itembonuses.INT + spellbonuses.INT;
 	int32 mod = aabonuses.INT;
 	INT = val + mod;
-	if (m_pp.intoxication) {
-		int32 AlcINT = INT - (int32)((float)m_pp.intoxication / 200.0f * (float)INT) - 1;
+	if (GetIntoxication()) {
+		int32 AlcINT = INT - (int32)((float)GetIntoxication() / 200.0f * (float)INT) - 1;
 		if ((AlcINT < (int)(0.2 * INT))) {
 			INT = (int)(0.2f * (float)INT);
 		}
@@ -957,8 +902,8 @@ int32 Client::CalcWIS()
 	int32 val = m_pp.WIS + itembonuses.WIS + spellbonuses.WIS;
 	int32 mod = aabonuses.WIS;
 	WIS = val + mod;
-	if (m_pp.intoxication) {
-		int32 AlcWIS = WIS - (int32)((float)m_pp.intoxication / 200.0f * (float)WIS) - 1;
+	if (GetIntoxication()) {
+		int32 AlcWIS = WIS - (int32)((float)GetIntoxication() / 200.0f * (float)WIS) - 1;
 		if ((AlcWIS < (int)(0.2 * WIS))) {
 			WIS = (int)(0.2f * (float)WIS);
 		}
@@ -1031,14 +976,14 @@ int Client::CalcHaste()
 		h += spellbonuses.hastetype2 > 10 ? 10 : spellbonuses.hastetype2;
 	}
 	// 26+ no cap, 1-25 10
-	if (level > 25) { // 26+
+	if (level > 25 || RuleB(Character, IgnoreLevelBasedHasteCaps)) { // 26+
 		h += itembonuses.haste;
 	}
 	else {   // 1-25
 		h += itembonuses.haste > 10 ? 10 : itembonuses.haste;
 	}
 	// 60+ 100, 51-59 85, 1-50 level+25
-	if (level > 59) { // 60+
+	if (level > 59 || RuleB(Character, IgnoreLevelBasedHasteCaps)) { // 60+
 		cap = RuleI(Character, HasteCap);
 	}
 	else if (level > 50) {  // 51-59
@@ -1047,12 +992,11 @@ int Client::CalcHaste()
 	else {   // 1-50
 		cap = level + 25;
 	}
-	cap = mod_client_haste_cap(cap);
 	if (h > cap) {
 		h = cap;
 	}
 	// 51+ 25 (despite there being higher spells...), 1-50 10
-	if (level > 50) { // 51+
+	if (level > 50 || RuleB(Character, IgnoreLevelBasedHasteCaps)) { // 51+
 		cap = RuleI(Character, Hastev3Cap);
 		if (spellbonuses.hastetype3 > cap) {
 			h += cap;
@@ -1064,7 +1008,6 @@ int Client::CalcHaste()
 		h += spellbonuses.hastetype3 > 10 ? 10 : spellbonuses.hastetype3;
 	}
 	h += ExtraHaste;	//GM granted haste.
-	h = mod_client_haste(h);
 	Haste = 100 + h;
 	return Haste;
 }
@@ -1688,8 +1631,8 @@ int64 Client::CalcBaseEndurance()
 {
 	int64 base_end = 0;
 	if (ClientVersion() >= EQ::versions::ClientVersion::SoF && RuleB(Character, SoDClientUseSoDHPManaEnd)) {
-		double heroic_stats = (GetHeroicSTR() + GetHeroicSTA() + GetHeroicDEX() + GetHeroicAGI()) / 4.0f;
 		double stats = (GetSTR() + GetSTA() + GetDEX() + GetAGI()) / 4.0f;
+
 		if (stats > 201.0f) {
 			stats = 1.25f * (stats - 201.0f) + 352.5f;
 		}
@@ -1698,7 +1641,7 @@ int64 Client::CalcBaseEndurance()
 		}
 		auto base_data = database.GetBaseData(GetLevel(), GetClass());
 		if (base_data) {
-			base_end = base_data->base_end + (heroic_stats * 10.0f) + (base_data->endurance_factor * static_cast<int>(stats));
+			base_end = base_data->base_end + itembonuses.heroic_max_end + (base_data->endurance_factor * static_cast<int>(stats));
 		}
 	}
 	else {
@@ -1787,9 +1730,7 @@ int64 Client::CalcEnduranceRegen(bool bCombat)
 	if (encumbered)
 		base += level / -15;
 
-	auto item_bonus = GetHeroicAGI() + GetHeroicDEX() + GetHeroicSTA() + GetHeroicSTR();
-	item_bonus = item_bonus / 4 / 50;
-	item_bonus += itembonuses.EnduranceRegen; // this is capped already
+	auto item_bonus = itembonuses.EnduranceRegen + itembonuses.heroic_end_regen; // this is capped already
 	base += item_bonus;
 
 	base = base * AreaEndRegen + 0.5f;

@@ -37,11 +37,10 @@ public:
 	Ability() { }
 	~Ability() { }
 
-	Rank *GetMaxRank();
 	Rank *GetRankByPointsSpent(int current_level);
 	int GetMaxLevel(Mob *who);
 
-	int id;
+	uint32 id;
 	std::string name;
 	int category;
 	int classes;

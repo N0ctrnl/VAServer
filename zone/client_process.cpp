@@ -22,12 +22,8 @@
 #include "../common/eqemu_logsys.h"
 #include "../common/global_define.h"
 #include <iostream>
-#include <stdio.h>
-#include <zlib.h>
 
 #ifdef _WINDOWS
-	#include <winsock2.h>
-	#include <windows.h>
 	#define snprintf	_snprintf
 	#define strncasecmp	_strnicmp
 	#define strcasecmp	_stricmp
@@ -54,7 +50,7 @@
 #include "worldserver.h"
 #include "zone.h"
 #include "zonedb.h"
-#include "../common/zone_store.h"
+#include "../common/events/player_event_logs.h"
 
 extern QueryServ* QServ;
 extern Zone* zone;
@@ -183,12 +179,20 @@ bool Client::Process() {
 
 			SetDynamicZoneMemberStatus(DynamicZoneMemberStatus::Offline);
 
-			parse->EventPlayer(EVENT_DISCONNECT, this, "", 0);
+			RecordPlayerEventLog(PlayerEvent::WENT_OFFLINE, PlayerEvent::EmptyEvent{});
+
+			if (parse->PlayerHasQuestSub(EVENT_DISCONNECT)) {
+				parse->EventPlayer(EVENT_DISCONNECT, this, "", 0);
+			}
 
 			return false; //delete client
 		}
 
 		if (camp_timer.Check()) {
+			Raid *myraid = entity_list.GetRaidByClient(this);
+			if (myraid) {
+				myraid->MemberZoned(this);
+			}
 			LeaveGroup();
 			Save();
 			if (GetMerc())
@@ -514,9 +518,9 @@ bool Client::Process() {
 				Save(0);
 			}
 
-			if (m_pp.intoxication > 0)
+			if (GetIntoxication() > 0)
 			{
-				--m_pp.intoxication;
+				SetIntoxication(GetIntoxication()-1);
 				CalcBonuses();
 			}
 
@@ -542,7 +546,7 @@ bool Client::Process() {
 	if (client_state == DISCONNECTED) {
 		OnDisconnect(true);
 		std::cout << "Client disconnected (cs=d): " << GetName() << std::endl;
-		database.SetMQDetectionFlag(AccountName(), GetName(), "/MQInstantCamp: Possible instant camp disconnect.", zone->GetShortName());
+		RecordPlayerEventLog(PlayerEvent::POSSIBLE_HACK, PlayerEvent::PossibleHackEvent{.message = "/MQInstantCamp: Possible instant camp disconnect"});
 		return false;
 	}
 
@@ -592,11 +596,13 @@ bool Client::Process() {
 		for (auto & close_mob : close_mobs) {
 			Mob *mob = close_mob.second;
 
-			if (!mob)
+			if (!mob) {
 				continue;
+			}
 
-			if (mob->IsClient())
+			if (mob->IsClient()) {
 				continue;
+			}
 
 			if (mob->CheckWillAggro(this) && !mob->CheckAggro(this)) {
 				mob->AddToHateList(this, 25);
@@ -679,56 +685,60 @@ bool Client::Process() {
 
 /* Just a set of actions preformed all over in Client::Process */
 void Client::OnDisconnect(bool hard_disconnect) {
-	if(hard_disconnect)
-	{
+	if (hard_disconnect) {
 		LeaveGroup();
-		if (GetMerc())
-		{
+
+		if (GetMerc()) {
 			GetMerc()->Save();
 			GetMerc()->Depop();
 		}
-		Raid *MyRaid = entity_list.GetRaidByClient(this);
 
-		if (MyRaid)
-			MyRaid->MemberZoned(this);
+		auto* r = entity_list.GetRaidByClient(this);
 
-		parse->EventPlayer(EVENT_DISCONNECT, this, "", 0);
+		if (r) {
+			r->MemberZoned(this);
+		}
 
 		/* QS: PlayerLogConnectDisconnect */
-		if (RuleB(QueryServ, PlayerLogConnectDisconnect)){
+		if (RuleB(QueryServ, PlayerLogConnectDisconnect)) {
 			std::string event_desc = StringFormat("Disconnect :: in zoneid:%i instid:%i", GetZoneID(), GetInstanceID());
 			QServ->PlayerLogEvent(Player_Log_Connect_State, CharacterID(), event_desc);
 		}
 	}
 
-	if (!bZoning)
-	{
+	if (!bZoning) {
 		SetDynamicZoneMemberStatus(DynamicZoneMemberStatus::Offline);
 	}
 
 	RemoveAllAuras();
 
-	Mob *Other = trade->With();
-	if(Other)
-	{
+	auto* o = trade->With();
+	if (o) {
 		LogTrading("Client disconnected during a trade. Returning their items");
 		FinishTrade(this);
 
-		if(Other->IsClient())
-			Other->CastToClient()->FinishTrade(Other);
+		if (o->IsClient()) {
+			o->CastToClient()->FinishTrade(o);
+		}
 
 		/* Reset both sides of the trade */
 		trade->Reset();
-		Other->trade->Reset();
+		o->trade->Reset();
 	}
 
 	database.SetFirstLogon(CharacterID(), 0); //We change firstlogon status regardless of if a player logs out to zone or not, because we only want to trigger it on their first login from world.
 
-	/* Remove ourself from all proximities */
+	/* Remove from all proximities */
 	ClearAllProximities();
 
 	auto outapp = new EQApplicationPacket(OP_LogoutReply);
 	FastQueuePacket(&outapp);
+
+	RecordPlayerEventLog(PlayerEvent::WENT_OFFLINE, PlayerEvent::EmptyEvent{});
+
+	if (parse->PlayerHasQuestSub(EVENT_DISCONNECT)) {
+		parse->EventPlayer(EVENT_DISCONNECT, this, "", 0);
+	}
 
 	Disconnect();
 }
@@ -831,18 +841,16 @@ void Client::BulkSendMerchantInventory(int merchant_id, int npcid) {
 		}
 	}
 
-	auto client_data_buckets = GetMerchantDataBuckets();
-
 	auto temporary_merchant_list = zone->tmpmerchanttable[npcid];
 	uint32 slot_id = 1;
 	uint8 handy_chance = 0;
-	for (auto ml : merchant_list) {
+	for (const auto& ml : merchant_list) {
 		if (slot_id > merchant_slots) {
 			break;
 		}
 
 		auto bucket_name = ml.bucket_name;
-		auto bucket_value = ml.bucket_value;
+		auto const& bucket_value = ml.bucket_value;
 		if (!bucket_name.empty() && !bucket_value.empty()) {
 			auto full_name = fmt::format(
 				"{}-{}",
@@ -850,12 +858,12 @@ void Client::BulkSendMerchantInventory(int merchant_id, int npcid) {
 				bucket_name
 			);
 
-			auto player_value = client_data_buckets[full_name];
+			auto const& player_value = DataBucket::CheckBucketKey(this, full_name);
 			if (player_value.empty()) {
 				continue;
 			}
 
-			if (!zone->CheckDataBucket(ml.bucket_comparison, bucket_value, player_value)) {
+			if (!zone->CompareDataBucket(ml.bucket_comparison, bucket_value, player_value)) {
 				continue;
 			}
 		}
@@ -1133,6 +1141,7 @@ void Client::OPMemorizeSpell(const EQApplicationPacket* app)
 				const auto* item = inst->GetItem();
 
 				if (
+					item &&
 					RuleB(Character, RestrictSpellScribing) &&
 					!item->IsEquipable(GetRace(), GetClass())
 				) {
@@ -1155,12 +1164,8 @@ void Client::OPMemorizeSpell(const EQApplicationPacket* app)
 			if (HasSpellScribed(m->spell_id)) {
 				MemSpell(m->spell_id, m->slot);
 			} else {
-				database.SetMQDetectionFlag(
-					AccountName(),
-					GetName(),
-					"OP_MemorizeSpell but we don't have this spell scribed...",
-					zone->GetShortName()
-				);
+				std::string message = fmt::format("OP_MemorizeSpell [{}] but we don't have this spell scribed", m->spell_id);
+				RecordPlayerEventLog(PlayerEvent::POSSIBLE_HACK, PlayerEvent::PossibleHackEvent{.message = message});
 			}
 			break;
 		}
@@ -1299,10 +1304,13 @@ void Client::OPMoveCoin(const EQApplicationPacket* app)
 			NPC *banker = entity_list.GetClosestBanker(this, distance);
 			if(!banker || distance > USE_NPC_RANGE2)
 			{
-				auto hacked_string = fmt::format("Player tried to make use of a banker(coin move) but "
-								 "{} is non-existant or too far away ({} units).",
-								 banker ? banker->GetName() : "UNKNOWN NPC", distance);
-				database.SetMQDetectionFlag(AccountName(), GetName(), hacked_string, zone->GetShortName());
+				auto message = fmt::format(
+					"Player tried to make use of a banker (coin move) but "
+					"banker [{}] is non-existent or too far away [{}] units",
+					banker ? banker->GetName() : "UNKNOWN NPC", distance
+				);
+				RecordPlayerEventLog(PlayerEvent::POSSIBLE_HACK, PlayerEvent::PossibleHackEvent{.message = message});
+
 				return;
 			}
 
@@ -1330,11 +1338,13 @@ void Client::OPMoveCoin(const EQApplicationPacket* app)
 			NPC *banker = entity_list.GetClosestBanker(this, distance);
 			if(!banker || distance > USE_NPC_RANGE2)
 			{
-				auto hacked_string =
-				    fmt::format("Player tried to make use of a banker(shared coin move) but {} is "
-						"non-existant or too far away ({} units).",
-						banker ? banker->GetName() : "UNKNOWN NPC", distance);
-				database.SetMQDetectionFlag(AccountName(), GetName(), hacked_string, zone->GetShortName());
+				auto message = fmt::format(
+					"Player tried to make use of a banker (shared coin move) but banker [{}] is "
+					"non-existent or too far away [{}] units",
+					banker ? banker->GetName() : "UNKNOWN NPC", distance
+				);
+				RecordPlayerEventLog(PlayerEvent::POSSIBLE_HACK, PlayerEvent::PossibleHackEvent{.message = message});
+
 				return;
 			}
 			if(mc->cointype1 == COINTYPE_PP)	// there's only platinum here
@@ -1386,10 +1396,13 @@ void Client::OPMoveCoin(const EQApplicationPacket* app)
 			NPC *banker = entity_list.GetClosestBanker(this, distance);
 			if(!banker || distance > USE_NPC_RANGE2)
 			{
-				auto hacked_string = fmt::format("Player tried to make use of a banker(coin move) but "
-								 "{} is non-existant or too far away ({} units).",
-								 banker ? banker->GetName() : "UNKNOWN NPC", distance);
-				database.SetMQDetectionFlag(AccountName(), GetName(), hacked_string, zone->GetShortName());
+				auto message = fmt::format(
+					"Player tried to make use of a banker(coin move) but "
+					"banker [{}] is non-existent or too far away [{}] units",
+					banker ? banker->GetName() : "UNKNOWN NPC", distance
+				);
+				RecordPlayerEventLog(PlayerEvent::POSSIBLE_HACK, PlayerEvent::PossibleHackEvent{.message = message});
+
 				return;
 			}
 			switch(mc->cointype2)
@@ -1429,11 +1442,13 @@ void Client::OPMoveCoin(const EQApplicationPacket* app)
 			NPC *banker = entity_list.GetClosestBanker(this, distance);
 			if(!banker || distance > USE_NPC_RANGE2)
 			{
-				auto hacked_string =
-				    fmt::format("Player tried to make use of a banker(shared coin move) but {} is "
-						"non-existant or too far away ({} units).",
-						banker ? banker->GetName() : "UNKNOWN NPC", distance);
-				database.SetMQDetectionFlag(AccountName(), GetName(), hacked_string, zone->GetShortName());
+				auto message = fmt::format(
+					"Player tried to make use of a banker (shared coin move) but banker [{}] is "
+					"non-existent or too far away [{}] units",
+					banker ? banker->GetName() : "UNKNOWN NPC", distance
+				);
+				RecordPlayerEventLog(PlayerEvent::POSSIBLE_HACK, PlayerEvent::PossibleHackEvent{.message = message});
+
 				return;
 			}
 			if(mc->cointype2 == COINTYPE_PP)	// there's only platinum here
@@ -1902,7 +1917,7 @@ void Client::DoEnduranceUpkeep() {
 	uint32 buffs_i;
 	uint32 buff_count = GetMaxTotalSlots();
 	for (buffs_i = 0; buffs_i < buff_count; buffs_i++) {
-		if (buffs[buffs_i].spellid != SPELL_UNKNOWN) {
+		if (IsValidSpell(buffs[buffs_i].spellid)) {
 			int upkeep = spells[buffs[buffs_i].spellid].endurance_upkeep;
 			if(upkeep > 0) {
 				has_effect = true;
@@ -1951,7 +1966,7 @@ void Client::CalcRestState()
 
 	uint32 buff_count = GetMaxTotalSlots();
 	for (unsigned int j = 0; j < buff_count; j++) {
-		if(buffs[j].spellid != SPELL_UNKNOWN) {
+		if(IsValidSpell(buffs[j].spellid)) {
 			if(IsDetrimentalSpell(buffs[j].spellid) && (buffs[j].ticsremaining > 0))
 				if(!DetrimentalSpellAllowsRest(buffs[j].spellid))
 					return;
@@ -2147,8 +2162,9 @@ void Client::HandleRespawnFromHover(uint32 Option)
 		}
 
 		//After they've respawned into the same zone, trigger EVENT_RESPAWN
-		std::string export_string = fmt::format("{}", Option);
-		parse->EventPlayer(EVENT_RESPAWN, this, export_string, is_rez ? 1 : 0);
+		if (parse->PlayerHasQuestSub(EVENT_RESPAWN)) {
+			parse->EventPlayer(EVENT_RESPAWN, this, std::to_string(Option), is_rez ? 1 : 0);
+		}
 
 		//Pop Rez option from the respawn options list;
 		//easiest way to make sure it stays at the end and

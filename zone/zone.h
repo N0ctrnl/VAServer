@@ -180,7 +180,6 @@ public:
 	inline void ShowNPCGlobalLoot(Client *to, NPC *who) { m_global_loot.ShowNPCGlobalLoot(to, who); }
 	inline void ShowZoneGlobalLoot(Client *to) { m_global_loot.ShowZoneGlobalLoot(to); }
 	int GetZoneTotalBlockedSpells() { return zone_total_blocked_spells; }
-	void DumpMerchantList(uint32 npcid);
 	int SaveTempItem(uint32 merchantid, uint32 npcid, uint32 item, int32 charges, bool sold = false);
 	int32 MobsAggroCount() { return aggroedmobs; }
 	DynamicZone *GetDynamicZone();
@@ -296,7 +295,6 @@ public:
 	void RequestUCSServerStatus();
 	void ResetAuth();
 	void SetDate(uint16 year, uint8 month, uint8 day, uint8 hour, uint8 minute);
-	void SetGraveyard(uint32 zoneid, const glm::vec4 &graveyardPosition);
 	void SetInstanceTimer(uint32 new_duration);
 	void SetStaticZone(bool sz) { staticzone = sz; }
 	void SetTime(uint8 hour, uint8 minute, bool update_world = true);
@@ -311,7 +309,7 @@ public:
 	bool IsQuestHotReloadQueued() const;
 	void SetQuestHotReloadQueued(bool in_quest_hot_reload_queued);
 
-	bool CheckDataBucket(uint8 bucket_comparison, std::string bucket_value, std::string player_value);
+	bool CompareDataBucket(uint8 bucket_comparison, const std::string& bucket_value, const std::string& player_value);
 
 	WaterMap *watermap;
 	ZonePoint *GetClosestZonePoint(const glm::vec3 &location, uint32 to, Client *client, float max_distance = 40000.0f);
@@ -395,11 +393,6 @@ public:
 
 	double GetMaxMovementUpdateRange() const { return max_movement_update_range; }
 
-	/**
-	 * Modding hooks
-	 */
-	void mod_init();
-	void mod_repop();
 	void SetIsHotzone(bool is_hotzone);
 
 private:
@@ -420,7 +413,7 @@ private:
 	char      *long_name;
 	char      *map_name;
 	char      *short_name;
-	char      file_name[16];
+	char      file_name[32];
 	glm::vec4 m_safe_points;
 	glm::vec4 m_graveyard;
 	int       default_ruleset;

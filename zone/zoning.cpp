@@ -34,10 +34,8 @@ extern QueryServ* QServ;
 extern WorldServer worldserver;
 extern Zone* zone;
 
-#include "../common/content/world_content_service.h"
-
 #include "../common/repositories/character_peqzone_flags_repository.h"
-#include "../common/repositories/zone_repository.h"
+#include "../common/events/player_event_logs.h"
 
 
 void Client::Handle_OP_ZoneChange(const EQApplicationPacket *app) {
@@ -74,18 +72,13 @@ void Client::Handle_OP_ZoneChange(const EQApplicationPacket *app) {
 				target_zone_id = zone->GetZoneID();
 				break;
 			case GMSummon:
+			case ZoneSolicited: //we told the client to zone somewhere, so we know where they are going.
 				target_zone_id = zonesummon_id;
 				break;
 			case GateToBindPoint:
-				target_zone_id = m_pp.binds[0].zone_id;
-				target_instance_id = m_pp.binds[0].instance_id;
-				break;
 			case ZoneToBindPoint:
 				target_zone_id = m_pp.binds[0].zone_id;
 				target_instance_id = m_pp.binds[0].instance_id;
-				break;
-			case ZoneSolicited: //we told the client to zone somewhere, so we know where they are going.
-				target_zone_id = zonesummon_id;
 				break;
 			case ZoneUnsolicited: //client came up with this on its own.
 				zone_point = zone->GetClosestZonePointWithoutZone(GetX(), GetY(), GetZ(), this, ZONEPOINT_NOZONE_RANGE);
@@ -201,19 +194,37 @@ void Client::Handle_OP_ZoneChange(const EQApplicationPacket *app) {
 	min_status   = zone_data->min_status;
 	min_level    = zone_data->min_level;
 
-	const auto& export_string = fmt::format(
-		"{} {} {} {} {} {}",
-		zone->GetZoneID(),
-		zone->GetInstanceID(),
-		zone->GetInstanceVersion(),
-		target_zone_id,
-		target_instance_id,
-		target_instance_version
-	);
+	if (parse->PlayerHasQuestSub(EVENT_ZONE)) {
+		const auto& export_string = fmt::format(
+			"{} {} {} {} {} {}",
+			zone->GetZoneID(),
+			zone->GetInstanceID(),
+			zone->GetInstanceVersion(),
+			target_zone_id,
+			target_instance_id,
+			target_instance_version
+		);
 
-	if (parse->EventPlayer(EVENT_ZONE, this, export_string, 0) != 0) {
-		SendZoneCancel(zc);
-		return;
+		if (parse->EventPlayer(EVENT_ZONE, this, export_string, 0) != 0) {
+			SendZoneCancel(zc);
+			return;
+		}
+	}
+
+	if (player_event_logs.IsEventEnabled(PlayerEvent::ZONING)) {
+		auto e = PlayerEvent::ZoningEvent{};
+		e.from_zone_long_name   = zone->GetLongName();
+		e.from_zone_short_name  = zone->GetShortName();
+		e.from_zone_id          = zone->GetZoneID();
+		e.from_instance_id      = zone->GetInstanceID();
+		e.from_instance_version = zone->GetInstanceVersion();
+		e.to_zone_long_name     = ZoneLongName(target_zone_id);
+		e.to_zone_short_name    = ZoneName(target_zone_id);
+		e.to_zone_id            = target_zone_id;
+		e.to_instance_id        = target_instance_id;
+		e.to_instance_version   = target_instance_version;
+
+		RecordPlayerEventLog(PlayerEvent::ZONING, e);
 	}
 
 	//handle circumvention of zone restrictions
@@ -629,7 +640,7 @@ void Client::ZonePC(uint32 zoneID, uint32 instance_id, float x, float y, float z
 
 	auto zd = GetZoneVersionWithFallback(zoneID, zone->GetInstanceVersion());
 	if (zd) {
-		pZoneName = strcpy(new char[strlen(zd->long_name.c_str()) + 1], zd->long_name.c_str());
+		pZoneName = strcpy(new char[zd->long_name.length() + 1], zd->long_name.c_str());
 	}
 
 	LogInfo(
@@ -775,8 +786,7 @@ void Client::ZonePC(uint32 zoneID, uint32 instance_id, float x, float y, float z
 			FastQueuePacket(&outapp);
 		}
 		else if(zm == EvacToSafeCoords) {
-			auto outapp =
-			    new EQApplicationPacket(OP_RequestClientZoneChange, sizeof(RequestClientZoneChange_Struct));
+			auto outapp = new EQApplicationPacket(OP_RequestClientZoneChange, sizeof(RequestClientZoneChange_Struct));
 			RequestClientZoneChange_Struct* gmg = (RequestClientZoneChange_Struct*) outapp->pBuffer;
 
 			// if we are in the same zone we want to evac to, client will not send OP_ZoneChange back to do an actual
@@ -787,12 +797,11 @@ void Client::ZonePC(uint32 zoneID, uint32 instance_id, float x, float y, float z
 			// 76 is orignial Plane of Hate
 			// WildcardX 27 January 2008. Tested this for 6.2 and Titanium clients.
 
-			if(GetZoneID() == 1)
+			if (GetZoneID() == 1) {
 				gmg->zone_id = 2;
-			else if(GetZoneID() == 2)
+			} else {
 				gmg->zone_id = 1;
-			else
-				gmg->zone_id = 1;
+			}
 
 			gmg->x = x;
 			gmg->y = y;
@@ -881,23 +890,28 @@ void NPC::Gate(uint8 bind_number) {
 
 void Client::SetBindPoint(int bind_number, int to_zone, int to_instance, const glm::vec3 &location)
 {
-	if (bind_number < 0 || bind_number >= 4)
+	if (bind_number < 0 || bind_number >= 4) {
 		bind_number = 0;
+	}
 
 	if (to_zone == -1) {
-		m_pp.binds[bind_number].zone_id = zone->GetZoneID();
-		m_pp.binds[bind_number].instance_id = (zone->GetInstanceID() != 0 && zone->IsInstancePersistent()) ? zone->GetInstanceID() : 0;
-		m_pp.binds[bind_number].x = m_Position.x;
-		m_pp.binds[bind_number].y = m_Position.y;
-		m_pp.binds[bind_number].z = m_Position.z;
-	} else {
-		m_pp.binds[bind_number].zone_id = to_zone;
-		m_pp.binds[bind_number].instance_id = to_instance;
-		m_pp.binds[bind_number].x = location.x;
-		m_pp.binds[bind_number].y = location.y;
-		m_pp.binds[bind_number].z = location.z;
+		m_pp.binds[bind_number].zone_id     = zone->GetZoneID();
+		m_pp.binds[bind_number].instance_id = (zone->GetInstanceID() != 0 && zone->IsInstancePersistent())? zone->GetInstanceID() : 0;
+		m_pp.binds[bind_number].x           = m_Position.x;
+		m_pp.binds[bind_number].y           = m_Position.y;
+		m_pp.binds[bind_number].z           = m_Position.z;
+		m_pp.binds[bind_number].heading     = GetHeading();
 	}
-	database.SaveCharacterBindPoint(CharacterID(), m_pp.binds[bind_number], bind_number);
+	else {
+		m_pp.binds[bind_number].zone_id     = to_zone;
+		m_pp.binds[bind_number].instance_id = to_instance;
+		m_pp.binds[bind_number].x           = location.x;
+		m_pp.binds[bind_number].y           = location.y;
+		m_pp.binds[bind_number].z           = location.z;
+		m_pp.binds[bind_number].heading     = GetHeading();
+	}
+
+	database.SaveCharacterBinds(this);
 }
 
 void Client::SetBindPoint2(int bind_number, int to_zone, int to_instance, const glm::vec4 &location)
@@ -920,7 +934,8 @@ void Client::SetBindPoint2(int bind_number, int to_zone, int to_instance, const 
 		m_pp.binds[bind_number].z = location.z;
 		m_pp.binds[bind_number].heading = location.w;
 	}
-	database.SaveCharacterBindPoint(CharacterID(), m_pp.binds[bind_number], bind_number);
+
+	database.SaveCharacterBinds(this);
 }
 
 void Client::GoToBind(uint8 bind_number) {
@@ -999,7 +1014,7 @@ void Client::LoadZoneFlags() {
 	zone_flags.clear();
 
 	for (auto row : results) {
-		zone_flags.insert(std::stoul(row[0]));
+		zone_flags.insert(Strings::ToUnsignedInt(row[0]));
 	}
 }
 
@@ -1243,7 +1258,7 @@ bool Client::CanEnterZone(const std::string& zone_short_name, int16 instance_ver
 		return false;
 	}
 
-	if (!z->flag_needed.empty() && Strings::IsNumber(z->flag_needed) && std::stoi(z->flag_needed) == 1) {
+	if (!z->flag_needed.empty() && Strings::IsNumber(z->flag_needed) && Strings::ToBool(z->flag_needed)) {
 		if (Admin() < minStatusToIgnoreZoneFlags && !HasZoneFlag(z->zoneidnumber)) {
 			LogInfo(
 				"Character [{}] does not have the flag to be in this zone [{}]!",

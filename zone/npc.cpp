@@ -27,7 +27,6 @@
 #include "../common/emu_versions.h"
 #include "../common/features.h"
 #include "../common/item_instance.h"
-#include "../common/item_data.h"
 #include "../common/linked_list.h"
 #include "../common/servertalk.h"
 #include "../common/say_link.h"
@@ -45,9 +44,9 @@
 
 #include "bot.h"
 
-#include <cctype>
 #include <stdio.h>
 #include <string>
+#include <utility>
 
 #ifdef _WINDOWS
 #define snprintf	_snprintf
@@ -159,43 +158,47 @@ NPC::NPC(const NPCType *npc_type_data, Spawn2 *in_respawn, const glm::vec4 &posi
 	if (race == RACE_LAVA_DRAGON_49) {
 		size = 5;
 	}
+	if (race == RACE_WURM_158) {
+		size = 15;
+	}
 
-	taunting       = false;
-	proximity      = nullptr;
-	copper         = 0;
-	silver         = 0;
-	gold           = 0;
-	platinum       = 0;
-	max_dmg        = npc_type_data->max_dmg;
-	min_dmg        = npc_type_data->min_dmg;
-	attack_count   = npc_type_data->attack_count;
-	grid           = 0;
-	wp_m           = 0;
-	max_wp         = 0;
-	save_wp        = 0;
-	spawn_group_id = 0;
-	swarmInfoPtr   = nullptr;
-	spellscale     = npc_type_data->spellscale;
-	healscale      = npc_type_data->healscale;
-	pAggroRange    = npc_type_data->aggroradius;
-	pAssistRange   = npc_type_data->assistradius;
-	findable       = npc_type_data->findable;
-	trackable      = npc_type_data->trackable;
-	MR             = npc_type_data->MR;
-	CR             = npc_type_data->CR;
-	DR             = npc_type_data->DR;
-	FR             = npc_type_data->FR;
-	PR             = npc_type_data->PR;
-	Corrup         = npc_type_data->Corrup;
-	PhR          = npc_type_data->PhR;
-	STR          = npc_type_data->STR;
-	STA          = npc_type_data->STA;
-	AGI          = npc_type_data->AGI;
-	DEX          = npc_type_data->DEX;
-	INT          = npc_type_data->INT;
-	WIS          = npc_type_data->WIS;
-	CHA          = npc_type_data->CHA;
-	npc_mana     = npc_type_data->Mana;
+	SetTaunting(false);
+	proximity            = nullptr;
+	copper               = 0;
+	silver               = 0;
+	gold                 = 0;
+	platinum             = 0;
+	max_dmg              = npc_type_data->max_dmg;
+	min_dmg              = npc_type_data->min_dmg;
+	attack_count         = npc_type_data->attack_count;
+	grid                 = 0;
+	wp_m                 = 0;
+	max_wp               = 0;
+	save_wp              = 0;
+	spawn_group_id       = 0;
+	swarmInfoPtr         = nullptr;
+	spellscale           = npc_type_data->spellscale;
+	healscale            = npc_type_data->healscale;
+	pAggroRange          = npc_type_data->aggroradius;
+	pAssistRange         = npc_type_data->assistradius;
+	findable             = npc_type_data->findable;
+	trackable            = npc_type_data->trackable;
+	MR                   = npc_type_data->MR;
+	CR                   = npc_type_data->CR;
+	DR                   = npc_type_data->DR;
+	FR                   = npc_type_data->FR;
+	PR                   = npc_type_data->PR;
+	Corrup               = npc_type_data->Corrup;
+	PhR                  = npc_type_data->PhR;
+	STR                  = npc_type_data->STR;
+	STA                  = npc_type_data->STA;
+	AGI                  = npc_type_data->AGI;
+	DEX                  = npc_type_data->DEX;
+	INT                  = npc_type_data->INT;
+	WIS                  = npc_type_data->WIS;
+	CHA                  = npc_type_data->CHA;
+	npc_mana             = npc_type_data->Mana;
+	m_is_underwater_only = npc_type_data->underwater;
 
 	//quick fix of ordering if they screwed it up in the DB
 	if (max_dmg < min_dmg) {
@@ -254,15 +257,18 @@ NPC::NPC(const NPCType *npc_type_data, Spawn2 *in_respawn, const glm::vec4 &posi
 	}
 
 	guard_anim            = eaStanding;
-	roambox_distance      = 0;
-	roambox_max_x         = -2;
-	roambox_max_y         = -2;
-	roambox_min_x         = -2;
-	roambox_min_y         = -2;
-	roambox_destination_x = -2;
-	roambox_destination_y = -2;
-	roambox_min_delay     = 1000;
-	roambox_delay         = 1000;
+
+	m_roambox.max_x     = -2;
+	m_roambox.max_y     = -2;
+	m_roambox.min_x     = -2;
+	m_roambox.min_y     = -2;
+	m_roambox.distance  = 0;
+	m_roambox.dest_x    = -2;
+	m_roambox.dest_y    = -2;
+	m_roambox.dest_z    = 0;
+	m_roambox.delay     = 1000;
+	m_roambox.min_delay = 1000;
+
 	p_depop               = false;
 	loottable_id          = npc_type_data->loottable_id;
 	skip_global_loot      = npc_type_data->skip_global_loot;
@@ -439,52 +445,52 @@ NPC::NPC(const NPCType *npc_type_data, Spawn2 *in_respawn, const glm::vec4 &posi
 
 float NPC::GetRoamboxMaxX() const
 {
-	return roambox_max_x;
+	return m_roambox.max_x;
 }
 
 float NPC::GetRoamboxMaxY() const
 {
-	return roambox_max_y;
+	return m_roambox.max_y;
 }
 
 float NPC::GetRoamboxMinX() const
 {
-	return roambox_min_x;
+	return m_roambox.min_x;
 }
 
 float NPC::GetRoamboxMinY() const
 {
-	return roambox_min_y;
+	return m_roambox.min_y;
 }
 
 float NPC::GetRoamboxDistance() const
 {
-	return roambox_distance;
+	return m_roambox.distance;
 }
 
 float NPC::GetRoamboxDestinationX() const
 {
-	return roambox_destination_x;
+	return m_roambox.dest_x;
 }
 
 float NPC::GetRoamboxDestinationY() const
 {
-	return roambox_destination_y;
+	return m_roambox.dest_y;
 }
 
 float NPC::GetRoamboxDestinationZ() const
 {
-	return roambox_destination_z;
+	return m_roambox.dest_z;
 }
 
 uint32 NPC::GetRoamboxDelay() const
 {
-	return roambox_delay;
+	return m_roambox.delay;
 }
 
 uint32 NPC::GetRoamboxMinDelay() const
 {
-	return roambox_min_delay;
+	return m_roambox.min_delay;
 }
 
 NPC::~NPC()
@@ -897,7 +903,10 @@ bool NPC::Process()
 	}
 
 	if (tic_timer.Check()) {
-		parse->EventNPC(EVENT_TICK, this, nullptr, "", 0);
+		if (parse->HasQuestSub(GetNPCTypeID(), EVENT_TICK)) {
+			parse->EventNPC(EVENT_TICK, this, nullptr, "", 0);
+		}
+
 		BuffProcess();
 
 		if (currently_fleeing) {
@@ -1113,11 +1122,21 @@ void NPC::Depop(bool start_spawn_timer) {
 	}
 
 	if (IsNPC()) {
-		parse->EventNPC(EVENT_DESPAWN, this, nullptr, "", 0);
-		DispatchZoneControllerEvent(EVENT_DESPAWN_ZONE, this, "", 0, nullptr);
+		if (parse->HasQuestSub(GetNPCTypeID(), EVENT_DESPAWN)) {
+			parse->EventNPC(EVENT_DESPAWN, this, nullptr, "", 0);
+		}
+
+		if (parse->HasQuestSub(ZONE_CONTROLLER_NPC_ID, EVENT_DESPAWN_ZONE)) {
+			DispatchZoneControllerEvent(EVENT_DESPAWN_ZONE, this, "", 0, nullptr);
+		}
 	} else if (IsBot()) {
-		parse->EventBot(EVENT_DESPAWN, CastToBot(), nullptr, "", 0);
-		DispatchZoneControllerEvent(EVENT_DESPAWN_ZONE, this, "", 0, nullptr);
+		if (parse->BotHasQuestSub(EVENT_DESPAWN)) {
+			parse->EventBot(EVENT_DESPAWN, CastToBot(), nullptr, "", 0);
+		}
+
+		if (parse->HasQuestSub(ZONE_CONTROLLER_NPC_ID, EVENT_DESPAWN_ZONE)) {
+			DispatchZoneControllerEvent(EVENT_DESPAWN_ZONE, this, "", 0, nullptr);
+		}
 	}
 
 	p_depop = true;
@@ -1359,7 +1378,7 @@ NPC * NPC::SpawnNodeNPC(std::string name, std::string last_name, const glm::vec4
 }
 
 NPC* NPC::SpawnNPC(const char* spawncommand, const glm::vec4& position, Client* client) {
-	if(spawncommand == 0 || spawncommand[0] == 0) {
+	if (spawncommand == 0 || spawncommand[0] == 0) {
 		return 0;
 	}
 	else {
@@ -1368,47 +1387,59 @@ NPC* NPC::SpawnNPC(const char* spawncommand, const glm::vec4& position, Client* 
 		if (!sep.IsNumber(1)) {
 			sprintf(sep.arg[1], "1");
 		}
+
 		if (!sep.IsNumber(2)) {
 			sprintf(sep.arg[2], "1");
 		}
+
 		if (!sep.IsNumber(3)) {
 			sprintf(sep.arg[3], "0");
 		}
-		if (atoi(sep.arg[4]) > 2100000000 || atoi(sep.arg[4]) <= 0) {
+
+		if (Strings::ToInt(sep.arg[4]) > 2100000000 || Strings::ToInt(sep.arg[4]) <= 0) {
 			sprintf(sep.arg[4], " ");
 		}
+
 		if (!strcmp(sep.arg[5], "-")) {
 			sprintf(sep.arg[5], " ");
 		}
+
 		if (!sep.IsNumber(5)) {
 			sprintf(sep.arg[5], " ");
 		}
+
 		if (!sep.IsNumber(6)) {
 			sprintf(sep.arg[6], "1");
 		}
+
 		if (!sep.IsNumber(8)) {
 			sprintf(sep.arg[8], "0");
 		}
+
 		if (!sep.IsNumber(9)) {
 			sprintf(sep.arg[9], "0");
 		}
+
 		if (!sep.IsNumber(7)) {
 			sprintf(sep.arg[7], "0");
 		}
+
 		if (!strcmp(sep.arg[4], "-")) {
 			sprintf(sep.arg[4], " ");
 		}
+
 		if (!sep.IsNumber(10)) {    // bodytype
 			sprintf(sep.arg[10], "0");
 		}
+
 		//Calc MaxHP if client neglected to enter it...
 		if (sep.arg[4] && !sep.IsNumber(4)) {
-			sprintf(sep.arg[4], "0");
+			sprintf(sep.arg[4], "1");
 		}
 
 		// Autoselect NPC Gender
 		if (sep.arg[5][0] == 0) {
-			sprintf(sep.arg[5], "%i", (int) Mob::GetDefaultGender(atoi(sep.arg[1])));
+			sprintf(sep.arg[5], "%i", (int) Mob::GetDefaultGender(Strings::ToInt(sep.arg[1])));
 		}
 
 		//Time to create the NPC!!
@@ -1416,22 +1447,23 @@ NPC* NPC::SpawnNPC(const char* spawncommand, const glm::vec4& position, Client* 
 		memset(npc_type, 0, sizeof(NPCType));
 
 		strncpy(npc_type->name, sep.arg[0], 60);
-		npc_type->current_hp       = atoi(sep.arg[4]);
-		npc_type->max_hp           = atoi(sep.arg[4]);
-		npc_type->race             = atoi(sep.arg[1]);
-		npc_type->gender           = atoi(sep.arg[5]);
-		npc_type->class_           = atoi(sep.arg[6]);
+
+		npc_type->current_hp       = Strings::ToInt(sep.arg[4]);
+		npc_type->max_hp           = Strings::ToInt(sep.arg[4]);
+		npc_type->race             = Strings::ToInt(sep.arg[1]);
+		npc_type->gender           = Strings::ToInt(sep.arg[5]);
+		npc_type->class_           = Strings::ToInt(sep.arg[6]);
 		npc_type->deity            = 1;
-		npc_type->level            = atoi(sep.arg[2]);
+		npc_type->level            = Strings::ToInt(sep.arg[2]);
 		npc_type->npc_id           = 0;
 		npc_type->loottable_id     = 0;
-		npc_type->texture          = atoi(sep.arg[3]);
-		npc_type->light            = 0; // spawncommand needs update
-		npc_type->runspeed         = 1.25;
-		npc_type->d_melee_texture1 = atoi(sep.arg[7]);
-		npc_type->d_melee_texture2 = atoi(sep.arg[8]);
-		npc_type->merchanttype     = atoi(sep.arg[9]);
-		npc_type->bodytype         = atoi(sep.arg[10]);
+		npc_type->texture          = Strings::ToInt(sep.arg[3]);
+		npc_type->light            = 0;
+		npc_type->runspeed         = 1.25f;
+		npc_type->d_melee_texture1 = Strings::ToInt(sep.arg[7]);
+		npc_type->d_melee_texture2 = Strings::ToInt(sep.arg[8]);
+		npc_type->merchanttype     = Strings::ToInt(sep.arg[9]);
+		npc_type->bodytype         = Strings::ToInt(sep.arg[10]);
 
 		npc_type->STR = 0;
 		npc_type->STA = 0;
@@ -1443,8 +1475,8 @@ NPC* NPC::SpawnNPC(const char* spawncommand, const glm::vec4& position, Client* 
 
 		npc_type->attack_delay = 3000;
 
-		npc_type->prim_melee_type = 28;
-		npc_type->sec_melee_type = 28;
+		npc_type->prim_melee_type = static_cast<uint8>(EQ::skills::SkillHandtoHand);
+		npc_type->sec_melee_type  = static_cast<uint8>(EQ::skills::SkillHandtoHand);
 
 		auto npc = new NPC(npc_type, nullptr, position, GravityBehavior::Water);
 		npc->GiveNPCTypeData(npc_type);
@@ -1453,17 +1485,34 @@ NPC* NPC::SpawnNPC(const char* spawncommand, const glm::vec4& position, Client* 
 
 		if (client) {
 			// Notify client of spawn data
-			client->Message(Chat::White, "New spawn:");
-			client->Message(Chat::White, "Name: %s", npc->name);
-			client->Message(Chat::White, "Race: %u", npc->race);
-			client->Message(Chat::White, "Level: %u", npc->level);
-			client->Message(Chat::White, "Material: %u", npc->texture);
-			client->Message(Chat::White, "Current/Max HP: %i", npc->max_hp);
-			client->Message(Chat::White, "Gender: %u", npc->gender);
-			client->Message(Chat::White, "Class: %u", npc->class_);
-			client->Message(Chat::White, "Weapon Item Number: %u/%u", npc->d_melee_texture1, npc->d_melee_texture2);
-			client->Message(Chat::White, "MerchantID: %u", npc->MerchantType);
-			client->Message(Chat::White, "Bodytype: %u", npc->bodytype);
+			client->Message(Chat::White, fmt::format("Name | {}", npc->name).c_str());
+			client->Message(Chat::White, fmt::format("Level | {}", npc->level).c_str());
+			client->Message(Chat::White, fmt::format("Health | {}", npc->max_hp).c_str());
+			client->Message(Chat::White, fmt::format("Race | {} ({})", GetRaceIDName(npc->race), npc->race).c_str());
+			client->Message(Chat::White, fmt::format("Class | {} ({})", GetClassIDName(npc->class_), npc->class_).c_str());
+			client->Message(Chat::White, fmt::format("Gender | {} ({})", GetGenderName(npc->gender), npc->gender).c_str());
+			client->Message(Chat::White, fmt::format("Texture | {}", npc->texture).c_str());
+
+			if (npc->d_melee_texture1 || npc->d_melee_texture2) {
+				client->Message(
+					Chat::White,
+					fmt::format(
+						"Weapon Item Number | Primary: {} Secondary: {}",
+						npc->d_melee_texture1,
+						npc->d_melee_texture2
+					).c_str()
+				);
+			}
+
+			if (npc->MerchantType) {
+				client->Message(Chat::White, fmt::format("Merchant ID | {}", npc->MerchantType).c_str());
+			}
+
+			if (npc->bodytype) {
+				client->Message(Chat::White, fmt::format("Body Type | {} ({})", EQ::constants::GetBodyTypeName(npc->bodytype), npc->bodytype).c_str());
+			}
+
+			client->Message(Chat::White, "New NPC spawned!");
 		}
 
 		return npc;
@@ -1494,7 +1543,7 @@ uint32 ZoneDatabase::CreateNewNPCCommand(
 		if (results.Success()) {
 			if (results.RowCount() != 0) {
 				auto row = results.begin();
-				npc_type_id = atoi(row[0]) + 1;
+				npc_type_id = Strings::ToInt(row[0]) + 1;
 				// Prevent the npc_type id from exceeding the range for this zone
 				if (npc_type_id >= (starting_npc_id + 1000)) {
 					npc_type_id = 0;
@@ -1653,10 +1702,10 @@ uint32 ZoneDatabase::DeleteSpawnLeaveInNPCTypeTable(const char *zone, Client *cl
 
 	auto row = results.begin();
 	if (row[0])
-		id = atoi(row[0]);
+		id = Strings::ToInt(row[0]);
 
 	if (row[1])
-		spawngroupID = atoi(row[1]);
+		spawngroupID = Strings::ToInt(row[1]);
 
 	query = StringFormat("DELETE FROM spawn2 WHERE id = '%i'", id);
 	results = QueryDatabase(query);
@@ -1695,10 +1744,10 @@ uint32 ZoneDatabase::DeleteSpawnRemoveFromNPCTypeTable(const char *zone, uint32 
 	auto row = results.begin();
 
 	if (row[0])
-		id = atoi(row[0]);
+		id = Strings::ToInt(row[0]);
 
 	if (row[1])
-		spawngroupID = atoi(row[1]);
+		spawngroupID = Strings::ToInt(row[1]);
 
 	query = StringFormat("DELETE FROM spawn2 WHERE id = '%i'", id);
 	results = QueryDatabase(query);
@@ -1899,7 +1948,7 @@ void NPC::PickPocket(Client* thief)
 			if (item_test->Magic || !item_test->NoDrop || item_test->IsClassBag() || thief->CheckLoreConflict(item_test) || item_iter->equip_slot != EQ::invslot::SLOT_INVALID)
 				continue;
 
-			loot_selection.push_back(std::make_pair(item_test, ((item_test->Stackable) ? (1) : (item_iter->charges))));
+			loot_selection.emplace_back(std::make_pair(item_test, ((item_test->Stackable) ? (1) : (item_iter->charges))));
 		}
 		if (loot_selection.empty()) {
 			steal_item = false;
@@ -2451,7 +2500,7 @@ void NPC::SetLevel(uint8 in_level, bool command)
 	SendAppearancePacket(AT_WhoLevel, in_level);
 }
 
-void NPC::ModifyNPCStat(std::string stat, std::string value)
+void NPC::ModifyNPCStat(const std::string& stat, const std::string& value)
 {
 	auto stat_lower = Strings::ToLower(stat);
 
@@ -2465,43 +2514,43 @@ void NPC::ModifyNPCStat(std::string stat, std::string value)
 	LogNPCScaling("NPC::ModifyNPCStat: Key [{}] Value [{}] ", variable_key, value);
 
 	if (stat_lower == "ac") {
-		AC = atoi(value.c_str());
+		AC = Strings::ToInt(value);
 		CalcAC();
 		return;
 	}
 	else if (stat_lower == "str") {
-		STR = atoi(value.c_str());
+		STR = Strings::ToInt(value);
 		return;
 	}
 	else if (stat_lower == "sta") {
-		STA = atoi(value.c_str());
+		STA = Strings::ToInt(value);
 		return;
 	}
 	else if (stat_lower == "agi") {
-		AGI = atoi(value.c_str());
+		AGI = Strings::ToInt(value);
 		CalcAC();
 		return;
 	}
 	else if (stat_lower == "dex") {
-		DEX = atoi(value.c_str());
+		DEX = Strings::ToInt(value);
 		return;
 	}
 	else if (stat_lower == "wis") {
-		WIS = atoi(value.c_str());
+		WIS = Strings::ToInt(value);
 		CalcMaxMana();
 		return;
 	}
 	else if (stat_lower == "int" || stat_lower == "_int") {
-		INT = atoi(value.c_str());
+		INT = Strings::ToInt(value);
 		CalcMaxMana();
 		return;
 	}
 	else if (stat_lower == "cha") {
-		CHA = atoi(value.c_str());
+		CHA = Strings::ToInt(value);
 		return;
 	}
 	else if (stat_lower == "max_hp") {
-		base_hp = std::stoull(value.c_str());
+		base_hp = Strings::ToBigInt(value);
 
 		CalcMaxHP();
 		if (current_hp > max_hp) {
@@ -2511,7 +2560,7 @@ void NPC::ModifyNPCStat(std::string stat, std::string value)
 		return;
 	}
 	else if (stat_lower == "max_mana") {
-		npc_mana = std::stoull(value.c_str());
+		npc_mana = Strings::ToUnsignedBigInt(value);
 		CalcMaxMana();
 		if (current_mana > max_mana) {
 			current_mana = max_mana;
@@ -2519,36 +2568,36 @@ void NPC::ModifyNPCStat(std::string stat, std::string value)
 		return;
 	}
 	else if (stat_lower == "mr") {
-		MR = atoi(value.c_str());
+		MR = Strings::ToInt(value);
 		return;
 	}
 	else if (stat_lower == "fr") {
-		FR = atoi(value.c_str());
+		FR = Strings::ToInt(value);
 		return;
 	}
 	else if (stat_lower == "cr") {
-		CR = atoi(value.c_str());
+		CR = Strings::ToInt(value);
 		return;
 	}
 	else if (stat_lower == "cor") {
-		Corrup = atoi(value.c_str());
+		Corrup = Strings::ToInt(value);
 		return;
 	}
 	else if (stat_lower == "pr") {
-		PR = atoi(value.c_str());
+		PR = Strings::ToInt(value);
 		return;
 	}
 	else if (stat_lower == "dr") {
-		DR = atoi(value.c_str());
+		DR = Strings::ToInt(value);
 		return;
 	}
 	else if (stat_lower == "phr") {
-		PhR = atoi(value.c_str());
+		PhR = Strings::ToInt(value);
 		return;
 	}
 	else if (stat_lower == "runspeed") {
-		runspeed       = (float) atof(value.c_str());
-		base_runspeed  = (int) ((float) runspeed * 40.0f);
+		runspeed       = Strings::ToFloat(value);
+		base_runspeed  = (int) (runspeed * 40.0f);
 		base_walkspeed = base_runspeed * 100 / 265;
 		walkspeed      = ((float) base_walkspeed) * 0.025f;
 		base_fearspeed = base_runspeed * 100 / 127;
@@ -2557,125 +2606,141 @@ void NPC::ModifyNPCStat(std::string stat, std::string value)
 		return;
 	}
 	else if (stat_lower == "special_attacks") {
-		NPCSpecialAttacks(value.c_str(), 0, 1);
+		NPCSpecialAttacks(value.c_str(), 0, true);
 		return;
 	}
 	else if (stat_lower == "special_abilities") {
-		ProcessSpecialAbilities(value.c_str());
+		ProcessSpecialAbilities(value);
 		return;
 	}
 	else if (stat_lower == "attack_speed") {
-		attack_speed = (float) atof(value.c_str());
+		attack_speed = Strings::ToFloat(value);
 		CalcBonuses();
 		return;
 	}
 	else if (stat_lower == "attack_delay") {
 		/* TODO: fix DB */
-		attack_delay = atoi(value.c_str()) * 100;
+		attack_delay = Strings::ToInt(value) * 100;
 		CalcBonuses();
 		return;
 	}
 	else if (stat_lower == "atk") {
-		ATK = atoi(value.c_str());
+		ATK = Strings::ToInt(value);
 		return;
 	}
 	else if (stat_lower == "accuracy") {
-		accuracy_rating = atoi(value.c_str());
+		accuracy_rating = Strings::ToInt(value);
 		return;
 	}
 	else if (stat_lower == "avoidance") {
-		avoidance_rating = atoi(value.c_str());
+		avoidance_rating = Strings::ToInt(value);
 		return;
 	}
 	else if (stat_lower == "trackable") {
-		trackable = atoi(value.c_str());
+		trackable = Strings::ToInt(value);
 		return;
 	}
 	else if (stat_lower == "min_hit") {
-		min_dmg     = atoi(value.c_str());
+		min_dmg = Strings::ToInt(value);
+
 		// TODO: fix DB
+
+		if (min_dmg > max_dmg) {
+			const auto temporary_damage = max_dmg;
+			max_dmg = min_dmg;
+			min_dmg = temporary_damage;
+		}
+
 		base_damage = round((max_dmg - min_dmg) / 1.9);
 		min_damage  = min_dmg - round(base_damage / 10.0);
 		return;
 	}
 	else if (stat_lower == "max_hit") {
-		max_dmg     = atoi(value.c_str());
+		max_dmg = Strings::ToInt(value);
+
 		// TODO: fix DB
+
+		if (max_dmg < min_dmg) {
+			const auto temporary_damage = min_dmg;
+			min_dmg = max_dmg;
+			max_dmg = temporary_damage;
+		}
+
 		base_damage = round((max_dmg - min_dmg) / 1.9);
 		min_damage  = min_dmg - round(base_damage / 10.0);
 		return;
 	}
 	else if (stat_lower == "attack_count") {
-		attack_count = atoi(value.c_str());
+		attack_count = Strings::ToInt(value);
 		return;
 	}
 	else if (stat_lower == "see_invis") {
-		see_invis = atoi(value.c_str());
+		see_invis = Strings::ToInt(value);
 		return;
 	}
 	else if (stat_lower == "see_invis_undead") {
-		see_invis_undead = atoi(value.c_str());
+		see_invis_undead = Strings::ToInt(value);
 		return;
 	}
 	else if (stat_lower == "see_hide") {
-		see_hide = atoi(value.c_str());
+		see_hide = Strings::ToInt(value);
 		return;
 	}
 	else if (stat_lower == "see_improved_hide") {
-		see_improved_hide = atoi(value.c_str());
+		see_improved_hide = Strings::ToInt(value);
 		return;
 	}
 	else if (stat_lower == "hp_regen") {
-		hp_regen = strtoll(value.c_str(), nullptr, 10);
+		hp_regen = Strings::ToBigInt(value);
 		return;
 	}
 	else if (stat_lower == "hp_regen_per_second") {
-		hp_regen_per_second = strtoll(value.c_str(), nullptr, 10);
+		hp_regen_per_second = Strings::ToBigInt(value);
 		return;
 	}
 	else if (stat_lower == "mana_regen") {
-		mana_regen = strtoll(value.c_str(), nullptr, 10);
+		mana_regen = Strings::ToBigInt(value);
 		return;
 	}
 	else if (stat_lower == "level") {
-		SetLevel(atoi(value.c_str()));
+		SetLevel(Strings::ToInt(value));
 		return;
 	}
 	else if (stat_lower == "aggro") {
-		pAggroRange = atof(value.c_str());
+		pAggroRange = Strings::ToFloat(value);
 		return;
 	}
 	else if (stat_lower == "assist") {
-		pAssistRange = atof(value.c_str());
+		pAssistRange = Strings::ToFloat(value);
 		return;
 	}
 	else if (stat_lower == "slow_mitigation") {
-		slow_mitigation = atoi(value.c_str());
+		slow_mitigation = Strings::ToInt(value);
 		return;
 	}
 	else if (stat_lower == "loottable_id") {
-		loottable_id = atof(value.c_str());
+		loottable_id = Strings::ToFloat(value);
 		return;
 	}
 	else if (stat_lower == "healscale") {
-		healscale = atof(value.c_str());
+		healscale = Strings::ToFloat(value);
 		return;
 	}
 	else if (stat_lower == "spellscale") {
-		spellscale = atof(value.c_str());
+		spellscale = Strings::ToFloat(value);
 		return;
 	}
 	else if (stat_lower == "npc_spells_id") {
-		AI_AddNPCSpells(atoi(value.c_str()));
+		AI_AddNPCSpells(Strings::ToInt(value));
 		return;
 	}
 	else if (stat_lower == "npc_spells_effects_id") {
-		AI_AddNPCSpellsEffects(atoi(value.c_str()));
+		AI_AddNPCSpellsEffects(Strings::ToInt(value));
 		CalcBonuses();
 		return;
 	}
 	else if (stat_lower == "heroic_strikethrough") {
-		heroic_strikethrough = atoi(value.c_str());
+		heroic_strikethrough = Strings::ToInt(value);
 		return;
 	}
 	else if (stat_lower == "keeps_sold_items") {
@@ -2684,11 +2749,10 @@ void NPC::ModifyNPCStat(std::string stat, std::string value)
 	}
 }
 
-float NPC::GetNPCStat(std::string stat)
+float NPC::GetNPCStat(const std::string& stat)
 {
-	auto stat_lower = Strings::ToLower(stat);
 
-	if (stat_lower == "ac") {
+	if (auto stat_lower = Strings::ToLower(stat); stat_lower == "ac") {
 		return AC;
 	}
 	else if (stat_lower == "str") {
@@ -2738,9 +2802,6 @@ float NPC::GetNPCStat(std::string stat)
 	}
 	else if (stat_lower == "dr") {
 		return DR;
-	}
-	else if (stat_lower == "phr") {
-		return PhR;
 	}
 	else if (stat_lower == "runspeed") {
 		return runspeed;
@@ -2955,7 +3016,6 @@ void NPC::LevelScale() {
 	}
 	level = random_level;
 
-	return;
 }
 
 uint32 NPC::GetSpawnPointID() const
@@ -3003,7 +3063,6 @@ void NPC::SetSwarmTarget(int target_id)
 	{
 		GetSwarmInfo()->target = target_id;
 	}
-	return;
 }
 
 int64 NPC::CalcMaxMana()
@@ -3016,7 +3075,6 @@ int64 NPC::CalcMaxMana()
 			case 'W':
 				max_mana = (((GetWIS() / 2) + 1) * GetLevel()) + spellbonuses.Mana + itembonuses.Mana;
 				break;
-			case 'N':
 			default:
 				max_mana = 0;
 				break;
@@ -3035,7 +3093,6 @@ int64 NPC::CalcMaxMana()
 			case 'W':
 				max_mana = npc_mana + spellbonuses.Mana + itembonuses.Mana;
 				break;
-			case 'N':
 			default:
 				max_mana = 0;
 				break;
@@ -3055,8 +3112,11 @@ void NPC::SignalNPC(int _signal_id)
 
 void NPC::SendPayload(int payload_id, std::string payload_value)
 {
-	const auto export_string = fmt::format("{} {}", payload_id, payload_value);
-	parse->EventNPC(EVENT_PAYLOAD, this, nullptr, export_string, 0);
+	if (parse->HasQuestSub(GetNPCTypeID(), EVENT_PAYLOAD)) {
+		const auto& export_string = fmt::format("{} {}", payload_id, payload_value);
+
+		parse->EventNPC(EVENT_PAYLOAD, this, nullptr, export_string, 0);
+	}
 }
 
 NPC_Emote_Struct* NPC::GetNPCEmote(uint32 emoteid, uint8 event_) {
@@ -3066,16 +3126,16 @@ NPC_Emote_Struct* NPC::GetNPCEmote(uint32 emoteid, uint8 event_) {
 	{
 		NPC_Emote_Struct* nes = iterator.GetData();
 		if (emoteid == nes->emoteid && event_ == nes->event_) {
-			return (nes);
+			return nes;
 		}
 		iterator.Advance();
 	}
-	return (nullptr);
+	return nullptr;
 }
 
 void NPC::DoNPCEmote(uint8 event_, uint32 emoteid)
 {
-	if(this == nullptr || emoteid == 0)
+	if (emoteid == 0)
 	{
 		return;
 	}
@@ -3691,7 +3751,7 @@ void NPC::ReloadSpells() {
 	AI_AddNPCSpellsEffects(GetNPCSpellsEffectsID());
 }
 
-void NPC::ScaleNPC(uint8 npc_level, bool always_scale_stats, bool always_scale_special_abilities) {
+void NPC::ScaleNPC(uint8 npc_level, bool always_scale, bool override_special_abilities) {
 	if (GetLevel() != npc_level) {
 		SetLevel(npc_level);
 		RecalculateSkills();
@@ -3699,7 +3759,7 @@ void NPC::ScaleNPC(uint8 npc_level, bool always_scale_stats, bool always_scale_s
 	}
 
 	npc_scale_manager->ResetNPCScaling(this);
-	npc_scale_manager->ScaleNPC(this, always_scale_stats, always_scale_special_abilities);
+	npc_scale_manager->ScaleNPC(this, always_scale, override_special_abilities);
 }
 
 bool NPC::IsGuard()
@@ -3762,11 +3822,6 @@ void NPC::SetRecordLootStats(bool record_loot_stats)
 	NPC::m_record_loot_stats = record_loot_stats;
 }
 
-void NPC::FlushLootStats()
-{
-	m_rolled_items = {};
-}
-
 const std::vector<uint32> &NPC::GetRolledItems() const
 {
 	return m_rolled_items;
@@ -3782,4 +3837,169 @@ int NPC::GetRolledItemCount(uint32 item_id)
 	}
 
 	return rolled_count;
+}
+
+void NPC::SendPositionToClients()
+{
+	auto      p  = new EQApplicationPacket(OP_ClientUpdate, sizeof(PlayerPositionUpdateServer_Struct));
+	auto      *s = (PlayerPositionUpdateServer_Struct *) p->pBuffer;
+	for (auto &c: entity_list.GetClientList()) {
+		MakeSpawnUpdate(s);
+		c.second->QueuePacket(p, false);
+	}
+	safe_delete(p);
+}
+
+void NPC::HandleRoambox()
+{
+	bool has_arrived = GetCWP() == EQ::WaypointStatus::RoamBoxPauseInProgress && !IsMoving();
+	if (has_arrived) {
+		int roambox_move_delay = EQ::ClampLower(GetRoamboxDelay(), GetRoamboxMinDelay());
+		int move_delay_max     = (roambox_move_delay > 0 ? roambox_move_delay : (int) GetRoamboxMinDelay() * 4);
+		int random_timer       = RandomTimer(
+			GetRoamboxMinDelay(),
+			move_delay_max
+		);
+
+		LogNPCRoamBoxDetail(
+			"({}) random_timer [{}] roambox_move_delay [{}] move_min [{}] move_max [{}]",
+			GetCleanName(),
+			random_timer,
+			roambox_move_delay,
+			(int) GetRoamboxMinDelay(),
+			move_delay_max
+		);
+
+		time_until_can_move = Timer::GetCurrentTime() + random_timer;
+		SetCurrentWP(0);
+		return;
+	}
+
+	bool ready_to_set_new_destination = !IsMoving() && time_until_can_move < Timer::GetCurrentTime();
+	if (ready_to_set_new_destination) {
+		// make several attempts to find a valid next move in the box
+		bool can_path = false;
+		for (int i = 0; i < 10; i++) {
+			auto move_x      = static_cast<float>(zone->random.Real(-m_roambox.distance, m_roambox.distance));
+			auto move_y      = static_cast<float>(zone->random.Real(-m_roambox.distance, m_roambox.distance));
+			auto requested_x = EQ::Clamp((GetX() + move_x), m_roambox.min_x, m_roambox.max_x);
+			auto requested_y = EQ::Clamp((GetY() + move_y), m_roambox.min_y, m_roambox.max_y);
+			auto requested_z = GetGroundZ(requested_x, requested_y);
+
+			std::vector<float> heights = {0, 250, -250};
+			for (auto &h: heights) {
+				if (CheckLosFN(requested_x, requested_y, requested_z + h, GetSize())) {
+					LogNPCRoamBox("[{}] Found line of sight to path attempt [{}] at height [{}]", GetCleanName(), i, h);
+					can_path = true;
+					break;
+				}
+			}
+
+			if (!can_path) {
+				LogNPCRoamBox("[{}] | Failed line of sight to path attempt [{}]", GetCleanName(), i);
+				continue;
+			}
+
+			m_roambox.dest_x = requested_x;
+			m_roambox.dest_y = requested_y;
+
+			/**
+			 * If our roambox was configured with large distances, chances of hitting the min or max end of
+			 * the clamp is high, this causes NPC's to gather on the border of a box, to reduce clustering
+			 * either lower the roambox distance or the code will do a simple random between min - max when it
+			 * hits the min or max of the clamp
+			 */
+			if (m_roambox.dest_x == m_roambox.min_x || m_roambox.dest_x == m_roambox.max_x) {
+				m_roambox.dest_x = static_cast<float>(zone->random.Real(m_roambox.min_x, m_roambox.max_x));
+			}
+
+			if (m_roambox.dest_y == m_roambox.min_y || m_roambox.dest_y == m_roambox.max_y) {
+				m_roambox.dest_y = static_cast<float>(zone->random.Real(m_roambox.min_y, m_roambox.max_y));
+			}
+
+			// If mob was not spawned in water, let's not randomly roam them into water
+			// if the roam box was sloppily configured
+			if (!GetWasSpawnedInWater()) {
+				m_roambox.dest_z = GetGroundZ(m_roambox.dest_x, m_roambox.dest_y);
+				if (zone->HasMap() && zone->HasWaterMap()) {
+					auto position = glm::vec3(
+						m_roambox.dest_x,
+						m_roambox.dest_y,
+						m_roambox.dest_z
+					);
+
+					// If someone brought us into water when we naturally wouldn't path there, return to spawn
+					if (zone->watermap->InLiquid(position) && zone->watermap->InLiquid(m_Position)) {
+						m_roambox.dest_x = m_SpawnPoint.x;
+						m_roambox.dest_y = m_SpawnPoint.y;
+					}
+
+					if (zone->watermap->InLiquid(position)) {
+						LogNPCRoamBoxDetail("[{}] | My destination is in water and I don't belong there!", GetCleanName());
+
+						return;
+					}
+				}
+			}
+			else { // Mob was in water, make sure new spot is in water also
+				m_roambox.dest_z = m_Position.z;
+				auto position = glm::vec3(
+					m_roambox.dest_x,
+					m_roambox.dest_y,
+					m_Position.z + 15
+				);
+				if (zone->HasWaterMap() && !zone->watermap->InLiquid(position)) {
+					m_roambox.dest_x = m_SpawnPoint.x;
+					m_roambox.dest_y = m_SpawnPoint.y;
+					m_roambox.dest_z = m_SpawnPoint.z;
+				}
+			}
+
+			LogNPCRoamBox(
+				"[{}] | Pathing to [{}] [{}] [{}]",
+				GetCleanName(),
+				m_roambox.dest_x,
+				m_roambox.dest_y,
+				m_roambox.dest_z
+			);
+
+			LogNPCRoamBox(
+				"NPC ({}) distance [{}] X (min/max) [{} / {}] Y (min/max) [{} / {}] | Dest x/y/z [{} / {} / {}]",
+				GetCleanName(),
+				m_roambox.distance,
+				m_roambox.min_x,
+				m_roambox.max_x,
+				m_roambox.min_y,
+				m_roambox.max_y,
+				m_roambox.dest_x,
+				m_roambox.dest_y,
+				m_roambox.dest_z
+			);
+
+			if (can_path) {
+				SetCurrentWP(EQ::WaypointStatus::RoamBoxPauseInProgress);
+				NavigateTo(m_roambox.dest_x, m_roambox.dest_y, m_roambox.dest_z);
+				return;
+			}
+		}
+
+		// failed to find path, reset timer
+		int roambox_move_delay = EQ::ClampLower(GetRoamboxDelay(), GetRoamboxMinDelay());
+		int move_delay_max     = (roambox_move_delay > 0 ? roambox_move_delay : (int) GetRoamboxMinDelay() * 4);
+		int random_timer       = RandomTimer(
+			GetRoamboxMinDelay(),
+			move_delay_max
+		);
+		time_until_can_move = Timer::GetCurrentTime() + random_timer;
+	}
+
+	return;
+}
+
+void NPC::SetTaunting(bool is_taunting) {
+	taunting = is_taunting;
+
+	if (IsPet() && IsPetOwnerClient()) {
+		GetOwner()->CastToClient()->SetPetCommandState(PET_BUTTON_TAUNT, is_taunting);
+	}
 }

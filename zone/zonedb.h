@@ -285,6 +285,55 @@ struct ClientMercEntry {
 	uint32 npcid;
 };
 
+struct CharacterCorpseItemEntry
+{
+	uint32 item_id;
+	int16 equip_slot;
+	uint16 charges;
+	uint16 lootslot;
+	uint32 aug_1;
+	uint32 aug_2;
+	uint32 aug_3;
+	uint32 aug_4;
+	uint32 aug_5;
+	uint32 aug_6;
+	bool attuned;
+	std::string custom_data;
+	uint32 ornamenticon;
+	uint32 ornamentidfile;
+	uint32 ornament_hero_model;
+};
+
+struct CharacterCorpseEntry
+{
+	bool locked;
+	uint32 exp;
+	float size;
+	uint8 level;
+	uint32 race;
+	uint8 gender;
+	uint8 class_;
+	uint8 deity;
+	uint8 texture;
+	uint8 helmtexture;
+	uint32 copper;
+	uint32 silver;
+	uint32 gold;
+	uint32 plat;
+	EQ::TintProfile item_tint;
+	uint8 haircolor;
+	uint8 beardcolor;
+	uint8 eyecolor1;
+	uint8 eyecolor2;
+	uint8 hairstyle;
+	uint8 face;
+	uint8 beard;
+	uint32 drakkin_heritage;
+	uint32 drakkin_tattoo;
+	uint32 drakkin_details;
+	std::vector<CharacterCorpseItemEntry> items;
+};
+
 namespace BeastlordPetData {
 	struct PetStruct {
 		uint16 race_id = WOLF;
@@ -393,11 +442,9 @@ public:
 	bool LoadCharacterPotions(uint32 character_id, PlayerProfile_Struct* pp);
 	bool LoadCharacterSkills(uint32 character_id, PlayerProfile_Struct* pp);
 	bool LoadCharacterSpellBook(uint32 character_id, PlayerProfile_Struct* pp);
-	bool LoadCharacterTribute(uint32 character_id, PlayerProfile_Struct* pp);
 
 	bool SaveCharacterAA(uint32 character_id, uint32 aa_id, uint32 current_level, uint32 charges);
 	bool SaveCharacterBandolier(uint32 character_id, uint8 bandolier_id, uint8 bandolier_slot, uint32 item_id, uint32 icon, const char* bandolier_name);
-	bool SaveCharacterBindPoint(uint32 character_id, const BindStruct &bind, uint32 bind_number);
 	bool SaveCharacterCurrency(uint32 character_id, PlayerProfile_Struct* pp);
 	bool SaveCharacterData(Client* c, PlayerProfile_Struct* pp, ExtendedProfile_Struct* m_epp);
 	bool SaveCharacterDisc(uint32 character_id, uint32 slot_id, uint32 disc_id);
@@ -408,7 +455,6 @@ public:
 	bool SaveCharacterPotionBelt(uint32 character_id, uint8 potion_id, uint32 item_id, uint32 icon);
 	bool SaveCharacterSkill(uint32 character_id, uint32 skill_id, uint32 value);
 	bool SaveCharacterSpell(uint32 character_id, uint32 spell_id, uint32 slot_id);
-	bool SaveCharacterTribute(uint32 character_id, PlayerProfile_Struct* pp);
 
 	double GetAAEXPModifier(uint32 character_id, uint32 zone_id, int16 instance_version = -1) const;
 	double GetEXPModifier(uint32 character_id, uint32 zone_id, int16 instance_version = -1) const;
@@ -429,8 +475,7 @@ public:
 
 	/* Corpses  */
 	bool		DeleteItemOffCharacterCorpse(uint32 db_id, uint32 equip_slot, uint32 item_id);
-	uint32		GetCharacterCorpseItemCount(uint32 corpse_id);
-	bool		LoadCharacterCorpseData(uint32 corpse_id, PlayerCorpse_Struct* pcs);
+	bool		LoadCharacterCorpseData(uint32 corpse_id, CharacterCorpseEntry &corpse);
 	Corpse*		LoadCharacterCorpse(uint32 player_corpse_id);
 	Corpse*		SummonBuriedCharacterCorpses(uint32 char_id, uint32 dest_zoneid, uint16 dest_instanceid, const glm::vec4& position);
 	void		MarkCorpseAsRezzed(uint32 dbid);
@@ -446,8 +491,8 @@ public:
 	uint32		GetCharacterCorpseDecayTimer(uint32 corpse_db_id);
 	uint32		GetCharacterBuriedCorpseCount(uint32 char_id);
 	uint32		SendCharacterCorpseToGraveyard(uint32 dbid, uint32 zoneid, uint16 instanceid, const glm::vec4& position);
-	uint32		SaveCharacterCorpse(uint32 charid, const char* charname, uint32 zoneid, uint16 instanceid, PlayerCorpse_Struct* dbpc, const glm::vec4& position, uint32 guildid);
-	uint32		UpdateCharacterCorpse(uint32 dbid, uint32 charid, const char* charname, uint32 zoneid, uint16 instanceid, PlayerCorpse_Struct* dbpc, const glm::vec4& position, uint32 guildid, bool rezzed = false);
+	uint32		SaveCharacterCorpse(uint32 charid, const char* charname, uint32 zoneid, uint16 instanceid, const CharacterCorpseEntry& corpse, const glm::vec4& position, uint32 guildid);
+	uint32		UpdateCharacterCorpse(uint32 dbid, uint32 charid, const char* charname, uint32 zoneid, uint16 instanceid, const CharacterCorpseEntry& corpse, const glm::vec4& position, uint32 guildid, bool rezzed = false);
 	uint32		UpdateCharacterCorpseConsent(uint32 charid, uint32 guildid);
 	uint32		GetFirstCorpseID(uint32 char_id);
 	uint32		GetCharacterCorpseCount(uint32 char_id);
@@ -480,8 +525,6 @@ public:
 	bool		LoadSpawnGroups(const char* zone_name, uint16 version, SpawnGroupList* spawn_group_list);
 	bool		LoadSpawnGroupsByID(int spawn_group_id, SpawnGroupList* spawn_group_list);
 	bool		PopulateZoneSpawnList(uint32 zoneid, LinkedList<Spawn2*> &spawn2_list, int16 version);
-	bool		PopulateZoneSpawnListClose(uint32 zoneid, LinkedList<Spawn2*> &spawn2_list, int16 version, const glm::vec4& client_position, uint32 repop_distance);
-	Spawn2*		LoadSpawn2(LinkedList<Spawn2*> &spawn2_list, uint32 spawn2id, uint32 timeleft);
 	bool		CreateSpawn2(Client *c, uint32 spawngroup, const char* zone, const glm::vec4& position, uint32 respawn, uint32 variance, uint16 condition, int16 cond_value);
 	void		UpdateRespawnTime(uint32 id, uint16 instance_id,uint32 timeleft);
 	uint32		GetSpawnTimeLeft(uint32 id, uint16 instance_id);
@@ -563,6 +606,8 @@ public:
 	void	UpdateRecipeMadecount(uint32 recipe_id, uint32 char_id, uint32 madecount);
 	bool	EnableRecipe(uint32 recipe_id);
 	bool	DisableRecipe(uint32 recipe_id);
+	std::vector<uint32> GetRecipeComponentItemIDs(RecipeCountType count_type, uint32 recipe_id);
+	int8 GetRecipeComponentCount(RecipeCountType count_type, uint32 recipe_id, uint32 item_id);
 
 	/* Tribute  */
 	bool	LoadTributes();
@@ -610,16 +655,16 @@ public:
 		* PLEASE DO NOT ADD TO THIS COLLECTION OF CRAP UNLESS YOUR METHOD
 		* REALLY HAS NO BETTER SECTION
 	*/
-	bool	logevents(const char* accountname,uint32 accountid,uint8 status,const char* charname,const char* target, const char* descriptiontype, const char* description,int event_nid);
 	uint32	GetKarma(uint32 acct_id);
 	void	UpdateKarma(uint32 acct_id, uint32 amount);
-
-	/* Things which really dont belong here... */
-	int16	CommandRequirement(const char* commandname);
 
 	// bot database add-on to eliminate the need for a second database connection
 	BotDatabase botdb;
 
+	static void LoadCharacterTribute(Client* c);
+
+	static void SaveCharacterBinds(Client *c);
+	static void SaveCharacterTribute(Client* c);
 protected:
 	void ZDBInitVars();
 

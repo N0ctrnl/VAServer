@@ -30,6 +30,8 @@
 extern ZSList      zoneserver_list;
 extern WorldConfig Config;
 
+auto mutex = new Mutex;
+
 void WorldBoot::GMSayHookCallBackProcessWorld(uint16 log_category, const char *func, std::string message)
 {
 	// we don't want to loop up with chat messages
@@ -136,9 +138,7 @@ bool WorldBoot::LoadDatabaseConnections()
 		return false;
 	}
 
-	/**
-	 * Multi-tenancy: Content database
-	 */
+	// Multi-tenancy - content database
 	if (!c->ContentDbHost.empty()) {
 		if (!content_db.Connect(
 			c->ContentDbHost.c_str(),
@@ -153,7 +153,12 @@ bool WorldBoot::LoadDatabaseConnections()
 		}
 	}
 	else {
-		content_db.SetMysql(database.getMySQL());
+		content_db.SetMySQL(database);
+		// when database and content_db share the same underlying mysql connection
+		// it needs to be protected by a shared mutex otherwise we produce concurrency issues
+		// when database actions are occurring in different threads
+		database.SetMutex(mutex);
+		content_db.SetMutex(mutex);
 	}
 
 	return true;
@@ -199,7 +204,7 @@ void WorldBoot::CheckForServerScript(bool force_download)
 		r.set_read_timeout(1, 0);
 		r.set_write_timeout(1, 0);
 
-		if (auto res = r.Get(u.get_path().c_str())) {
+		if (auto res = r.Get(u.get_path())) {
 			if (res->status == 200) {
 				// write file
 
@@ -290,15 +295,17 @@ bool WorldBoot::DatabaseLoadRoutines(int argc, char **argv)
 		}
 	}
 
-	if (!ignore_db) {
-		LogInfo("Checking Database Conversions");
-		database.CheckDatabaseConversions();
-	}
-
 	// logging system init
 	auto logging = LogSys.SetDatabase(&database)
 		->SetLogPath(path.GetLogPath())
 		->LoadLogDatabaseSettings();
+
+	LogSys.SetDiscordHandler(&WorldBoot::DiscordWebhookMessageHandler);
+
+	if (!ignore_db) {
+		LogInfo("Checking Database Conversions");
+		database.CheckDatabaseConversions();
+	}
 
 	if (RuleB(Logging, WorldGMSayLogging)) {
 		logging->SetGMSayHandler(&WorldBoot::GMSayHookCallBackProcessWorld);
@@ -364,7 +371,7 @@ bool WorldBoot::DatabaseLoadRoutines(int argc, char **argv)
 		if (database.GetVariable("RuleSet", tmp)) {
 			LogInfo("Loading rule set [{}]", tmp.c_str());
 
-			if (!RuleManager::Instance()->LoadRules(&database, tmp.c_str(), false)) {
+			if (!RuleManager::Instance()->LoadRules(&database, tmp, false)) {
 				LogInfo("Failed to load ruleset [{}], falling back to defaults", tmp.c_str());
 			}
 		}
@@ -649,6 +656,26 @@ void WorldBoot::CheckForPossibleConfigurationIssues()
 			c->MailHost
 		);
 		std::cout << std::endl;
+	}
+}
+
+void WorldBoot::Shutdown()
+{
+	safe_delete(mutex);
+}
+
+void WorldBoot::SendDiscordMessage(int webhook_id, const std::string &message)
+{
+	if (UCSLink.IsConnected()) {
+		auto pack = new ServerPacket(ServerOP_DiscordWebhookMessage, sizeof(DiscordWebhookMessage_Struct) + 1);
+		auto *q   = (DiscordWebhookMessage_Struct *) pack->pBuffer;
+
+		strn0cpy(q->message, message.c_str(), 2000);
+		q->webhook_id = webhook_id;
+
+		UCSLink.SendPacket(pack);
+
+		safe_delete(pack);
 	}
 }
 

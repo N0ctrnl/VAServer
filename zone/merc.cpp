@@ -6,17 +6,8 @@
 #include "groups.h"
 #include "mob.h"
 
-#include "../common/eqemu_logsys.h"
-#include "../common/eq_packet_structs.h"
-#include "../common/eq_constants.h"
-#include "../common/skills.h"
-#include "../common/spdat.h"
-
 #include "zone.h"
 #include "string_ids.h"
-
-#include "../common/strings.h"
-#include "../common/rulesys.h"
 
 extern volatile bool is_zone_loaded;
 
@@ -188,387 +179,6 @@ float Merc::GetDefaultSize() {
 	}
 
 	return MercSize;
-}
-
-int Merc::CalcRecommendedLevelBonus(uint8 level, uint8 reclevel, int basestat)
-{
-	if( (reclevel > 0) && (level < reclevel) )
-	{
-		int32 statmod = (level * 10000 / reclevel) * basestat;
-
-		if( statmod < 0 )
-		{
-			statmod -= 5000;
-			return (statmod/10000);
-		}
-		else
-		{
-			statmod += 5000;
-			return (statmod/10000);
-		}
-	}
-
-	return 0;
-}
-
-void Merc::CalcItemBonuses(StatBonuses* newbon) {
-	//memset assumed to be done by caller.
-
-
-	unsigned int i;
-	//should not include 21 (SLOT_AMMO)
-	for (i = EQ::invslot::BONUS_BEGIN; i <= EQ::invslot::BONUS_STAT_END; i++) {
-		if (i == EQ::invslot::slotAmmo)
-			continue;
-		if (equipment[i] == 0)
-			continue;
-		const EQ::ItemData * itm = database.GetItem(equipment[i]);
-		if (itm)
-			AddItemBonuses(itm, newbon);
-	}
-
-	// Caps
-	if(newbon->HPRegen > CalcHPRegenCap())
-		newbon->HPRegen = CalcHPRegenCap();
-
-	if(newbon->ManaRegen > CalcManaRegenCap())
-		newbon->ManaRegen = CalcManaRegenCap();
-
-	if(newbon->EnduranceRegen > CalcEnduranceRegenCap())
-		newbon->EnduranceRegen = CalcEnduranceRegenCap();
-
-	SetAttackTimer();
-}
-
-void Merc::AddItemBonuses(const EQ::ItemData *item, StatBonuses* newbon) {
-
-	if(GetLevel() < item->ReqLevel)
-	{
-		return;
-	}
-
-	if(GetLevel() >= item->RecLevel)
-	{
-		newbon->AC += item->AC;
-		newbon->HP += item->HP;
-		newbon->Mana += item->Mana;
-		newbon->Endurance += item->Endur;
-		newbon->STR += (item->AStr + item->HeroicStr);
-		newbon->STA += (item->ASta + item->HeroicSta);
-		newbon->DEX += (item->ADex + item->HeroicDex);
-		newbon->AGI += (item->AAgi + item->HeroicAgi);
-		newbon->INT += (item->AInt + item->HeroicInt);
-		newbon->WIS += (item->AWis + item->HeroicWis);
-		newbon->CHA += (item->ACha + item->HeroicCha);
-
-		newbon->MR += (item->MR + item->HeroicMR);
-		newbon->FR += (item->FR + item->HeroicFR);
-		newbon->CR += (item->CR + item->HeroicCR);
-		newbon->PR += (item->PR + item->HeroicPR);
-		newbon->DR += (item->DR + item->HeroicDR);
-		newbon->Corrup += (item->SVCorruption + item->HeroicSVCorrup);
-
-		newbon->STRCapMod += item->HeroicStr;
-		newbon->STACapMod += item->HeroicSta;
-		newbon->DEXCapMod += item->HeroicDex;
-		newbon->AGICapMod += item->HeroicAgi;
-		newbon->INTCapMod += item->HeroicInt;
-		newbon->WISCapMod += item->HeroicWis;
-		newbon->CHACapMod += item->HeroicCha;
-		newbon->MRCapMod += item->HeroicMR;
-		newbon->CRCapMod += item->HeroicFR;
-		newbon->FRCapMod += item->HeroicCR;
-		newbon->PRCapMod += item->HeroicPR;
-		newbon->DRCapMod += item->HeroicDR;
-		newbon->CorrupCapMod += item->HeroicSVCorrup;
-
-		newbon->HeroicSTR += item->HeroicStr;
-		newbon->HeroicSTA += item->HeroicSta;
-		newbon->HeroicDEX += item->HeroicDex;
-		newbon->HeroicAGI += item->HeroicAgi;
-		newbon->HeroicINT += item->HeroicInt;
-		newbon->HeroicWIS += item->HeroicWis;
-		newbon->HeroicCHA += item->HeroicCha;
-		newbon->HeroicMR += item->HeroicMR;
-		newbon->HeroicFR += item->HeroicFR;
-		newbon->HeroicCR += item->HeroicCR;
-		newbon->HeroicPR += item->HeroicPR;
-		newbon->HeroicDR += item->HeroicDR;
-		newbon->HeroicCorrup += item->HeroicSVCorrup;
-
-	}
-	else
-	{
-		int lvl = GetLevel();
-		int reclvl = item->RecLevel;
-
-		newbon->AC += CalcRecommendedLevelBonus( lvl, reclvl, item->AC );
-		newbon->HP += CalcRecommendedLevelBonus( lvl, reclvl, item->HP );
-		newbon->Mana += CalcRecommendedLevelBonus( lvl, reclvl, item->Mana );
-		newbon->Endurance += CalcRecommendedLevelBonus( lvl, reclvl, item->Endur );
-		newbon->STR += CalcRecommendedLevelBonus( lvl, reclvl, (item->AStr + item->HeroicStr) );
-		newbon->STA += CalcRecommendedLevelBonus( lvl, reclvl, (item->ASta + item->HeroicSta) );
-		newbon->DEX += CalcRecommendedLevelBonus( lvl, reclvl, (item->ADex + item->HeroicDex) );
-		newbon->AGI += CalcRecommendedLevelBonus( lvl, reclvl, (item->AAgi + item->HeroicAgi) );
-		newbon->INT += CalcRecommendedLevelBonus( lvl, reclvl, (item->AInt + item->HeroicInt) );
-		newbon->WIS += CalcRecommendedLevelBonus( lvl, reclvl, (item->AWis + item->HeroicWis) );
-		newbon->CHA += CalcRecommendedLevelBonus( lvl, reclvl, (item->ACha + item->HeroicCha) );
-
-		newbon->MR += CalcRecommendedLevelBonus( lvl, reclvl, (item->MR + item->HeroicMR) );
-		newbon->FR += CalcRecommendedLevelBonus( lvl, reclvl, (item->FR + item->HeroicFR) );
-		newbon->CR += CalcRecommendedLevelBonus( lvl, reclvl, (item->CR + item->HeroicCR) );
-		newbon->PR += CalcRecommendedLevelBonus( lvl, reclvl, (item->PR + item->HeroicPR) );
-		newbon->DR += CalcRecommendedLevelBonus( lvl, reclvl, (item->DR + item->HeroicDR) );
-		newbon->Corrup += CalcRecommendedLevelBonus( lvl, reclvl, (item->SVCorruption + item->HeroicSVCorrup) );
-
-		newbon->STRCapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicStr );
-		newbon->STACapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicSta );
-		newbon->DEXCapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicDex );
-		newbon->AGICapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicAgi );
-		newbon->INTCapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicInt );
-		newbon->WISCapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicWis );
-		newbon->CHACapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicCha );
-		newbon->MRCapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicMR );
-		newbon->CRCapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicFR );
-		newbon->FRCapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicCR );
-		newbon->PRCapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicPR );
-		newbon->DRCapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicDR );
-		newbon->CorrupCapMod += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicSVCorrup );
-
-		newbon->HeroicSTR += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicStr );
-		newbon->HeroicSTA += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicSta );
-		newbon->HeroicDEX += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicDex );
-		newbon->HeroicAGI += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicAgi );
-		newbon->HeroicINT += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicInt );
-		newbon->HeroicWIS += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicWis );
-		newbon->HeroicCHA += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicCha );
-		newbon->HeroicMR += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicMR );
-		newbon->HeroicFR += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicFR );
-		newbon->HeroicCR += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicCR );
-		newbon->HeroicPR += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicPR );
-		newbon->HeroicDR += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicDR );
-		newbon->HeroicCorrup += CalcRecommendedLevelBonus( lvl, reclvl, item->HeroicSVCorrup );
-	}
-
-	//FatherNitwit: New style haste, shields, and regens
-	if(newbon->haste < item->Haste) {
-		newbon->haste = item->Haste;
-	}
-	if(item->Regen > 0)
-		newbon->HPRegen += item->Regen;
-
-	if(item->ManaRegen > 0)
-		newbon->ManaRegen += item->ManaRegen;
-
-	if(item->EnduranceRegen > 0)
-		newbon->EnduranceRegen += item->EnduranceRegen;
-
-	if(item->Attack > 0) {
-
-		unsigned int cap = RuleI(Character, ItemATKCap);
-		cap += itembonuses.ItemATKCap + spellbonuses.ItemATKCap + aabonuses.ItemATKCap;
-
-		if((newbon->ATK + item->Attack) > cap)
-			newbon->ATK = RuleI(Character, ItemATKCap);
-		else
-			newbon->ATK += item->Attack;
-	}
-	if(item->DamageShield > 0) {
-		if((newbon->DamageShield + item->DamageShield) > RuleI(Character, ItemDamageShieldCap))
-			newbon->DamageShield = RuleI(Character, ItemDamageShieldCap);
-		else
-			newbon->DamageShield += item->DamageShield;
-	}
-	if(item->SpellShield > 0) {
-		if((newbon->SpellShield + item->SpellShield) > RuleI(Character, ItemSpellShieldingCap))
-			newbon->SpellShield = RuleI(Character, ItemSpellShieldingCap);
-		else
-			newbon->SpellShield += item->SpellShield;
-	}
-	if(item->Shielding > 0) {
-		if((newbon->MeleeMitigation + item->Shielding) > RuleI(Character, ItemShieldingCap))
-			newbon->MeleeMitigation = RuleI(Character, ItemShieldingCap);
-		else
-			newbon->MeleeMitigation += item->Shielding;
-	}
-	if(item->StunResist > 0) {
-		if((newbon->StunResist + item->StunResist) > RuleI(Character, ItemStunResistCap))
-			newbon->StunResist = RuleI(Character, ItemStunResistCap);
-		else
-			newbon->StunResist += item->StunResist;
-	}
-	if(item->StrikeThrough > 0) {
-		if((newbon->StrikeThrough + item->StrikeThrough) > RuleI(Character, ItemStrikethroughCap))
-			newbon->StrikeThrough = RuleI(Character, ItemStrikethroughCap);
-		else
-			newbon->StrikeThrough += item->StrikeThrough;
-	}
-	if(item->Avoidance > 0) {
-		if((newbon->AvoidMeleeChance + item->Avoidance) > RuleI(Character, ItemAvoidanceCap))
-			newbon->AvoidMeleeChance = RuleI(Character, ItemAvoidanceCap);
-		else
-			newbon->AvoidMeleeChance += item->Avoidance;
-	}
-	if(item->Accuracy > 0) {
-		if((newbon->HitChance + item->Accuracy) > RuleI(Character, ItemAccuracyCap))
-			newbon->HitChance = RuleI(Character, ItemAccuracyCap);
-		else
-			newbon->HitChance += item->Accuracy;
-	}
-	if(item->CombatEffects > 0) {
-		if((newbon->ProcChance + item->CombatEffects) > RuleI(Character, ItemCombatEffectsCap))
-			newbon->ProcChance = RuleI(Character, ItemCombatEffectsCap);
-		else
-			newbon->ProcChance += item->CombatEffects;
-	}
-	if(item->DotShielding > 0) {
-		if((newbon->DoTShielding + item->DotShielding) > RuleI(Character, ItemDoTShieldingCap))
-			newbon->DoTShielding = RuleI(Character, ItemDoTShieldingCap);
-		else
-			newbon->DoTShielding += item->DotShielding;
-	}
-
-	if(item->HealAmt > 0) {
-		if((newbon->HealAmt + item->HealAmt) > RuleI(Character, ItemHealAmtCap))
-			newbon->HealAmt = RuleI(Character, ItemHealAmtCap);
-		else
-			newbon->HealAmt += item->HealAmt;
-	}
-	if(item->SpellDmg > 0) {
-		if((newbon->SpellDmg + item->SpellDmg) > RuleI(Character, ItemSpellDmgCap))
-			newbon->SpellDmg = RuleI(Character, ItemSpellDmgCap);
-		else
-			newbon->SpellDmg += item->SpellDmg;
-	}
-	if(item->Clairvoyance > 0) {
-		if((newbon->Clairvoyance + item->Clairvoyance) > RuleI(Character, ItemClairvoyanceCap))
-			newbon->Clairvoyance = RuleI(Character, ItemClairvoyanceCap);
-		else
-			newbon->Clairvoyance += item->Clairvoyance;
-	}
-
-	if(item->DSMitigation > 0) {
-		if((newbon->DSMitigation + item->DSMitigation) > RuleI(Character, ItemDSMitigationCap))
-			newbon->DSMitigation = RuleI(Character, ItemDSMitigationCap);
-		else
-			newbon->DSMitigation += item->DSMitigation;
-	}
-	if (item->Worn.Effect>0 && (item->Worn.Type == EQ::item::ItemEffectWorn)) { // latent effects
-		ApplySpellsBonuses(item->Worn.Effect, item->Worn.Level, newbon, 0, item->Worn.Type);
-	}
-
-	if (item->Focus.Effect>0 && (item->Focus.Type == EQ::item::ItemEffectFocus)) { // focus effects
-		ApplySpellsBonuses(item->Focus.Effect, item->Focus.Level, newbon, 0);
-	}
-
-	switch(item->BardType)
-	{
-	case 51: /* All (e.g. Singing Short Sword) */
-		{
-			if(item->BardValue > newbon->singingMod)
-				newbon->singingMod = item->BardValue;
-			if(item->BardValue > newbon->brassMod)
-				newbon->brassMod = item->BardValue;
-			if(item->BardValue > newbon->stringedMod)
-				newbon->stringedMod = item->BardValue;
-			if(item->BardValue > newbon->percussionMod)
-				newbon->percussionMod = item->BardValue;
-			if(item->BardValue > newbon->windMod)
-				newbon->windMod = item->BardValue;
-			break;
-		}
-	case 50: /* Singing */
-		{
-			if(item->BardValue > newbon->singingMod)
-				newbon->singingMod = item->BardValue;
-			break;
-		}
-	case 23: /* Wind */
-		{
-			if(item->BardValue > newbon->windMod)
-				newbon->windMod = item->BardValue;
-			break;
-		}
-	case 24: /* stringed */
-		{
-			if(item->BardValue > newbon->stringedMod)
-				newbon->stringedMod = item->BardValue;
-			break;
-		}
-	case 25: /* brass */
-		{
-			if(item->BardValue > newbon->brassMod)
-				newbon->brassMod = item->BardValue;
-			break;
-		}
-	case 26: /* Percussion */
-		{
-			if(item->BardValue > newbon->percussionMod)
-				newbon->percussionMod = item->BardValue;
-			break;
-		}
-	}
-
-	if (item->SkillModValue != 0 && item->SkillModType <= EQ::skills::HIGHEST_SKILL){
-		if ((item->SkillModValue > 0 && newbon->skillmod[item->SkillModType] < item->SkillModValue) ||
-			(item->SkillModValue < 0 && newbon->skillmod[item->SkillModType] > item->SkillModValue))
-		{
-			newbon->skillmod[item->SkillModType] = item->SkillModValue;
-		}
-	}
-
-	// Add Item Faction Mods
-	if (item->FactionMod1)
-	{
-		if (item->FactionAmt1 > 0 && item->FactionAmt1 > GetItemFactionBonus(item->FactionMod1))
-		{
-			AddItemFactionBonus(item->FactionMod1, item->FactionAmt1);
-		}
-		else if (item->FactionAmt1 < 0 && item->FactionAmt1 < GetItemFactionBonus(item->FactionMod1))
-		{
-			AddItemFactionBonus(item->FactionMod1, item->FactionAmt1);
-		}
-	}
-	if (item->FactionMod2)
-	{
-		if (item->FactionAmt2 > 0 && item->FactionAmt2 > GetItemFactionBonus(item->FactionMod2))
-		{
-			AddItemFactionBonus(item->FactionMod2, item->FactionAmt2);
-		}
-		else if (item->FactionAmt2 < 0 && item->FactionAmt2 < GetItemFactionBonus(item->FactionMod2))
-		{
-			AddItemFactionBonus(item->FactionMod2, item->FactionAmt2);
-		}
-	}
-	if (item->FactionMod3)
-	{
-		if (item->FactionAmt3 > 0 && item->FactionAmt3 > GetItemFactionBonus(item->FactionMod3))
-		{
-			AddItemFactionBonus(item->FactionMod3, item->FactionAmt3);
-		}
-		else if (item->FactionAmt3 < 0 && item->FactionAmt3 < GetItemFactionBonus(item->FactionMod3))
-		{
-			AddItemFactionBonus(item->FactionMod3, item->FactionAmt3);
-		}
-	}
-	if (item->FactionMod4)
-	{
-		if (item->FactionAmt4 > 0 && item->FactionAmt4 > GetItemFactionBonus(item->FactionMod4))
-		{
-			AddItemFactionBonus(item->FactionMod4, item->FactionAmt4);
-		}
-		else if (item->FactionAmt4 < 0 && item->FactionAmt4 < GetItemFactionBonus(item->FactionMod4))
-		{
-			AddItemFactionBonus(item->FactionMod4, item->FactionAmt4);
-		}
-	}
-
-	if (item->ExtraDmgSkill != 0 && item->ExtraDmgSkill <= EQ::skills::HIGHEST_SKILL) {
-		if((newbon->SkillDamageAmount[item->ExtraDmgSkill] + item->ExtraDmgAmt) > RuleI(Character, ItemExtraDmgCap))
-			newbon->SkillDamageAmount[item->ExtraDmgSkill] = RuleI(Character, ItemExtraDmgCap);
-		else
-			newbon->SkillDamageAmount[item->ExtraDmgSkill] += item->ExtraDmgAmt;
-	}
 }
 
 int Merc::GroupLeadershipAAHealthEnhancement()
@@ -1113,7 +723,7 @@ void Merc::DoEnduranceUpkeep() {
 	uint32 buffs_i;
 	uint32 buff_count = GetMaxTotalSlots();
 	for (buffs_i = 0; buffs_i < buff_count; buffs_i++) {
-		if (buffs[buffs_i].spellid != SPELL_UNKNOWN) {
+		if (IsValidSpell(buffs[buffs_i].spellid)) {
 			int upkeep = spells[buffs[buffs_i].spellid].endurance_upkeep;
 			if(upkeep > 0) {
 				has_effect = true;
@@ -1158,7 +768,7 @@ void Merc::CalcRestState() {
 
 	uint32 buff_count = GetMaxTotalSlots();
 	for (unsigned int j = 0; j < buff_count; j++) {
-		if(buffs[j].spellid != SPELL_UNKNOWN) {
+		if(IsValidSpell(buffs[j].spellid)) {
 			if(IsDetrimentalSpell(buffs[j].spellid) && (buffs[j].ticsremaining > 0))
 				if(!DetrimentalSpellAllowsRest(buffs[j].spellid))
 					return;
@@ -1473,7 +1083,7 @@ void Merc::AI_Process() {
 			return;
 		}
 
-		if (!(m_PlayerState & static_cast<uint32>(PlayerState::Aggressive)))
+		if (!(GetPlayerState() & static_cast<uint32>(PlayerState::Aggressive)))
 			SendAddPlayerState(PlayerState::Aggressive);
 
 		bool atCombatRange = false;
@@ -1716,7 +1326,7 @@ void Merc::AI_Process() {
 		confidence_timer.Disable();
 		_check_confidence = false;
 
-		if (m_PlayerState & static_cast<uint32>(PlayerState::Aggressive))
+		if (GetPlayerState() & static_cast<uint32>(PlayerState::Aggressive))
 			SendRemovePlayerState(PlayerState::Aggressive);
 
 		if(!check_target_timer.Enabled())
@@ -2579,7 +2189,7 @@ int64 Merc::GetFocusEffect(focusType type, uint16 spell_id, bool from_buff_tic) 
 			if (equipment[x] == 0)
 				continue;
 			TempItem = database.GetItem(equipment[x]);
-			if (TempItem && TempItem->Focus.Effect > 0 && TempItem->Focus.Effect != SPELL_UNKNOWN) {
+			if (TempItem && IsValidSpell(TempItem->Focus.Effect)) {
 				if(rand_effectiveness) {
 					focus_max = CalcFocusEffect(type, TempItem->Focus.Effect, spell_id, true);
 					if (focus_max > 0 && focus_max_real >= 0 && focus_max > focus_max_real) {
@@ -3642,6 +3252,10 @@ MercSpell Merc::GetBestMercSpellForTargetedAENuke(Merc* caster, Mob* tar) {
 	result.proc_chance = 0;
 	result.time_cancast = 0;
 
+	if (!caster) {
+		return result;
+	}
+
 	switch(caster->GetStance())
 	{
 	case EQ::constants::stanceBurnAE:
@@ -3653,28 +3267,26 @@ MercSpell Merc::GetBestMercSpellForTargetedAENuke(Merc* caster, Mob* tar) {
 		break;
 	}
 
-	if(caster) {
-		std::list<MercSpell> mercSpellList = GetMercSpellsBySpellType(caster, SpellType_Nuke);
+	std::list<MercSpell> mercSpellList = GetMercSpellsBySpellType(caster, SpellType_Nuke);
 
-		for (auto mercSpellListItr = mercSpellList.begin(); mercSpellListItr != mercSpellList.end();
-		     ++mercSpellListItr) {
-			// Assuming all the spells have been loaded into this list by level and in descending order
-			if(IsAENukeSpell(mercSpellListItr->spellid) && !IsAERainNukeSpell(mercSpellListItr->spellid)
-				&& !IsPBAENukeSpell(mercSpellListItr->spellid) && CheckSpellRecastTimers(caster, mercSpellListItr->spellid)) {
-					uint8 numTargets = 0;
-					if(CheckAENuke(caster, tar, mercSpellListItr->spellid, numTargets)) {
-						if(numTargets >= numTargetsCheck && zone->random.Roll(castChance)) {
-							result.spellid = mercSpellListItr->spellid;
-							result.stance = mercSpellListItr->stance;
-							result.type = mercSpellListItr->type;
-							result.slot = mercSpellListItr->slot;
-							result.proc_chance = mercSpellListItr->proc_chance;
-							result.time_cancast = mercSpellListItr->time_cancast;
-						}
+	for (auto mercSpellListItr = mercSpellList.begin(); mercSpellListItr != mercSpellList.end();
+		    ++mercSpellListItr) {
+		// Assuming all the spells have been loaded into this list by level and in descending order
+		if(IsAENukeSpell(mercSpellListItr->spellid) && !IsAERainNukeSpell(mercSpellListItr->spellid)
+			&& !IsPBAENukeSpell(mercSpellListItr->spellid) && CheckSpellRecastTimers(caster, mercSpellListItr->spellid)) {
+				uint8 numTargets = 0;
+				if(CheckAENuke(caster, tar, mercSpellListItr->spellid, numTargets)) {
+					if(numTargets >= numTargetsCheck && zone->random.Roll(castChance)) {
+						result.spellid = mercSpellListItr->spellid;
+						result.stance = mercSpellListItr->stance;
+						result.type = mercSpellListItr->type;
+						result.slot = mercSpellListItr->slot;
+						result.proc_chance = mercSpellListItr->proc_chance;
+						result.time_cancast = mercSpellListItr->time_cancast;
 					}
+				}
 
-					break;
-			}
+				break;
 		}
 	}
 
@@ -3694,6 +3306,10 @@ MercSpell Merc::GetBestMercSpellForPBAENuke(Merc* caster, Mob* tar) {
 	result.proc_chance = 0;
 	result.time_cancast = 0;
 
+	if (!caster) {
+		return result;
+	}
+
 	switch(caster->GetStance())
 	{
 	case EQ::constants::stanceBurnAE:
@@ -3705,27 +3321,25 @@ MercSpell Merc::GetBestMercSpellForPBAENuke(Merc* caster, Mob* tar) {
 		break;
 	}
 
-	if(caster) {
-		std::list<MercSpell> mercSpellList = GetMercSpellsBySpellType(caster, SpellType_Nuke);
+	std::list<MercSpell> mercSpellList = GetMercSpellsBySpellType(caster, SpellType_Nuke);
 
-		for (auto mercSpellListItr = mercSpellList.begin(); mercSpellListItr != mercSpellList.end();
-		     ++mercSpellListItr) {
-			// Assuming all the spells have been loaded into this list by level and in descending order
-			if(IsPBAENukeSpell(mercSpellListItr->spellid) && CheckSpellRecastTimers(caster, mercSpellListItr->spellid)) {
-				uint8 numTargets = 0;
-				if(CheckAENuke(caster, caster, mercSpellListItr->spellid, numTargets)) {
-					if(numTargets >= numTargetsCheck && zone->random.Roll(castChance)) {
-						result.spellid = mercSpellListItr->spellid;
-						result.stance = mercSpellListItr->stance;
-						result.type = mercSpellListItr->type;
-						result.slot = mercSpellListItr->slot;
-						result.proc_chance = mercSpellListItr->proc_chance;
-						result.time_cancast = mercSpellListItr->time_cancast;
-					}
+	for (auto mercSpellListItr = mercSpellList.begin(); mercSpellListItr != mercSpellList.end();
+		    ++mercSpellListItr) {
+		// Assuming all the spells have been loaded into this list by level and in descending order
+		if(IsPBAENukeSpell(mercSpellListItr->spellid) && CheckSpellRecastTimers(caster, mercSpellListItr->spellid)) {
+			uint8 numTargets = 0;
+			if(CheckAENuke(caster, caster, mercSpellListItr->spellid, numTargets)) {
+				if(numTargets >= numTargetsCheck && zone->random.Roll(castChance)) {
+					result.spellid = mercSpellListItr->spellid;
+					result.stance = mercSpellListItr->stance;
+					result.type = mercSpellListItr->type;
+					result.slot = mercSpellListItr->slot;
+					result.proc_chance = mercSpellListItr->proc_chance;
+					result.time_cancast = mercSpellListItr->time_cancast;
 				}
-
-				break;
 			}
+
+			break;
 		}
 	}
 
@@ -3745,6 +3359,10 @@ MercSpell Merc::GetBestMercSpellForAERainNuke(Merc* caster, Mob* tar) {
 	result.proc_chance = 0;
 	result.time_cancast = 0;
 
+	if (!caster) {
+		return result;
+	}
+
 	switch(caster->GetStance())
 	{
 	case EQ::constants::stanceBurnAE:
@@ -3756,27 +3374,25 @@ MercSpell Merc::GetBestMercSpellForAERainNuke(Merc* caster, Mob* tar) {
 		break;
 	}
 
-	if(caster) {
-		std::list<MercSpell> mercSpellList = GetMercSpellsBySpellType(caster, SpellType_Nuke);
+	std::list<MercSpell> mercSpellList = GetMercSpellsBySpellType(caster, SpellType_Nuke);
 
-		for (auto mercSpellListItr = mercSpellList.begin(); mercSpellListItr != mercSpellList.end();
-		     ++mercSpellListItr) {
-			// Assuming all the spells have been loaded into this list by level and in descending order
-			if(IsAERainNukeSpell(mercSpellListItr->spellid) && zone->random.Roll(castChance) && CheckSpellRecastTimers(caster, mercSpellListItr->spellid)) {
-				uint8 numTargets = 0;
-				if(CheckAENuke(caster, tar, mercSpellListItr->spellid, numTargets)) {
-					if(numTargets >= numTargetsCheck) {
-						result.spellid = mercSpellListItr->spellid;
-						result.stance = mercSpellListItr->stance;
-						result.type = mercSpellListItr->type;
-						result.slot = mercSpellListItr->slot;
-						result.proc_chance = mercSpellListItr->proc_chance;
-						result.time_cancast = mercSpellListItr->time_cancast;
-					}
+	for (auto mercSpellListItr = mercSpellList.begin(); mercSpellListItr != mercSpellList.end();
+		    ++mercSpellListItr) {
+		// Assuming all the spells have been loaded into this list by level and in descending order
+		if(IsAERainNukeSpell(mercSpellListItr->spellid) && zone->random.Roll(castChance) && CheckSpellRecastTimers(caster, mercSpellListItr->spellid)) {
+			uint8 numTargets = 0;
+			if(CheckAENuke(caster, tar, mercSpellListItr->spellid, numTargets)) {
+				if(numTargets >= numTargetsCheck) {
+					result.spellid = mercSpellListItr->spellid;
+					result.stance = mercSpellListItr->stance;
+					result.type = mercSpellListItr->type;
+					result.slot = mercSpellListItr->slot;
+					result.proc_chance = mercSpellListItr->proc_chance;
+					result.time_cancast = mercSpellListItr->time_cancast;
 				}
-
-				break;
 			}
+
+			break;
 		}
 	}
 
@@ -3895,7 +3511,7 @@ bool Merc::GetNeedsCured(Mob *tar) {
 			needCured = true;
 
 			for (unsigned int j = 0; j < buff_count; j++) {
-				if(tar->GetBuffs()[j].spellid != SPELL_UNKNOWN) {
+				if (IsValidSpell(tar->GetBuffs()[j].spellid)) {
 					if(CalculateCounters(tar->GetBuffs()[j].spellid) > 0) {
 						buffsWithCounters++;
 
@@ -4292,7 +3908,7 @@ void Merc::Stand() {
 	SetAppearance(eaStanding);
 }
 
-bool Merc::IsSitting() {
+bool Merc::IsSitting() const {
 	bool result = false;
 
 	if(GetAppearance() == eaSitting && !IsMoving())
@@ -4683,7 +4299,12 @@ Merc* Merc::LoadMerc(Client *c, MercTemplate* merc_template, uint32 merchant_id,
 	if(merc_template)
 	{
 		//TODO: Maybe add a way of updating client merc stats in a seperate function? like, for example, on leveling up.
-		const NPCType* npc_type_to_copy = content_db.GetMercType(merc_template->MercNPCID, merc_template->RaceID, c->GetLevel());
+		
+		const NPCType* npc_type_to_copy = nullptr;
+		if (c) {
+			npc_type_to_copy = content_db.GetMercType(merc_template->MercNPCID, merc_template->RaceID, c->GetLevel());
+		}
+
 		if(npc_type_to_copy != nullptr)
 		{
 			//This is actually a very terrible method of assigning stats, and should be changed at some point. See the comment in merc's deconstructor.
@@ -6121,8 +5742,8 @@ void NPC::LoadMercTypes() {
 	{
 		MercType tempMercType;
 
-		tempMercType.Type = atoi(row[0]);
-		tempMercType.ClientVersion = atoi(row[1]);
+		tempMercType.Type = Strings::ToInt(row[0]);
+		tempMercType.ClientVersion = Strings::ToInt(row[1]);
 
 		mercTypeList.push_back(tempMercType);
 	}
@@ -6154,12 +5775,12 @@ void NPC::LoadMercs() {
 	{
 		MercData tempMerc;
 
-		tempMerc.MercTemplateID = atoi(row[0]);
-		tempMerc.MercType = atoi(row[1]);
-		tempMerc.MercSubType = atoi(row[2]);
-		tempMerc.CostFormula = atoi(row[3]);
-		tempMerc.ClientVersion = atoi(row[4]);
-		tempMerc.NPCID = atoi(row[5]);
+		tempMerc.MercTemplateID = Strings::ToInt(row[0]);
+		tempMerc.MercType = Strings::ToInt(row[1]);
+		tempMerc.MercSubType = Strings::ToInt(row[2]);
+		tempMerc.CostFormula = Strings::ToInt(row[3]);
+		tempMerc.ClientVersion = Strings::ToInt(row[4]);
+		tempMerc.NPCID = Strings::ToInt(row[5]);
 
 		mercDataList.push_back(tempMerc);
 	}

@@ -30,10 +30,8 @@
 #include "string_ids.h"
 #include "worldserver.h"
 #include "zonedb.h"
-#include "../common/zone_store.h"
 #include "../common/repositories/criteria/content_filter_criteria.h"
 
-#include <iostream>
 #include <string.h>
 
 #define OPEN_DOOR 0x02
@@ -52,6 +50,14 @@ Doors::Doors(const DoorsRepository::Doors &door) :
 	strn0cpy(m_zone_name, door.zone.c_str(), sizeof(m_zone_name));
 	strn0cpy(m_door_name, door.name.c_str(), sizeof(m_door_name));
 	strn0cpy(m_destination_zone_name, door.dest_zone.c_str(), sizeof(m_destination_zone_name));
+
+	// destination helpers
+	if (!door.dest_zone.empty() && Strings::ToLower(door.dest_zone) != "none" && !door.dest_zone.empty()) {
+		m_has_destination_zone = true;
+	}
+	if (!door.dest_zone.empty() && !door.zone.empty() && Strings::EqualFold(door.dest_zone, door.zone)) {
+		m_same_destination_zone = true;
+	}
 
 	m_database_id             = door.id;
 	m_door_id                 = door.doorid;
@@ -121,6 +127,7 @@ Doors::~Doors()
 bool Doors::Process()
 {
 	if (m_close_timer.Enabled() && m_close_timer.Check() && IsDoorOpen()) {
+		LogDoorsDetail("door open and timer triggered door_id [{}] open_type [{}]", GetDoorID(), m_open_type);
 		if (m_open_type == 40 || GetTriggerType() == 1) {
 			auto            outapp = new EQApplicationPacket(OP_MoveDoor, sizeof(MoveDoor_Struct));
 			MoveDoor_Struct *md    = (MoveDoor_Struct *) outapp->pBuffer;
@@ -213,7 +220,7 @@ void Doors::HandleClick(Client *sender, uint8 trigger)
 		}
 	}
 
-	if (m_dz_switch_id != 0) {
+	if (sender && m_dz_switch_id != 0) {
 		sender->UpdateTasksOnTouchSwitch(m_dz_switch_id);
 		if (sender->TryMovePCDynamicZoneSwitch(m_dz_switch_id)) {
 			safe_delete(outapp);
@@ -267,7 +274,7 @@ void Doors::HandleClick(Client *sender, uint8 trigger)
 
 	// enforce flags before they hit zoning process
 	auto z = GetZone(m_destination_zone_name, 0);
-	if (z && !z->flag_needed.empty() && Strings::IsNumber(z->flag_needed) && std::stoi(z->flag_needed) == 1) {
+	if (z && !z->flag_needed.empty() && Strings::IsNumber(z->flag_needed) && Strings::ToInt(z->flag_needed) == 1) {
 		if (sender->Admin() < minStatusToIgnoreZoneFlags && !sender->HasZoneFlag(z->zoneidnumber)) {
 			LogInfo(
 				"Character [{}] does not have the flag to be in this zone [{}]!",
@@ -449,7 +456,7 @@ void Doors::HandleClick(Client *sender, uint8 trigger)
 			m_close_timer.Start();
 		}
 
-		if (strncmp(m_destination_zone_name, "NONE", strlen("NONE")) == 0) {
+		if (!HasDestinationZone()) {
 			SetOpenState(true);
 		}
 	}
@@ -496,19 +503,15 @@ void Doors::HandleClick(Client *sender, uint8 trigger)
 		}
 	}
 
-	/**
-	 * Teleport door
-	 */
-	if (((m_open_type == 57) || (m_open_type == 58)) &&
-		(strncmp(m_destination_zone_name, "NONE", strlen("NONE")) != 0)) {
+	// teleport door
+	if (((m_open_type == 57) || (m_open_type == 58)) && HasDestinationZone()) {
+		bool has_key_required = (required_key_item && ((required_key_item == player_key) || sender->GetGM()));
 
-		/**
-		 * If click destination is same zone and doesn't require a key
-		 */
-		if ((strncmp(m_destination_zone_name, m_zone_name, strlen(m_zone_name)) == 0) && (!required_key_item)) {
+		if (IsDestinationZoneSame() && (!required_key_item)) {
 			if (!disable_add_to_key_ring) {
 				sender->KeyRingAdd(player_key);
 			}
+
 			sender->MovePC(
 				zone->GetZoneID(),
 				zone->GetInstanceID(),
@@ -518,14 +521,7 @@ void Doors::HandleClick(Client *sender, uint8 trigger)
 				m_destination.w
 			);
 		}
-			/**
-			 * If requires a key
-			 */
-		else if (
-			(!IsDoorOpen() || m_open_type == 58) &&
-			(required_key_item && ((required_key_item == player_key) || sender->GetGM()))
-			) {
-
+		else if ((!IsDoorOpen() || m_open_type == 58) && has_key_required) {
 			if (!disable_add_to_key_ring) {
 				sender->KeyRingAdd(player_key);
 			}
@@ -627,11 +623,13 @@ void Doors::ForceOpen(Mob *sender, bool alt_mode)
 	if (!alt_mode) { // original function
 		if (!m_is_open) {
 			if (!m_disable_timer) {
+				LogDoorsDetail("door_id [{}] starting timer", md->doorid);
 				m_close_timer.Start();
 			}
 			m_is_open = true;
 		}
 		else {
+			LogDoorsDetail("door_id [{}] disable timer", md->doorid);
 			m_close_timer.Disable();
 			if (!m_disable_timer) {
 				m_is_open = false;
@@ -640,6 +638,7 @@ void Doors::ForceOpen(Mob *sender, bool alt_mode)
 	}
 	else { // alternative function
 		if (!m_disable_timer) {
+			LogDoorsDetail("door_id [{}] alt starting timer", md->doorid);
 			m_close_timer.Start();
 		}
 		m_is_open = true;
@@ -726,7 +725,7 @@ int ZoneDatabase::GetDoorsDBCountPlusOne(std::string zone_short_name, int16 vers
 		return 0;
 	}
 
-	return std::stoi(row[0]) + 1;
+	return Strings::ToInt(row[0]) + 1;
 }
 
 std::vector<DoorsRepository::Doors> ZoneDatabase::LoadDoors(const std::string &zone_name, int16 version)
@@ -840,7 +839,7 @@ void Doors::CreateDatabaseEntry()
 
 		return;
 	}
-	
+
 	auto e = DoorsRepository::NewEntity();
 
 	e.id           = GetDoorDBID();
@@ -891,4 +890,14 @@ float Doors::GetZ()
 float Doors::GetHeading()
 {
 	return m_position.w;
+}
+
+bool Doors::HasDestinationZone() const
+{
+	return m_has_destination_zone;
+}
+
+bool Doors::IsDestinationZoneSame() const
+{
+	return m_same_destination_zone;
 }

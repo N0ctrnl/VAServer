@@ -584,6 +584,16 @@ bool Perl_NPC_GetCombatState(NPC* self) // @categories Script Utility
 	return self->GetCombatEvent();
 }
 
+void Perl_NPC_SetSimpleRoamBox(NPC* self, float box_size) // @categories Script Utility
+{
+	self->SetSimpleRoamBox(box_size);
+}
+
+void Perl_NPC_SetSimpleRoamBox(NPC* self, float box_size, float move_distance) // @categories Script Utility
+{
+	self->SetSimpleRoamBox(box_size, move_distance);
+}
+
 void Perl_NPC_SetSimpleRoamBox(NPC* self, float box_size, float move_distance, int move_delay) // @categories Script Utility
 {
 	self->SetSimpleRoamBox(box_size, move_distance, move_delay);
@@ -750,14 +760,19 @@ void Perl_NPC_ScaleNPC(NPC* self, uint8 npc_level)
 	return self->ScaleNPC(npc_level);
 }
 
-void Perl_NPC_ScaleNPC(NPC* self, uint8 npc_level, bool always_scale_stats)
+void Perl_NPC_ScaleNPC(NPC* self, uint8 npc_level, bool override_special_abilities)
 {
-	return self->ScaleNPC(npc_level, always_scale_stats);
+	return self->ScaleNPC(npc_level, override_special_abilities);
 }
 
-void Perl_NPC_ScaleNPC(NPC* self, uint8 npc_level, bool always_scale_stats, bool always_scale_special_abilities)
+bool Perl_NPC_IsUnderwaterOnly(NPC* self) // @categories Script Utility
 {
-	return self->ScaleNPC(npc_level, always_scale_stats, always_scale_special_abilities);
+	return self->IsUnderwaterOnly();
+}
+
+bool Perl_NPC_HasSpecialAbilities(NPC* self) // @categories Script Utility
+{
+	return self->HasSpecialAbilities();
 }
 
 void perl_register_npc()
@@ -847,6 +862,7 @@ void perl_register_npc()
 	package.add("GetSwarmTarget", &Perl_NPC_GetSwarmTarget);
 	package.add("GetWaypointMax", &Perl_NPC_GetWaypointMax);
 	package.add("HasAISpellEffect", &Perl_NPC_HasAISpellEffect);
+	package.add("HasSpecialAbilities", &Perl_NPC_HasSpecialAbilities);
 	package.add("HasItem", &Perl_NPC_HasItem);
 	package.add("IsAnimal", &Perl_NPC_IsAnimal);
 	package.add("IsGuarding", &Perl_NPC_IsGuarding);
@@ -857,6 +873,7 @@ void perl_register_npc()
 	package.add("IsRaidTarget", &Perl_NPC_IsRaidTarget);
 	package.add("IsRareSpawn", &Perl_NPC_IsRareSpawn);
 	package.add("IsTaunting", &Perl_NPC_IsTaunting);
+	package.add("IsUnderwaterOnly", (bool(*)(NPC*))&Perl_NPC_IsUnderwaterOnly);
 	package.add("MerchantCloseShop", &Perl_NPC_MerchantCloseShop);
 	package.add("MerchantOpenShop", &Perl_NPC_MerchantOpenShop);
 	package.add("ModifyNPCStat", &Perl_NPC_ModifyNPCStat);
@@ -884,7 +901,6 @@ void perl_register_npc()
 	package.add("SaveGuardSpot", (void(*)(NPC*, float, float, float, float))&Perl_NPC_SaveGuardSpot);
 	package.add("ScaleNPC", (void(*)(NPC*, uint8))&Perl_NPC_ScaleNPC);
 	package.add("ScaleNPC", (void(*)(NPC*, uint8, bool))&Perl_NPC_ScaleNPC);
-	package.add("ScaleNPC", (void(*)(NPC*, uint8, bool, bool))&Perl_NPC_ScaleNPC);
 	package.add("SendPayload", (void(*)(NPC*, int))&Perl_NPC_SendPayload);
 	package.add("SendPayload", (void(*)(NPC*, int, std::string))&Perl_NPC_SendPayload);
 	package.add("SetCopper", &Perl_NPC_SetCopper);
@@ -904,7 +920,9 @@ void perl_register_npc()
 	package.add("SetSaveWaypoint", &Perl_NPC_SetSaveWaypoint);
 	package.add("SetSecSkill", &Perl_NPC_SetSecSkill);
 	package.add("SetSilver", &Perl_NPC_SetSilver);
-	package.add("SetSimpleRoamBox", &Perl_NPC_SetSimpleRoamBox);
+	package.add("SetSimpleRoamBox", (void(*)(NPC*, float))&Perl_NPC_SetSimpleRoamBox);
+	package.add("SetSimpleRoamBox", (void(*)(NPC*, float, float))&Perl_NPC_SetSimpleRoamBox);
+	package.add("SetSimpleRoamBox", (void(*)(NPC*, float, float, int))&Perl_NPC_SetSimpleRoamBox);
 	package.add("SetSp2", &Perl_NPC_SetSp2);
 	package.add("SetSpellFocusDMG", &Perl_NPC_SetSpellFocusDMG);
 	package.add("SetSpellFocusHeal", &Perl_NPC_SetSpellFocusHeal);
