@@ -1,3 +1,190 @@
+## [22.16.0] - 06/27/2023
+
+### Code
+
+* Default skill type to Hand to Hand in #npcedit meleetype ([#3422](https://github.com/EQEmu/Server/pull/3422)) @Kinglykrab 2023-06-19
+* Delete common/worldconn.cpp ([#3436](https://github.com/EQEmu/Server/pull/3436)) @Kinglykrab 2023-06-24
+* Remove DatabaseCastAccepted() from zone/npc.cpp and zone/npc.h ([#3449](https://github.com/EQEmu/Server/pull/3449)) @Kinglykrab 2023-06-24
+* Remove GetACAvoid() from zone/merc.h ([#3447](https://github.com/EQEmu/Server/pull/3447)) @Kinglykrab 2023-06-25
+* Remove GetACMit() from zone/merc.h ([#3446](https://github.com/EQEmu/Server/pull/3446)) @Kinglykrab 2023-06-24
+* Remove _ClearWaypints() from zone/npc.h ([#3445](https://github.com/EQEmu/Server/pull/3445)) @Kinglykrab 2023-06-24
+* Remove acmod() from zone/merc.h ([#3448](https://github.com/EQEmu/Server/pull/3448)) @Kinglykrab 2023-06-24
+* Remove command_packetprofile from zone/command.h ([#3432](https://github.com/EQEmu/Server/pull/3432)) @Kinglykrab 2023-06-24
+* Remove command_showpetspell in zone/command.h ([#3430](https://github.com/EQEmu/Server/pull/3430)) @Kinglykrab 2023-06-24
+* Remove command_unlock from zone/command.h ([#3431](https://github.com/EQEmu/Server/pull/3431)) @Kinglykrab 2023-06-24
+
+### Commands
+
+* Add #finddeity Command ([#3435](https://github.com/EQEmu/Server/pull/3435)) @Kinglykrab 2023-06-26
+* Add #findlanguage Command ([#3434](https://github.com/EQEmu/Server/pull/3434)) @Kinglykrab 2023-06-25
+* Add #showspells Command ([#3429](https://github.com/EQEmu/Server/pull/3429)) @Kinglykrab 2023-06-24
+* Add missing subcommands to #npcedit ([#3423](https://github.com/EQEmu/Server/pull/3423)) @Kinglykrab 2023-06-19
+* Cleanup #showbuffs Command ([#3439](https://github.com/EQEmu/Server/pull/3439)) @Kinglykrab 2023-06-26
+* Cleanup #shownpcgloballoot and #showzonegloballoot Commands ([#3440](https://github.com/EQEmu/Server/pull/3440)) @Kinglykrab 2023-06-24
+* Cleanup #viewcurrencies Command ([#3441](https://github.com/EQEmu/Server/pull/3441)) @Kinglykrab 2023-06-25
+* Consolidate #findX commands to a singular #find Command ([#3452](https://github.com/EQEmu/Server/pull/3452)) @Kinglykrab 2023-06-28
+* Consolidate #merchant_close_shop and #merchant_open_shop to #merchantshop ([#3433](https://github.com/EQEmu/Server/pull/3433)) @Kinglykrab 2023-06-24
+* Delete #showbonusstats Command ([#3437](https://github.com/EQEmu/Server/pull/3437)) @Kinglykrab 2023-06-24
+* Delete #spellinfo Command ([#3438](https://github.com/EQEmu/Server/pull/3438)) @Kinglykrab 2023-06-24
+
+### Database
+
+* Fix database version checking edge case issue ([#3428](https://github.com/EQEmu/Server/pull/3428)) @Akkadius 2023-06-22
+* Fix multi-statement error reporting ([#3425](https://github.com/EQEmu/Server/pull/3425)) @Akkadius 2023-06-19
+* Implement native database migrations in server ([#2857](https://github.com/EQEmu/Server/pull/2857)) @Akkadius 2023-06-19
+
+### Fixes
+
+* Fix NPC Item Stat Bonuses ([#3444](https://github.com/EQEmu/Server/pull/3444)) @Kinglykrab 2023-06-26
+* Fix error in 023_01_21_bots_raid_members.sql ([#3453](https://github.com/EQEmu/Server/pull/3453)) @mibastian 2023-06-28
+* Fix possible crash with #npcedit weapon ([#3421](https://github.com/EQEmu/Server/pull/3421)) @Kinglykrab 2023-06-19
+* Merchant Open Flag set only for regular Merchants ([#3454](https://github.com/EQEmu/Server/pull/3454)) @Kinglykrab 2023-06-27
+
+### Readme
+
+* Update new location of database updates ([#3424](https://github.com/EQEmu/Server/pull/3424)) @joligario 2023-06-19
+
+### Rules
+
+* Add ClientPetsUserOwnerNameInLastName rule ([#3442](https://github.com/EQEmu/Server/pull/3442)) @Kinglykrab 2023-06-25
+
+## [22.15.3] - 06/19/2023
+
+### Fixes
+
+* Fix improper condition in Water LOS checks ([#3426](https://github.com/EQEmu/Server/pull/3426)) @Kinglykrab 2023-06-19
+
+## [22.15.2] - 06/19/2023
+
+### Database
+
+* Fix multi-statement error reporting ([#3425](https://github.com/EQEmu/Server/pull/3425)) @Akkadius 2023-06-19
+
+## [22.15.1] - 06/19/2023
+
+### Schema
+
+* Add `chatchannel_reserved_names` table to `database_schema.h`
+
+## [22.15.0] - 06/19/2023
+
+### Code
+
+* Default skill type to Hand to Hand in #npcedit meleetype ([#3422](https://github.com/EQEmu/Server/pull/3422)) @Kinglykrab 2023-06-19
+
+### Commands
+
+* Add missing subcommands to #npcedit ([#3423](https://github.com/EQEmu/Server/pull/3423)) @Kinglykrab 2023-06-19
+
+### Database
+
+* Implement native database migrations in server ([#2857](https://github.com/EQEmu/Server/pull/2857)) @Akkadius 2023-06-19
+
+### Fixes
+
+* Fix possible crash with #npcedit weapon ([#3421](https://github.com/EQEmu/Server/pull/3421)) @Kinglykrab 2023-06-19
+
+## [22.14.1] - 06/18/2023
+
+### Backups
+
+* Move world database:dump to use MySQL credentials file ([#3410](https://github.com/EQEmu/Server/pull/3410)) @Akkadius 2023-06-17
+
+### Binaries
+
+* Add support for static linking (portable) binaries ([#3417](https://github.com/EQEmu/Server/pull/3417)) @Akkadius 2023-06-18
+
+### CI
+
+* Build static linux binaries ([#3419](https://github.com/EQEmu/Server/pull/3419)) @Akkadius 2023-06-18
+
+### CLI
+
+* Add `bots:enable` and `bots:disable` commands ([#3415](https://github.com/EQEmu/Server/pull/3415)) @Akkadius 2023-06-17
+* Add `mercs:enable` and `mercs:disable` commands ([#3416](https://github.com/EQEmu/Server/pull/3416)) @Akkadius 2023-06-18
+* Console menu validation fixes ([#3413](https://github.com/EQEmu/Server/pull/3413)) @Akkadius 2023-06-17
+
+### Database
+
+* Add query multi statement execution support ([#3414](https://github.com/EQEmu/Server/pull/3414)) @Akkadius 2023-06-17
+
+### Feature
+
+* Add Water Line of Sight Checks ([#3408](https://github.com/EQEmu/Server/pull/3408)) @nytmyr 2023-06-17
+
+### Logging
+
+* Logging improvements, console silencing, terminal coloring ([#3412](https://github.com/EQEmu/Server/pull/3412)) @Akkadius 2023-06-17
+
+### Quest API
+
+* Add convert_money_to_string() to Perl/Lua ([#3418](https://github.com/EQEmu/Server/pull/3418)) @Kinglykrab 2023-06-18
+
+### Strings
+
+* Add more test cases for string utils ([#3411](https://github.com/EQEmu/Server/pull/3411)) @Akkadius 2023-06-17
+
+### Targeting
+
+* Fix bug when using /tar on invalid target ([#3407](https://github.com/EQEmu/Server/pull/3407)) @noudess 2023-06-17
+
+### Telnet
+
+* Add cross zone/world wide cast and move functionality to Telnet ([#3409](https://github.com/EQEmu/Server/pull/3409)) @Kinglykrab 2023-06-17
+
+## [22.13.1] - 06/13/2023
+
+### Targeting
+
+* Revert #3383 ([#3405](https://github.com/EQEmu/Server/pull/3405)) @noudess 2023-06-13
+
+## [22.13.0] - 06/12/2023
+
+### Code
+
+* Add GMFind_Struct to packet structures ([#3402](https://github.com/EQEmu/Server/pull/3402)) @Kinglykrab 2023-06-12
+* Remove CHECK_LOS_STEP from zone/common.h ([#3398](https://github.com/EQEmu/Server/pull/3398)) @Kinglykrab 2023-06-12
+* Remove CheckCoordLosNoZLeaps() from zone/entity.cpp and zone/entity.h ([#3384](https://github.com/EQEmu/Server/pull/3384)) @Kinglykrab 2023-06-12
+* Remove CountTempPets() from zone/entity.cpp and zone/entity.h ([#3390](https://github.com/EQEmu/Server/pull/3390)) @Kinglykrab 2023-06-12
+* Remove Evade() from zone/entity.cpp and zone/entity.h ([#3394](https://github.com/EQEmu/Server/pull/3394)) @Kinglykrab 2023-06-12
+* Remove GateAllClients() from zone/entity.cpp and zone/entity.h ([#3391](https://github.com/EQEmu/Server/pull/3391)) @Kinglykrab 2023-06-12
+* Remove GetClient(ip, port) from zone/entity.h ([#3386](https://github.com/EQEmu/Server/pull/3386)) @Kinglykrab 2023-06-12
+* Remove GetClientCount() from zone/entity.cpp and zone/entity.h ([#3392](https://github.com/EQEmu/Server/pull/3392)) @Kinglykrab 2023-06-12
+* Remove GetGroupByBot(), GetRaidByMob(), and GetRaidByLeaderName() from zone/entity.cpp and zone/entity.h ([#3387](https://github.com/EQEmu/Server/pull/3387)) @Kinglykrab 2023-06-12
+* Remove InteractiveChat() and TakenAction() from zone/npc.h ([#3382](https://github.com/EQEmu/Server/pull/3382)) @Kinglykrab 2023-06-12
+* Remove LimitCheckBoth() from zone/entity.cpp and zone/entity.h ([#3393](https://github.com/EQEmu/Server/pull/3393)) @Kinglykrab 2023-06-12
+* Remove NPC::AddCash() from npc.cpp/npc.h ([#3380](https://github.com/EQEmu/Server/pull/3380)) @Kinglykrab 2023-06-09
+* Remove RemoveMob() and RemoveRaid() from zone/entity.cpp and zone/entity.h ([#3389](https://github.com/EQEmu/Server/pull/3389)) @Kinglykrab 2023-06-12
+* Remove SPECIALIZE_MANA_REDUCE from zone/common.h ([#3400](https://github.com/EQEmu/Server/pull/3400)) @Kinglykrab 2023-06-12
+* Remove SendAATimer() from zone/entity.h ([#3388](https://github.com/EQEmu/Server/pull/3388)) @Kinglykrab 2023-06-12
+* Remove WriteEntityIDs() from zone/entity.cpp and zone/entity.h ([#3395](https://github.com/EQEmu/Server/pull/3395)) @Kinglykrab 2023-06-12
+* Remove _BECOMENPCPET() and _NPCPET() from zone/common.h ([#3399](https://github.com/EQEmu/Server/pull/3399)) @Kinglykrab 2023-06-12
+* Remove pDBAsyncWorkID from zone/entity.h ([#3385](https://github.com/EQEmu/Server/pull/3385)) @Kinglykrab 2023-06-12
+* Remove struct DynamicZoneSafeReturn from zone/entity.h ([#3396](https://github.com/EQEmu/Server/pull/3396)) @Kinglykrab 2023-06-12
+* Remove struct TradeEntity from zone/common.h ([#3397](https://github.com/EQEmu/Server/pull/3397)) @Kinglykrab 2023-06-12
+
+### Commands
+
+* Assign #opcode to a #reload alias ([#3401](https://github.com/EQEmu/Server/pull/3401)) @Kinglykrab 2023-06-12
+
+### Illusions
+
+* RandomizeFeatures and SetGender were killing db texture ([#3376](https://github.com/EQEmu/Server/pull/3376)) @noudess 2023-06-06
+
+### Logging
+
+* Fixed statements that logged incorrect data ([#3381](https://github.com/EQEmu/Server/pull/3381)) @noudess 2023-06-07
+
+### Quest API
+
+* Add GetEXPForLevel() to Perl/Lua ([#3403](https://github.com/EQEmu/Server/pull/3403)) @Kinglykrab 2023-06-12
+* Add SendChannelMessage() to Perl/Lua ([#3378](https://github.com/EQEmu/Server/pull/3378)) @Kinglykrab 2023-06-04
+* Add several spell methods to Perl/Lua ([#3379](https://github.com/EQEmu/Server/pull/3379)) @Kinglykrab 2023-06-12
+
+### Targeting
+
+* /tar <bad target> should not untarget existing target ([#3383](https://github.com/EQEmu/Server/pull/3383)) @noudess 2023-06-12
+
 ## [22.12.0] - 05/29/2023
 
 ### Code

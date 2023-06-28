@@ -133,6 +133,12 @@ enum {
 
 typedef enum
 {
+	Disciplines,
+	Spells
+} ShowSpellType;
+
+typedef enum
+{
 	Empty = 0,
 	Auto = 1,
 	CurrentTargetPC = 2,
@@ -668,6 +674,8 @@ public:
 	void GoToDeath();
 	inline const int32 GetInstanceID() const { return zone->GetInstanceID(); }
 	void SetZoning(bool in) { bZoning = in; }
+
+	void ShowSpells(Client* c, ShowSpellType show_spell_type);
 
 	FACTION_VALUE GetReverseFactionCon(Mob* iOther);
 	FACTION_VALUE GetFactionLevel(uint32 char_id, uint32 npc_id, uint32 p_race, uint32 p_class, uint32 p_deity, int32 pFaction, Mob* tnpc);
@@ -1503,6 +1511,8 @@ public:
 	bool GroupFollow(Client* inviter);
 	inline bool  GetRunMode() const { return runmode; }
 
+	virtual bool CheckWaterAutoFireLoS(Mob* m);
+
 	void SendReloadCommandMessages();
 
 	void SendItemRecastTimer(int32 recast_type, uint32 recast_delay = 0, bool in_ignore_casting_requirement = false);
@@ -1587,8 +1597,6 @@ public:
 	void SetInvulnerableEnvironmentDamage(bool val) { invulnerable_environment_damage = val; }
 	void SetIntoxication(int32 in_intoxication);
 
-	void ShowNumHits(); // work around function for numhits not showing on buffs
-
 	void ApplyWeaponsStance();
 	void TogglePassiveAlternativeAdvancement(const AA::Rank &rank, uint32 ability_id);
 	bool UseTogglePassiveHotkey(const AA::Rank &rank);
@@ -1641,6 +1649,7 @@ public:
 	PlayerEvent::PlayerEvent GetPlayerEvent();
 	void RecordKilledNPCEvent(NPC *n);
 
+	uint32 GetEXPForLevel(uint16 check_level);
 protected:
 	friend class Mob;
 	void CalcEdibleBonuses(StatBonuses* newbon);
@@ -1816,7 +1825,6 @@ private:
 	bool temp_pvp;
 
 	void NPCSpawn(const Seperator* sep);
-	uint32 GetEXPForLevel(uint16 level);
 
 	void SendLogoutPackets();
 	void SendZoneInPackets();
