@@ -1,3 +1,112 @@
+## [22.20.1] - 07/15/2023
+
+### Database
+
+* Fix database manifest entry for #3443  @neckkola 2023-07-15
+
+## [22.20.0] - 07/15/2023
+
+### Bots
+
+* Remove orphaned commands related to botgroup ([#3489](https://github.com/EQEmu/Server/pull/3489)) @tuday2 2023-07-09
+
+### Commands
+
+* Consolidate #set-like commands into a singular #set command ([#3486](https://github.com/EQEmu/Server/pull/3486)) @Kinglykrab 2023-07-15
+
+### Feature
+
+* Add Support for item textures higher than 65,535 ([#3494](https://github.com/EQEmu/Server/pull/3494)) @Kinglykrab 2023-07-14
+* Update raid features ([#3443](https://github.com/EQEmu/Server/pull/3443)) @neckkola 2023-07-13
+
+### Fixes
+
+* Fix Tradeskill Combines with augmented items ([#3490](https://github.com/EQEmu/Server/pull/3490)) @Kinglykrab 2023-07-15
+* Fix charmed pets to follow when charmed. ([#3488](https://github.com/EQEmu/Server/pull/3488)) @noudess 2023-07-08
+* Update bot naming check and add more explanation ([#3491](https://github.com/EQEmu/Server/pull/3491)) @tuday2 2023-07-13
+
+### Quest API
+
+* Add Mob/Entity type check methods to Perl/Lua ([#3493](https://github.com/EQEmu/Server/pull/3493)) @Kinglykrab 2023-07-13
+
+## [22.19.0] - 07/08/2023
+
+### Bots
+
+* Add Pickpocket Command ([#3484](https://github.com/EQEmu/Server/pull/3484)) @tuday2 2023-07-08
+
+### Code
+
+* Move #find item summon links to front ([#3483](https://github.com/EQEmu/Server/pull/3483)) @Kinglykrab 2023-07-05
+* Remove LoadItemDBFieldNames() from common/misc.cpp and common/misc.h ([#3473](https://github.com/EQEmu/Server/pull/3473)) @Kinglykrab 2023-07-04
+
+### Commands
+
+* Add #itemsearch alias to #find aliases ([#3485](https://github.com/EQEmu/Server/pull/3485)) @Kinglykrab 2023-07-08
+* Consolidate #show commands into a singular #show command ([#3478](https://github.com/EQEmu/Server/pull/3478)) @Kinglykrab 2023-07-08
+
+### Fixes
+
+* Fix _PutItem having a slot_id of -1 on mobs with no items ([#3474](https://github.com/EQEmu/Server/pull/3474)) @Kinglykrab 2023-07-04
+
+### Rules
+
+* Add Skills:TrivialTradeskillCombinesNoFail Rule ([#3481](https://github.com/EQEmu/Server/pull/3481)) @JasXSL 2023-07-05
+
+## [22.18.0] - 07/04/2023
+
+### Commands
+
+* Add #emotesearch to #find command ([#3480](https://github.com/EQEmu/Server/pull/3480)) @Kinglykrab 2023-07-04
+* Cleanup #copycharacter Command ([#3479](https://github.com/EQEmu/Server/pull/3479)) @Kinglykrab 2023-07-04
+
+### Fixes
+
+* Add chatchannel_reserved_names to a new manifest ([#3482](https://github.com/EQEmu/Server/pull/3482)) @Kinglykrab 2023-07-04
+* Fix issue in zone store of returning reference to local variable ([#3477](https://github.com/EQEmu/Server/pull/3477)) @Kinglykrab 2023-07-04
+
+## [22.17.0] - 07/03/2023
+
+### Cleanup/Feature
+
+* Add support for bots to #showstats/#mystats ([#3427](https://github.com/EQEmu/Server/pull/3427)) @Kinglykrab 2023-07-01
+
+### Code
+
+* Remove LoadItemDBFieldNames() from common/misc.cpp and common/misc.h ([#3473](https://github.com/EQEmu/Server/pull/3473)) @Kinglykrab 2023-07-04
+* Remove handle_npc_single_npc from zone/lua_parser_events.cpp and zone/lua_parser_events.h ([#3467](https://github.com/EQEmu/Server/pull/3467)) @Kinglykrab 2023-07-03
+
+### Database
+
+* Set multi statements off when returning early ([#3462](https://github.com/EQEmu/Server/pull/3462)) @Akkadius 2023-07-01
+
+### Feature
+
+* Add Strings::BeginsWith() and Strings::EndsWith() ([#3471](https://github.com/EQEmu/Server/pull/3471)) @Kinglykrab 2023-07-03
+
+### Fixes
+
+* Add check for underscores in botcreate command ([#3458](https://github.com/EQEmu/Server/pull/3458)) @tuday2 2023-06-29
+* EVENT_LANGUAGE_SKILL_UP in Lua was using EVENT_SKILL_UP logic ([#3466](https://github.com/EQEmu/Server/pull/3466)) @Kinglykrab 2023-07-03
+* Fix _PutItem having a slot_id of -1 on mobs with no items ([#3474](https://github.com/EQEmu/Server/pull/3474)) @Kinglykrab 2023-07-04
+* Fix data type of GetAggroCount() ([#3470](https://github.com/EQEmu/Server/pull/3470)) @Kinglykrab 2023-07-03
+
+### Logging
+
+* Fix logging crash when % are sent through query logs ([#3461](https://github.com/EQEmu/Server/pull/3461)) @Akkadius 2023-07-01
+
+### Quest API
+
+* Add ClearAccountFlag() and GetAccountFlags() to Perl/Lua ([#3469](https://github.com/EQEmu/Server/pull/3469)) @Kinglykrab 2023-07-03
+* Add GetClassAbbreviation() and GetRaceAbbreviation() to Perl/Lua ([#3463](https://github.com/EQEmu/Server/pull/3463)) @Kinglykrab 2023-07-02
+* Add GetClassPlural() and GetRacePlural() to Perl/Lua ([#3468](https://github.com/EQEmu/Server/pull/3468)) @Kinglykrab 2023-07-03
+* Add GetCloseMobList() and CalculateDistance() overload to Perl/Lua ([#3455](https://github.com/EQEmu/Server/pull/3455)) @Kinglykrab 2023-07-02
+* Add Hate Entry Methods to Perl ([#3459](https://github.com/EQEmu/Server/pull/3459)) @Kinglykrab 2023-07-02
+* Add ItemData Class to Perl ([#3465](https://github.com/EQEmu/Server/pull/3465)) @Kinglykrab 2023-07-02
+* Add Spawn2 Class to Perl ([#3456](https://github.com/EQEmu/Server/pull/3456)) @Kinglykrab 2023-07-02
+* Add StatBonuses Class to Perl ([#3460](https://github.com/EQEmu/Server/pull/3460)) @Kinglykrab 2023-07-02
+* Add missing Item Methods to Perl/Lua. ([#3464](https://github.com/EQEmu/Server/pull/3464)) @Kinglykrab 2023-07-02
+
 ## [22.16.0] - 06/27/2023
 
 ### Code

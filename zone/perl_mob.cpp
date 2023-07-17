@@ -21,14 +21,14 @@ bool Perl_Mob_IsNPC(Mob* self) // @categories Script Utility
 	return self->IsNPC();
 }
 
-bool Perl_Mob_IsBot(Mob* self) // @categories Script Utility
-{
-	return self->IsBot();
-}
-
 bool Perl_Mob_IsMob(Mob* self) // @categories Script Utility
 {
 	return self->IsMob();
+}
+
+bool Perl_Mob_IsMerc(Mob* self) // @categories Script Utility
+{
+	return self->IsMerc();
 }
 
 bool Perl_Mob_IsCorpse(Mob* self) // @categories Script Utility, Corpse
@@ -64,6 +64,36 @@ bool Perl_Mob_IsTrap(Mob* self) // @categories Script Utility
 bool Perl_Mob_IsBeacon(Mob* self) // @categories Script Utility
 {
 	return self->IsBeacon();
+}
+
+bool Perl_Mob_IsEncounter(Mob* self) // @categories Script Utility
+{
+	return self->IsEncounter();
+}
+
+bool Perl_Mob_IsBot(Mob* self) // @categories Script Utility
+{
+	return self->IsBot();
+}
+
+bool Perl_Mob_IsAura(Mob* self) // @categories Script Utility
+{
+	return self->IsAura();
+}
+
+bool Perl_Mob_IsOfClientBot(Mob* self) // @categories Script Utility
+{
+	return self->IsOfClientBot();
+}
+
+bool Perl_Mob_IsOfClientBotMerc(Mob* self) // @categories Script Utility
+{
+	return self->IsOfClientBotMerc();
+}
+
+bool Perl_Mob_IsTemporaryPet(Mob* self) // @categories Script Utility
+{
+	return self->IsTempPet();
 }
 
 Client* Perl_Mob_CastToClient(Mob* self) // @categories Account and Character, Script Utility
@@ -146,17 +176,17 @@ void Perl_Mob_SendWearChange(Mob* self, uint8_t material_slot) // @categories Sc
 	self->SendWearChange(material_slot);
 }
 
-int32_t Perl_Mob_GetEquipment(Mob* self, uint8_t material_slot) // @categories Inventory and Items
+uint32_t Perl_Mob_GetEquipment(Mob* self, uint8_t material_slot) // @categories Inventory and Items
 {
 	return self->GetEquippedItemFromTextureSlot(material_slot);
 }
 
-int32_t Perl_Mob_GetEquipmentMaterial(Mob* self, uint8_t material_slot) // @categories Inventory and Items
+uint32_t Perl_Mob_GetEquipmentMaterial(Mob* self, uint8_t material_slot) // @categories Inventory and Items
 {
 	return self->GetEquipmentMaterial(material_slot);
 }
 
-int32_t Perl_Mob_GetEquipmentColor(Mob* self, uint8_t material_slot) // @categories Inventory and Items
+uint32_t Perl_Mob_GetEquipmentColor(Mob* self, uint8_t material_slot) // @categories Inventory and Items
 {
 	return self->GetEquipmentColor(material_slot);
 }
@@ -1374,6 +1404,11 @@ float Perl_Mob_CalculateDistance(Mob* self, float x, float y, float z) // @categ
 	return self->CalculateDistance(x, y, z);
 }
 
+float Perl_Mob_CalculateDistance(Mob* self, Mob* mob) // @categories Script Utility
+{
+	return self->CalculateDistance(mob);
+}
+
 void Perl_Mob_SendTo(Mob* self, float new_x, float new_y, float new_z) // @categories Script Utility
 {
 	self->SendTo(new_x, new_y, new_z);
@@ -2027,17 +2062,17 @@ void Perl_Mob_SetSlotTint(Mob* self, uint8 material_slot, uint8 red_tint, uint8 
 	self->SetSlotTint(material_slot, red_tint, green_tint, blue_tint);
 }
 
-void Perl_Mob_WearChange(Mob* self, uint8 material_slot, uint16 texture) // @categories Script Utility
+void Perl_Mob_WearChange(Mob* self, uint8 material_slot, uint32 texture) // @categories Script Utility
 {
 	self->WearChange(material_slot, texture);
 }
 
-void Perl_Mob_WearChange(Mob* self, uint8 material_slot, uint16 texture, uint32 color) // @categories Script Utility
+void Perl_Mob_WearChange(Mob* self, uint8 material_slot, uint32 texture, uint32 color) // @categories Script Utility
 {
 	self->WearChange(material_slot, texture, color);
 }
 
-void Perl_Mob_WearChange(Mob* self, uint8 material_slot, uint16 texture, uint32 color, uint32 hero_forge_model) // @categories Script Utility
+void Perl_Mob_WearChange(Mob* self, uint8 material_slot, uint32 texture, uint32 color, uint32 hero_forge_model) // @categories Script Utility
 {
 	self->WearChange(material_slot, texture, color, hero_forge_model);
 }
@@ -2385,7 +2420,7 @@ std::string Perl_Mob_GetBucketExpires(Mob* self, std::string bucket_name) // @ca
 
 std::string Perl_Mob_GetBucketKey(Mob* self) // @categories Script Utility
 {
-	return self->GetBucketKey();
+	return {};
 }
 
 std::string Perl_Mob_GetBucketRemaining(Mob* self, std::string bucket_name) // @categories Script Utility
@@ -3005,6 +3040,84 @@ bool Perl_Mob_HasSpellEffect(Mob* self, int effect_id)
 	return self->HasSpellEffect(effect_id);
 }
 
+perl::array Perl_Mob_GetCloseMobList(Mob* self)
+{
+	perl::array result;
+
+	const auto& l = entity_list.GetCloseMobList(self);
+
+	result.reserve(l.size());
+
+	for (const auto& e : l) {
+		result.push_back(e.second);
+	}
+
+	return result;
+}
+
+perl::array Perl_Mob_GetCloseMobList(Mob* self, float distance)
+{
+	perl::array result;
+
+	const auto& l = entity_list.GetCloseMobList(self, distance);
+
+	result.reserve(l.size());
+
+	for (const auto& e : l) {
+		if (self->CalculateDistance(e.second) <= distance) {
+			result.push_back(e.second);
+		}
+	}
+
+	return result;
+}
+
+perl::array Perl_Mob_GetCloseMobList(Mob* self, float distance, bool ignore_self)
+{
+	perl::array result;
+
+	const auto& l = entity_list.GetCloseMobList(self, distance);
+
+	result.reserve(l.size());
+
+	for (const auto& e : l) {
+		if (ignore_self && e.second == self) {
+			continue;
+		}
+
+		if (self->CalculateDistance(e.second) <= distance) {
+			result.push_back(e.second);
+		}
+	}
+
+	return result;
+}
+
+StatBonuses* Perl_Mob_GetAABonuses(Mob* self)
+{
+	return self->GetAABonusesPtr();
+}
+
+StatBonuses* Perl_Mob_GetItemBonuses(Mob* self)
+{
+	return self->GetItemBonusesPtr();
+}
+
+StatBonuses* Perl_Mob_GetSpellBonuses(Mob* self)
+{
+	return self->GetSpellBonusesPtr();
+}
+
+std::string Perl_Mob_GetClassPlural(Mob* self)
+{
+	return self->GetClassPlural();
+}
+
+std::string Perl_Mob_GetRacePlural(Mob* self)
+{
+	return self->GetRacePlural();
+}
+
 void perl_register_mob()
 {
 	perl::interpreter perl(PERL_GET_THX);
@@ -3035,7 +3148,8 @@ void perl_register_mob()
 	package.add("BuffFadeBySlot", (void(*)(Mob*, int))&Perl_Mob_BuffFadeBySlot);
 	package.add("BuffFadeBySlot", (void(*)(Mob*, int, bool))&Perl_Mob_BuffFadeBySlot);
 	package.add("BuffFadeBySpellID", &Perl_Mob_BuffFadeBySpellID);
-	package.add("CalculateDistance", &Perl_Mob_CalculateDistance);
+	package.add("CalculateDistance", (float(*)(Mob*, float, float, float))&Perl_Mob_CalculateDistance);
+	package.add("CalculateDistance", (float(*)(Mob*, Mob*))&Perl_Mob_CalculateDistance);
 	package.add("CalculateHeadingToTarget", &Perl_Mob_CalculateHeadingToTarget);
 	package.add("CameraEffect", (void(*)(Mob*, uint32))&Perl_Mob_CameraEffect);
 	package.add("CameraEffect", (void(*)(Mob*, uint32, float))&Perl_Mob_CameraEffect);
@@ -3153,6 +3267,7 @@ void perl_register_mob()
 	package.add("GMMove", (void(*)(Mob*, float, float, float, float))&Perl_Mob_GMMove);
 	package.add("Gate", &Perl_Mob_Gate);
 	package.add("GetAA", &Perl_Mob_GetAA);
+	package.add("GetAABonuses", &Perl_Mob_GetAABonuses);
 	package.add("GetAAByAAID", &Perl_Mob_GetAAByAAID);
 	package.add("GetAC", &Perl_Mob_GetAC);
 	package.add("GetAGI", &Perl_Mob_GetAGI);
@@ -3193,8 +3308,12 @@ void perl_register_mob()
 	package.add("GetCasterLevel", &Perl_Mob_GetCasterLevel);
 	package.add("GetClass", &Perl_Mob_GetClass);
 	package.add("GetClassLevelFactor", &Perl_Mob_GetClassLevelFactor);
+	package.add("GetClassPlural", &Perl_Mob_GetClassPlural);
 	package.add("GetClassName", &Perl_Mob_GetClassName);
 	package.add("GetCleanName", &Perl_Mob_GetCleanName);
+	package.add("GetCloseMobList", (perl::array(*)(Mob*))&Perl_Mob_GetCloseMobList);
+	package.add("GetCloseMobList", (perl::array(*)(Mob*, float))&Perl_Mob_GetCloseMobList);
+	package.add("GetCloseMobList", (perl::array(*)(Mob*, float, bool))&Perl_Mob_GetCloseMobList);
 	package.add("GetCorruption", &Perl_Mob_GetCorruption);
 	package.add("GetDefaultRaceSize", (float(*)(Mob*))&Perl_Mob_GetDefaultRaceSize);
 	package.add("GetDefaultRaceSize", (float(*)(Mob*, int))&Perl_Mob_GetDefaultRaceSize);
@@ -3259,6 +3378,7 @@ void perl_register_mob()
 	package.add("GetInvisibleLevel", &Perl_Mob_GetInvisibleLevel);
 	package.add("GetInvisibleUndeadLevel", &Perl_Mob_GetInvisibleUndeadLevel);
 	package.add("GetInvul", &Perl_Mob_GetInvul);
+	package.add("GetItemBonuses", &Perl_Mob_GetItemBonuses);
 	package.add("GetItemHPBonuses", &Perl_Mob_GetItemHPBonuses);
 	package.add("GetItemStat", &Perl_Mob_GetItemStat);
 	package.add("GetLastName", &Perl_Mob_GetLastName);
@@ -3296,6 +3416,7 @@ void perl_register_mob()
 	package.add("GetPhR", &Perl_Mob_GetPhR);
 	package.add("GetRace", &Perl_Mob_GetRace);
 	package.add("GetRaceName", &Perl_Mob_GetRaceName);
+	package.add("GetRacePlural", &Perl_Mob_GetRacePlural);
 	package.add("GetRemainingTimeMS", &Perl_Mob_GetRemainingTimeMS);
 	package.add("GetResist", &Perl_Mob_GetResist);
 	package.add("GetReverseFactionCon", &Perl_Mob_GetReverseFactionCon);
@@ -3310,6 +3431,7 @@ void perl_register_mob()
 	package.add("GetSpecialAbility", &Perl_Mob_GetSpecialAbility);
 	package.add("GetSpecialAbilityParam", &Perl_Mob_GetSpecialAbilityParam);
 	package.add("GetSpecializeSkillValue", &Perl_Mob_GetSpecializeSkillValue);
+	package.add("GetSpellBonuses", &Perl_Mob_GetSpellBonuses);
 	package.add("GetSpellHPBonuses", &Perl_Mob_GetSpellHPBonuses);
 	package.add("GetSpellIDFromSlot", &Perl_Mob_GetSpellIDFromSlot);
 	package.add("GetSpellStat", (int(*)(Mob*, uint32, const char*))&Perl_Mob_GetSpellStat);
@@ -3351,6 +3473,7 @@ void perl_register_mob()
 	package.add("IsAmnesiad", &Perl_Mob_IsAmnesiad);
 	package.add("IsAttackAllowed", (bool(*)(Mob*, Mob*))&Perl_Mob_IsAttackAllowed);
 	package.add("IsAttackAllowed", (bool(*)(Mob*, Mob*, bool))&Perl_Mob_IsAttackAllowed);
+	package.add("IsAura", &Perl_Mob_IsAura);
 	package.add("IsBeacon", &Perl_Mob_IsBeacon);
 	package.add("IsBeneficialAllowed", &Perl_Mob_IsBeneficialAllowed);
 	package.add("IsBerserk", &Perl_Mob_IsBerserk);
@@ -3361,6 +3484,7 @@ void perl_register_mob()
 	package.add("IsCorpse", &Perl_Mob_IsCorpse);
 	package.add("IsDoor", &Perl_Mob_IsDoor);
 	package.add("IsEliteMaterialItem", &Perl_Mob_IsEliteMaterialItem);
+	package.add("IsEncounter", &Perl_Mob_IsEncounter);
 	package.add("IsEngaged", &Perl_Mob_IsEngaged);
 	package.add("IsEnraged", &Perl_Mob_IsEnraged);
 	package.add("IsFeared", &Perl_Mob_IsFeared);
@@ -3370,12 +3494,15 @@ void perl_register_mob()
 	package.add("IsInvisible", (bool(*)(Mob*))&Perl_Mob_IsInvisible);
 	package.add("IsInvisible", (bool(*)(Mob*, Mob*))&Perl_Mob_IsInvisible);
 	package.add("IsMeleeDisabled", &Perl_Mob_IsMeleeDisabled);
+	package.add("IsMerc", &Perl_Mob_IsMerc);
 	package.add("IsMezzed", &Perl_Mob_IsMezzed);
 	package.add("IsMob", &Perl_Mob_IsMob);
 	package.add("IsMoving", &Perl_Mob_IsMoving);
 	package.add("IsNPC", &Perl_Mob_IsNPC);
 	package.add("IsNPCCorpse", &Perl_Mob_IsNPCCorpse);
 	package.add("IsObject", &Perl_Mob_IsObject);
+	package.add("IsOfClientBot", &Perl_Mob_IsOfClientBot);
+	package.add("IsOfClientBotMerc", &Perl_Mob_IsOfClientBotMerc);
 	package.add("IsPausedTimer", &Perl_Mob_IsPausedTimer);
 	package.add("IsPet", &Perl_Mob_IsPet);
 	package.add("IsPlayerCorpse", &Perl_Mob_IsPlayerCorpse);
@@ -3386,6 +3513,7 @@ void perl_register_mob()
 	package.add("IsStunned", &Perl_Mob_IsStunned);
 	package.add("IsTargetable", &Perl_Mob_IsTargetable);
 	package.add("IsTargeted", &Perl_Mob_IsTargeted);
+	package.add("IsTemporaryPet", &Perl_Mob_IsTemporaryPet);
 	package.add("IsTrackable", &Perl_Mob_IsTrackable);
 	package.add("IsTrap", &Perl_Mob_IsTrap);
 	package.add("IsWarriorClass", &Perl_Mob_IsWarriorClass);
@@ -3577,9 +3705,9 @@ void perl_register_mob()
 	package.add("TypesTempPet", (void(*)(Mob*, uint32, const char*, uint32, bool, Mob*))&Perl_Mob_TypesTempPet);
 	package.add("TypesTempPet", (void(*)(Mob*, uint32, const char*, uint32, bool, Mob*, bool))&Perl_Mob_TypesTempPet);
 	package.add("WalkTo", &Perl_Mob_WalkTo);
-	package.add("WearChange", (void(*)(Mob*, uint8, uint16))&Perl_Mob_WearChange);
-	package.add("WearChange", (void(*)(Mob*, uint8, uint16, uint32))&Perl_Mob_WearChange);
-	package.add("WearChange", (void(*)(Mob*, uint8, uint16, uint32, uint32))&Perl_Mob_WearChange);
+	package.add("WearChange", (void(*)(Mob*, uint8, uint32))&Perl_Mob_WearChange);
+	package.add("WearChange", (void(*)(Mob*, uint8, uint32, uint32))&Perl_Mob_WearChange);
+	package.add("WearChange", (void(*)(Mob*, uint8, uint32, uint32, uint32))&Perl_Mob_WearChange);
 	package.add("WipeHateList", &Perl_Mob_WipeHateList);
 }
 

@@ -12,6 +12,7 @@ class Lua_StatBonuses;
 class Lua_Bot;
 class Lua_NPC;
 class Lua_Client;
+struct Lua_Mob_List;
 
 namespace luabind {
 	struct scope;
@@ -287,6 +288,7 @@ public:
 	void NavigateTo(double x, double y, double z);
 	void StopNavigation();
 	float CalculateDistance(double x, double y, double z);
+	float CalculateDistance(Lua_Mob mob);
 	void SendTo(double x, double y, double z);
 	void SendToFixZ(double x, double y, double z);
 	void NPCSpecialAttacks(const char *parse, int perm);
@@ -384,9 +386,9 @@ public:
 	void TarGlobal(const char *varname, const char *value, const char *duration, int npc_id, int char_id, int zone_id);
 	void DelGlobal(const char *varname);
 	void SetSlotTint(int material_slot, int red_tint, int green_tint, int blue_tint);
-	void WearChange(uint8 material_slot, uint16 texture);
-	void WearChange(uint8 material_slot, uint16 texture, uint32 color);
-	void WearChange(uint8 material_slot, uint16 texture, uint32 color, uint32 heros_forge_model);
+	void WearChange(uint8 material_slot, uint32 texture);
+	void WearChange(uint8 material_slot, uint32 texture, uint32 color);
+	void WearChange(uint8 material_slot, uint32 texture, uint32 color, uint32 heros_forge_model);
 	void DoKnockback(Lua_Mob caster, uint32 push_back, uint32 push_up);
 	void AddNimbusEffect(int effect_id);
 	void RemoveNimbusEffect(int effect_id);
@@ -549,6 +551,12 @@ public:
 	void StopTimer(const char* timer_name);
 	luabind::object GetBuffSpellIDs(lua_State* L);
 	bool HasSpellEffect(int effect_id);
+	Lua_Mob_List GetCloseMobList();
+	Lua_Mob_List GetCloseMobList(float distance);
+	Lua_Mob_List GetCloseMobList(float distance, bool ignore_self);
+	std::string GetClassPlural();
+	std::string GetRacePlural();
+	bool IsTemporaryPet();
 };
 
 #endif
