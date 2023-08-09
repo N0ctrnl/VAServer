@@ -714,19 +714,6 @@ bool Mob::DoCastingChecksZoneRestrictions(bool check_on_casting, int32 spell_id)
 				return false;
 			}
 		}
-		/*
-			Zones where you can not gate.
-		*/
-		if (IsClient() &&
-			(zone->GetZoneID() == Zones::TUTORIAL || zone->GetZoneID() == Zones::LOAD) &&
-			CastToClient()->Admin() < AccountStatus::QuestTroupe) {
-			if (IsEffectInSpell(spell_id, SE_Gate) ||
-				IsEffectInSpell(spell_id, SE_Translocate) ||
-				IsEffectInSpell(spell_id, SE_Teleport)) {
-				Message(Chat::White, "The Gods brought you here, only they can send you away.");
-				return false;
-			}
-		}
 	}
 
 	return true;
@@ -5880,14 +5867,14 @@ bool Client::SpellBucketCheck(uint16 spell_id, uint32 character_id) {
 	DataBucketKey k = GetScopedBucketKeys();
 	k.key = spell_bucket_name;
 
-	auto bucket_value = DataBucket::GetData(k);
-	if (!bucket_value.empty()) {
-		if (Strings::IsNumber(bucket_value) && Strings::IsNumber(spell_bucket_value)) {
-			if (Strings::ToInt(bucket_value) >= Strings::ToInt(spell_bucket_value)) {
+	auto b = DataBucket::GetData(k);
+	if (!b.value.empty()) {
+		if (Strings::IsNumber(b.value) && Strings::IsNumber(spell_bucket_value)) {
+			if (Strings::ToInt(b.value) >= Strings::ToInt(spell_bucket_value)) {
 				return true; // If value is greater than or equal to spell bucket value, allow scribing.
 			}
 		} else {
-			if (bucket_value == spell_bucket_value) {
+			if (b.value == spell_bucket_value) {
 				return true; // If value is equal to spell bucket value, allow scribing.
 			}
 		}
@@ -5899,7 +5886,7 @@ bool Client::SpellBucketCheck(uint16 spell_id, uint32 character_id) {
 		spell_bucket_name
 	);
 
-	bucket_value = DataBucket::GetData(old_bucket_name);
+	std::string bucket_value = DataBucket::GetData(old_bucket_name);
 	if (!bucket_value.empty()) {
 		if (Strings::IsNumber(bucket_value) && Strings::IsNumber(spell_bucket_value)) {
 			if (Strings::ToInt(bucket_value) >= Strings::ToInt(spell_bucket_value)) {
