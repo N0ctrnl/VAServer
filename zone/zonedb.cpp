@@ -1991,6 +1991,7 @@ const NPCType *ZoneDatabase::LoadNPCTypesData(uint32 npc_type_id, bool bulk_load
 		t->ranged_type     = n.ranged_type;
 		t->runspeed        = n.runspeed;
 		t->findable        = n.findable != 0;
+		t->is_quest_npc    = n.isquest != 0;
 		t->trackable       = n.trackable != 0;
 		t->hp_regen        = n.hp_regen_rate;
 		t->mana_regen      = n.mana_regen_rate;
@@ -4630,8 +4631,6 @@ void ZoneDatabase::SaveCharacterBinds(Client *c)
 			bind_count++;
 		}
 	}
-
-	LogInfo("bind count is [{}]", bind_count);
 
 	// allocate memory for binds
 	binds.reserve(bind_count);
