@@ -965,7 +965,7 @@ void WorldServer::HandleMessage(uint16 opcode, const EQ::Net::Packet &p)
 
 			char time_message[255];
 			time_t current_time = time(nullptr);
-			TimeOfDay_Struct eq_time;
+			TimeOfDay_Struct eq_time{};
 			zone->zone_time.GetCurrentEQTimeOfDay(current_time, &eq_time);
 
 			sprintf(time_message, "EQTime [%02d:%s%d %s]",
@@ -1729,28 +1729,27 @@ void WorldServer::HandleMessage(uint16 opcode, const EQ::Net::Packet &p)
 		if (zone)
 		{
 			ServerSpawnStatusChange_Struct *ssc = (ServerSpawnStatusChange_Struct*)pack->pBuffer;
-			LinkedListIterator<Spawn2*> iterator(zone->spawn2_list);
+			if (ssc->instance_id != zone->GetInstanceID()) {
+				break;
+			}
+
+			LinkedListIterator<Spawn2 *> iterator(zone->spawn2_list);
 			iterator.Reset();
 			Spawn2 *found_spawn = nullptr;
-			while (iterator.MoreElements())
-			{
-				Spawn2* cur = iterator.GetData();
-				if (cur->GetID() == ssc->id)
-				{
+			while (iterator.MoreElements()) {
+				Spawn2 *cur = iterator.GetData();
+				if (cur->GetID() == ssc->id) {
 					found_spawn = cur;
 					break;
 				}
 				iterator.Advance();
 			}
 
-			if (found_spawn)
-			{
-				if (ssc->new_status == 0)
-				{
+			if (found_spawn) {
+				if (ssc->new_status == 0) {
 					found_spawn->Disable();
 				}
-				else
-				{
+				else {
 					found_spawn->Enable();
 				}
 			}

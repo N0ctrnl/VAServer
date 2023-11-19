@@ -1741,8 +1741,7 @@ bool Client::Death(Mob* killerMob, int64 damage, uint16 spell, EQ::skills::Skill
 			static_cast<int>(attack_skill)
 		);
 
-		std::vector<std::any> args = { CastToMob() };
-		if (parse->EventPlayer(EVENT_DEATH, this, export_string, 0, &args) != 0) {
+		if (parse->EventPlayer(EVENT_DEATH, this, export_string, 0) != 0) {
 			if (GetHP() < 0) {
 				SetHP(0);
 			}
@@ -2389,8 +2388,7 @@ bool NPC::Death(Mob* killer_mob, int64 damage, uint16 spell, EQ::skills::SkillTy
 				static_cast<int>(attack_skill)
 			);
 
-			std::vector<std::any> args = { CastToMob() };
-			if (parse->EventNPC(EVENT_DEATH, this, oos, export_string, 0, &args) != 0) {
+			if (parse->EventNPC(EVENT_DEATH, this, oos, export_string, 0) != 0) {
 				if (GetHP() < 0) {
 					SetHP(0);
 				}
@@ -2407,9 +2405,7 @@ bool NPC::Death(Mob* killer_mob, int64 damage, uint16 spell, EQ::skills::SkillTy
 				spell,
 				static_cast<int>(attack_skill)
 			);
-
-			std::vector<std::any> args = { CastToMob() };
-			if (parse->EventBot(EVENT_DEATH, CastToBot(), oos, export_string, 0, &args) != 0) {
+			if (parse->EventBot(EVENT_DEATH, CastToBot(), oos, export_string, 0) != 0) {
 				if (GetHP() < 0) {
 					SetHP(0);
 				}
@@ -3628,7 +3624,7 @@ int64 Mob::ReduceAllDamage(int64 damage)
 
 bool Mob::HasProcs() const
 {
-	for (int i = 0; i < MAX_PROCS; i++) {
+	for (int i = 0; i < m_max_procs; i++) {
 		if (IsValidSpell(PermaProcs[i].spellID) || IsValidSpell(SpellProcs[i].spellID)) {
 			return true;
 		}
@@ -3646,7 +3642,7 @@ bool Mob::HasProcs() const
 
 bool Mob::HasDefensiveProcs() const
 {
-	for (int i = 0; i < MAX_PROCS; i++) {
+	for (int i = 0; i < m_max_procs; i++) {
 		if (IsValidSpell(DefensiveProcs[i].spellID)) {
 			return true;
 		}
@@ -3682,7 +3678,7 @@ bool Mob::HasSkillProcSuccess() const
 
 bool Mob::HasRangedProcs() const
 {
-	for (int i = 0; i < MAX_PROCS; i++){
+	for (int i = 0; i < m_max_procs; i++){
 		if (IsValidSpell(RangedProcs[i].spellID)) {
 			return true;
 		}
@@ -4580,7 +4576,7 @@ void Mob::TryDefensiveProc(Mob *on, uint16 hand)
 		}
 
 		//Spell Procs and Quest added procs
-		for (int i = 0; i < MAX_PROCS; i++) {
+		for (int i = 0; i < m_max_procs; i++) {
 			if (IsValidSpell(DefensiveProcs[i].spellID)) {
 				if (!IsProcLimitTimerActive(DefensiveProcs[i].base_spellID, DefensiveProcs[i].proc_reuse_time, ProcType::DEFENSIVE_PROC)) {
 					float chance = proc_chance * (static_cast<float>(DefensiveProcs[i].chance) / 100.0f);
@@ -4783,7 +4779,7 @@ void Mob::TrySpellProc(const EQ::ItemInstance *inst, const EQ::ItemData *weapon,
 
 	int16 poison_slot=-1;
 
-	for (uint32 i = 0; i < MAX_PROCS; i++) {
+	for (uint32 i = 0; i < m_max_procs; i++) {
 		if (IsPet() && hand != EQ::invslot::slotPrimary) //Pets can only proc spell procs from their primay hand (ie; beastlord pets)
 			continue; // If pets ever can proc from off hand, this will need to change
 
@@ -5212,8 +5208,11 @@ bool Mob::TryFinishingBlow(Mob *defender, int64 &damage)
 			FB_Level = itembonuses.FinishingBlowLvl[SBIndex::FINISHING_EFFECT_LEVEL_MAX];
 
 		// modern AA description says rank 1 (500) is 50% chance
-		int ProcChance =
-				aabonuses.FinishingBlow[SBIndex::FINISHING_EFFECT_PROC_CHANCE] + spellbonuses.FinishingBlow[SBIndex::FINISHING_EFFECT_PROC_CHANCE] + spellbonuses.FinishingBlow[SBIndex::FINISHING_EFFECT_PROC_CHANCE];
+		int ProcChance = (
+			aabonuses.FinishingBlow[SBIndex::FINISHING_EFFECT_PROC_CHANCE] +
+			itembonuses.FinishingBlow[SBIndex::FINISHING_EFFECT_PROC_CHANCE] +
+			spellbonuses.FinishingBlow[SBIndex::FINISHING_EFFECT_PROC_CHANCE]
+		);
 
 		if (FB_Level && FB_Dmg && (defender->GetLevel() <= FB_Level) &&
 			(ProcChance >= zone->random.Int(1, 1000))) {

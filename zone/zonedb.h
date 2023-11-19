@@ -529,7 +529,7 @@ public:
 	bool		CreateSpawn2(Client *c, uint32 spawngroup, const char* zone, const glm::vec4& position, uint32 respawn, uint32 variance, uint16 condition, int16 cond_value);
 	void		UpdateRespawnTime(uint32 id, uint16 instance_id,uint32 timeleft);
 	uint32		GetSpawnTimeLeft(uint32 id, uint16 instance_id);
-	void		UpdateSpawn2Status(uint32 id, uint8 new_status);
+	void        UpdateSpawn2Status(uint32 id, uint8 new_status, uint32 instance_id);
 
 	/* Grids/Paths  */
 	uint32		GetFreeGrid(uint16 zoneid);
@@ -619,8 +619,8 @@ public:
 	int GetDoorsDBCountPlusOne(std::string zone_short_name, int16 version);
 
 	/* Blocked Spells   */
-	int32	GetBlockedSpellsCount(uint32 zoneid);
-	bool	LoadBlockedSpells(int32 blockedSpellsCount, ZoneSpellsBlocked* into, uint32 zoneid);
+	int64 GetBlockedSpellsCount(uint32 zone_id);
+	bool LoadBlockedSpells(int64 blocked_spells_count, ZoneSpellsBlocked* into, uint32 zone_id);
 
 	/* Traps   */
 	bool	LoadTraps(const char* zonename, int16 version);
