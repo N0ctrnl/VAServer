@@ -195,7 +195,7 @@ namespace UF
 		unsigned char *emu_buffer = in->pBuffer;
 		uint32 opcode = *((uint32*)emu_buffer);
 
-		if (opcode == 8) {
+		if (opcode == AlternateCurrencyMode::Populate) {
 			AltCurrencyPopulate_Struct *populate = (AltCurrencyPopulate_Struct*)emu_buffer;
 
 			auto outapp = new EQApplicationPacket(
@@ -2339,7 +2339,7 @@ namespace UF
 
 		SpawnAppearance_Struct *sas = (SpawnAppearance_Struct *)emu_buffer;
 
-		if (sas->type != AT_Size)
+		if (sas->type != AppearanceType::Size)
 		{
 			dest->FastQueuePacket(&in, ack_req);
 			return;
@@ -2758,7 +2758,7 @@ namespace UF
 			if (strlen(emu->suffix))
 				PacketSize += strlen(emu->suffix) + 1;
 
-			if (emu->DestructibleObject || emu->class_ == LDON_TREASURE)
+			if (emu->DestructibleObject || emu->class_ == Class::LDoNTreasure)
 			{
 				if (emu->DestructibleObject)
 					PacketSize = PacketSize - 4;	// No bodytype
@@ -2779,8 +2779,8 @@ namespace UF
 			}
 
 			float SpawnSize = emu->size;
-			if (!((emu->NPC == 0) || (emu->race <= RACE_GNOME_12) || (emu->race == RACE_IKSAR_128) ||
-					(emu->race == RACE_VAH_SHIR_130) || (emu->race == RACE_FROGLOK_330) || (emu->race == RACE_DRAKKIN_522))
+			if (!((emu->NPC == 0) || (emu->race <= Race::Gnome) || (emu->race == Race::Iksar) ||
+					(emu->race == Race::VahShir) || (emu->race == Race::Froglok2) || (emu->race == Race::Drakkin))
 				)
 			{
 				PacketSize -= (sizeof(structs::Texture_Struct) * EQ::textures::materialCount);
@@ -2847,7 +2847,7 @@ namespace UF
 
 			uint8 OtherData = 0;
 
-			if (emu->class_ == LDON_TREASURE) //Ldon chest
+			if (emu->class_ == Class::LDoNTreasure) //Ldon chest
 			{
 				OtherData = OtherData | 0x01;
 			}
@@ -2873,7 +2873,7 @@ namespace UF
 			}
 			VARSTRUCT_ENCODE_TYPE(float, Buffer, 0);	// unknown4
 
-			if (emu->DestructibleObject || emu->class_ == LDON_TREASURE)
+			if (emu->DestructibleObject || emu->class_ == Class::LDoNTreasure)
 			{
 				VARSTRUCT_ENCODE_STRING(Buffer, emu->DestructibleModel);
 				VARSTRUCT_ENCODE_STRING(Buffer, emu->DestructibleName2);
@@ -2982,8 +2982,8 @@ namespace UF
 
 			Buffer += sizeof(structs::Spawn_Struct_Position);
 
-			if ((emu->NPC == 0) || (emu->race <= RACE_GNOME_12) || (emu->race == RACE_IKSAR_128) ||
-					(emu->race == RACE_VAH_SHIR_130) || (emu->race == RACE_FROGLOK_330) || (emu->race == RACE_DRAKKIN_522)
+			if ((emu->NPC == 0) || (emu->race <= Race::Gnome) || (emu->race == Race::Iksar) ||
+					(emu->race == Race::VahShir) || (emu->race == Race::Froglok2) || (emu->race == Race::Drakkin)
 				)
 			{
 				for (k = EQ::textures::textureBegin; k < EQ::textures::materialCount; ++k)
@@ -3018,8 +3018,8 @@ namespace UF
 				VARSTRUCT_ENCODE_TYPE(uint32, Buffer, 0);
 			}
 
-			if ((emu->NPC == 0) || (emu->race <= RACE_GNOME_12) || (emu->race == RACE_IKSAR_128) ||
-					(emu->race == RACE_VAH_SHIR_130) || (emu->race == RACE_FROGLOK_330) || (emu->race == RACE_DRAKKIN_522)
+			if ((emu->NPC == 0) || (emu->race <= Race::Gnome) || (emu->race == Race::Iksar) ||
+					(emu->race == Race::VahShir) || (emu->race == Race::Froglok2) || (emu->race == Race::Drakkin)
 				)
 			{
 				structs::Texture_Struct *Equipment = (structs::Texture_Struct *)Buffer;

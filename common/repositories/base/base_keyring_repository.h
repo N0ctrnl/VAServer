@@ -9,50 +9,42 @@
  * @docs https://eqemu.gitbook.io/server/in-development/developer-area/repositories
  */
 
-#ifndef EQEMU_BASE_ITEM_TICK_REPOSITORY_H
-#define EQEMU_BASE_ITEM_TICK_REPOSITORY_H
+#ifndef EQEMU_BASE_KEYRING_REPOSITORY_H
+#define EQEMU_BASE_KEYRING_REPOSITORY_H
 
 #include "../../database.h"
 #include "../../strings.h"
 #include <ctime>
 
-class BaseItemTickRepository {
+
+class BaseKeyringRepository {
 public:
-	struct ItemTick {
-		int32_t     it_itemid;
-		int32_t     it_chance;
-		int32_t     it_level;
-		int32_t     it_id;
-		std::string it_qglobal;
-		int8_t      it_bagslot;
+	struct Keyring {
+		uint32_t id;
+		int32_t  char_id;
+		int32_t  item_id;
 	};
 
 	static std::string PrimaryKey()
 	{
-		return std::string("it_id");
+		return std::string("id");
 	}
 
 	static std::vector<std::string> Columns()
 	{
 		return {
-			"it_itemid",
-			"it_chance",
-			"it_level",
-			"it_id",
-			"it_qglobal",
-			"it_bagslot",
+			"id",
+			"char_id",
+			"item_id",
 		};
 	}
 
 	static std::vector<std::string> SelectColumns()
 	{
 		return {
-			"it_itemid",
-			"it_chance",
-			"it_level",
-			"it_id",
-			"it_qglobal",
-			"it_bagslot",
+			"id",
+			"char_id",
+			"item_id",
 		};
 	}
 
@@ -68,7 +60,7 @@ public:
 
 	static std::string TableName()
 	{
-		return std::string("item_tick");
+		return std::string("keyring");
 	}
 
 	static std::string BaseSelect()
@@ -89,57 +81,52 @@ public:
 		);
 	}
 
-	static ItemTick NewEntity()
+	static Keyring NewEntity()
 	{
-		ItemTick e{};
+		Keyring e{};
 
-		e.it_itemid  = 0;
-		e.it_chance  = 0;
-		e.it_level   = 0;
-		e.it_id      = 0;
-		e.it_qglobal = "";
-		e.it_bagslot = 0;
+		e.id      = 0;
+		e.char_id = 0;
+		e.item_id = 0;
 
 		return e;
 	}
 
-	static ItemTick GetItemTick(
-		const std::vector<ItemTick> &item_ticks,
-		int item_tick_id
+	static Keyring GetKeyring(
+		const std::vector<Keyring> &keyrings,
+		int keyring_id
 	)
 	{
-		for (auto &item_tick : item_ticks) {
-			if (item_tick.it_id == item_tick_id) {
-				return item_tick;
+		for (auto &keyring : keyrings) {
+			if (keyring.id == keyring_id) {
+				return keyring;
 			}
 		}
 
 		return NewEntity();
 	}
 
-	static ItemTick FindOne(
+	static Keyring FindOne(
 		Database& db,
-		int item_tick_id
+		int keyring_id
 	)
 	{
 		auto results = db.QueryDatabase(
 			fmt::format(
-				"{} WHERE id = {} LIMIT 1",
+				"{} WHERE {} = {} LIMIT 1",
 				BaseSelect(),
-				item_tick_id
+				PrimaryKey(),
+				keyring_id
 			)
 		);
 
 		auto row = results.begin();
 		if (results.RowCount() == 1) {
-			ItemTick e{};
+			Keyring e{};
 
-			e.it_itemid  = static_cast<int32_t>(atoi(row[0]));
-			e.it_chance  = static_cast<int32_t>(atoi(row[1]));
-			e.it_level   = static_cast<int32_t>(atoi(row[2]));
-			e.it_id      = static_cast<int32_t>(atoi(row[3]));
-			e.it_qglobal = row[4] ? row[4] : "";
-			e.it_bagslot = static_cast<int8_t>(atoi(row[5]));
+			e.id      = static_cast<uint32_t>(strtoul(row[0], nullptr, 10));
+			e.char_id = static_cast<int32_t>(atoi(row[1]));
+			e.item_id = static_cast<int32_t>(atoi(row[2]));
 
 			return e;
 		}
@@ -149,7 +136,7 @@ public:
 
 	static int DeleteOne(
 		Database& db,
-		int item_tick_id
+		int keyring_id
 	)
 	{
 		auto results = db.QueryDatabase(
@@ -157,7 +144,7 @@ public:
 				"DELETE FROM {} WHERE {} = {}",
 				TableName(),
 				PrimaryKey(),
-				item_tick_id
+				keyring_id
 			)
 		);
 
@@ -166,18 +153,15 @@ public:
 
 	static int UpdateOne(
 		Database& db,
-		const ItemTick &e
+		const Keyring &e
 	)
 	{
 		std::vector<std::string> v;
 
 		auto columns = Columns();
 
-		v.push_back(columns[0] + " = " + std::to_string(e.it_itemid));
-		v.push_back(columns[1] + " = " + std::to_string(e.it_chance));
-		v.push_back(columns[2] + " = " + std::to_string(e.it_level));
-		v.push_back(columns[4] + " = '" + Strings::Escape(e.it_qglobal) + "'");
-		v.push_back(columns[5] + " = " + std::to_string(e.it_bagslot));
+		v.push_back(columns[1] + " = " + std::to_string(e.char_id));
+		v.push_back(columns[2] + " = " + std::to_string(e.item_id));
 
 		auto results = db.QueryDatabase(
 			fmt::format(
@@ -185,26 +169,23 @@ public:
 				TableName(),
 				Strings::Implode(", ", v),
 				PrimaryKey(),
-				e.it_id
+				e.id
 			)
 		);
 
 		return (results.Success() ? results.RowsAffected() : 0);
 	}
 
-	static ItemTick InsertOne(
+	static Keyring InsertOne(
 		Database& db,
-		ItemTick e
+		Keyring e
 	)
 	{
 		std::vector<std::string> v;
 
-		v.push_back(std::to_string(e.it_itemid));
-		v.push_back(std::to_string(e.it_chance));
-		v.push_back(std::to_string(e.it_level));
-		v.push_back(std::to_string(e.it_id));
-		v.push_back("'" + Strings::Escape(e.it_qglobal) + "'");
-		v.push_back(std::to_string(e.it_bagslot));
+		v.push_back(std::to_string(e.id));
+		v.push_back(std::to_string(e.char_id));
+		v.push_back(std::to_string(e.item_id));
 
 		auto results = db.QueryDatabase(
 			fmt::format(
@@ -215,7 +196,7 @@ public:
 		);
 
 		if (results.Success()) {
-			e.it_id = results.LastInsertedID();
+			e.id = results.LastInsertedID();
 			return e;
 		}
 
@@ -226,7 +207,7 @@ public:
 
 	static int InsertMany(
 		Database& db,
-		const std::vector<ItemTick> &entries
+		const std::vector<Keyring> &entries
 	)
 	{
 		std::vector<std::string> insert_chunks;
@@ -234,12 +215,9 @@ public:
 		for (auto &e: entries) {
 			std::vector<std::string> v;
 
-			v.push_back(std::to_string(e.it_itemid));
-			v.push_back(std::to_string(e.it_chance));
-			v.push_back(std::to_string(e.it_level));
-			v.push_back(std::to_string(e.it_id));
-			v.push_back("'" + Strings::Escape(e.it_qglobal) + "'");
-			v.push_back(std::to_string(e.it_bagslot));
+			v.push_back(std::to_string(e.id));
+			v.push_back(std::to_string(e.char_id));
+			v.push_back(std::to_string(e.item_id));
 
 			insert_chunks.push_back("(" + Strings::Implode(",", v) + ")");
 		}
@@ -257,9 +235,9 @@ public:
 		return (results.Success() ? results.RowsAffected() : 0);
 	}
 
-	static std::vector<ItemTick> All(Database& db)
+	static std::vector<Keyring> All(Database& db)
 	{
-		std::vector<ItemTick> all_entries;
+		std::vector<Keyring> all_entries;
 
 		auto results = db.QueryDatabase(
 			fmt::format(
@@ -271,14 +249,11 @@ public:
 		all_entries.reserve(results.RowCount());
 
 		for (auto row = results.begin(); row != results.end(); ++row) {
-			ItemTick e{};
+			Keyring e{};
 
-			e.it_itemid  = static_cast<int32_t>(atoi(row[0]));
-			e.it_chance  = static_cast<int32_t>(atoi(row[1]));
-			e.it_level   = static_cast<int32_t>(atoi(row[2]));
-			e.it_id      = static_cast<int32_t>(atoi(row[3]));
-			e.it_qglobal = row[4] ? row[4] : "";
-			e.it_bagslot = static_cast<int8_t>(atoi(row[5]));
+			e.id      = static_cast<uint32_t>(strtoul(row[0], nullptr, 10));
+			e.char_id = static_cast<int32_t>(atoi(row[1]));
+			e.item_id = static_cast<int32_t>(atoi(row[2]));
 
 			all_entries.push_back(e);
 		}
@@ -286,9 +261,9 @@ public:
 		return all_entries;
 	}
 
-	static std::vector<ItemTick> GetWhere(Database& db, const std::string &where_filter)
+	static std::vector<Keyring> GetWhere(Database& db, const std::string &where_filter)
 	{
-		std::vector<ItemTick> all_entries;
+		std::vector<Keyring> all_entries;
 
 		auto results = db.QueryDatabase(
 			fmt::format(
@@ -301,14 +276,11 @@ public:
 		all_entries.reserve(results.RowCount());
 
 		for (auto row = results.begin(); row != results.end(); ++row) {
-			ItemTick e{};
+			Keyring e{};
 
-			e.it_itemid  = static_cast<int32_t>(atoi(row[0]));
-			e.it_chance  = static_cast<int32_t>(atoi(row[1]));
-			e.it_level   = static_cast<int32_t>(atoi(row[2]));
-			e.it_id      = static_cast<int32_t>(atoi(row[3]));
-			e.it_qglobal = row[4] ? row[4] : "";
-			e.it_bagslot = static_cast<int8_t>(atoi(row[5]));
+			e.id      = static_cast<uint32_t>(strtoul(row[0], nullptr, 10));
+			e.char_id = static_cast<int32_t>(atoi(row[1]));
+			e.item_id = static_cast<int32_t>(atoi(row[2]));
 
 			all_entries.push_back(e);
 		}
@@ -369,4 +341,4 @@ public:
 
 };
 
-#endif //EQEMU_BASE_ITEM_TICK_REPOSITORY_H
+#endif //EQEMU_BASE_KEYRING_REPOSITORY_H

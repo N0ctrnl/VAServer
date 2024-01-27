@@ -29,6 +29,8 @@
 #include "zonedb.h"
 #include "../common/repositories/criteria/content_filter_criteria.h"
 #include "../common/events/player_event_logs.h"
+#include "../common/repositories/ground_spawns_repository.h"
+#include "../common/repositories/object_repository.h"
 
 
 const char DEFAULT_OBJECT_NAME[] = "IT63_ACTORDEF";
@@ -40,19 +42,24 @@ extern EntityList entity_list;
 extern WorldServer worldserver;
 
 // Loading object from database
-Object::Object(uint32 id, uint32 type, uint32 icon, const Object_Struct& object, const EQ::ItemInstance* inst)
- : respawn_timer(0), decay_timer(300000)
+Object::Object(
+	uint32 id,
+	uint32 type,
+	uint32 icon,
+	const Object_Struct &object,
+	const EQ::ItemInstance *inst
+) : respawn_timer(0), decay_timer(300000)
 {
-
-	user = nullptr;
+	user      = nullptr;
 	last_user = nullptr;
 
 	// Initialize members
-	m_id = id;
-	m_type = type;
-	m_icon = icon;
-	m_inst = nullptr;
-	m_ground_spawn=false;
+	m_id           = id;
+	m_type         = type;
+	m_icon         = icon;
+	m_inst         = nullptr;
+	m_ground_spawn = false;
+
 	// Copy object data
 	memcpy(&m_data, &object, sizeof(Object_Struct));
 	if (inst) {
@@ -61,13 +68,14 @@ Object::Object(uint32 id, uint32 type, uint32 icon, const Object_Struct& object,
 	} else {
 		decay_timer.Disable();
 	}
+
 	respawn_timer.Disable();
 
 	// Set drop_id to zero - it will be set when added to zone with SetID()
 	m_data.drop_id = 0;
-	m_data.size = object.size;
-	m_data.tilt_x = object.tilt_x;
-	m_data.tilt_y = object.tilt_y;
+	m_data.size    = object.size;
+	m_data.tilt_x  = object.tilt_x;
+	m_data.tilt_y  = object.tilt_y;
 
 	FixZ();
 }
@@ -85,7 +93,7 @@ Object::Object(const EQ::ItemInstance* inst, char* name,float max_x,float min_x,
 	m_min_y=min_y;
 	m_id	= 0;
 	m_inst	= (inst) ? inst->Clone() : nullptr;
-	m_type	= OT_DROPPEDITEM;
+	m_type	= ObjectTypes::Temporary;
 	m_icon	= 0;
 	m_ground_spawn = true;
 	decay_timer.Disable();
@@ -116,7 +124,7 @@ Object::Object(Client* client, const EQ::ItemInstance* inst)
 	// Initialize members
 	m_id	= 0;
 	m_inst	= (inst) ? inst->Clone() : nullptr;
-	m_type	= OT_DROPPEDITEM;
+	m_type	= ObjectTypes::Temporary;
 	m_icon	= 0;
 	m_ground_spawn = false;
 	// Set as much struct data as we can
@@ -179,7 +187,7 @@ Object::Object(const EQ::ItemInstance *inst, float x, float y, float z, float he
 	// Initialize members
 	m_id	= 0;
 	m_inst	= (inst) ? inst->Clone() : nullptr;
-	m_type	= OT_DROPPEDITEM;
+	m_type	= ObjectTypes::Temporary;
 	m_icon	= 0;
 	m_ground_spawn = false;
 	// Set as much struct data as we can
@@ -436,7 +444,7 @@ void Object::CreateDeSpawnPacket(EQApplicationPacket* app)
 }
 
 bool Object::Process(){
-	if(m_type == OT_DROPPEDITEM && decay_timer.Enabled() && decay_timer.Check()) {
+	if(m_type == ObjectTypes::Temporary && decay_timer.Enabled() && decay_timer.Check()) {
 		// Send click to all clients (removes entity on client)
 		auto outapp = new EQApplicationPacket(OP_ClickObject, sizeof(ClickObject_Struct));
 		ClickObject_Struct* click_object = (ClickObject_Struct*)outapp->pBuffer;
@@ -497,7 +505,7 @@ bool Object::HandleClick(Client* sender, const ClickObject_Struct* click_object)
 	if(m_ground_spawn) {//This is a Cool Groundspawn
 		respawn_timer.Start();
 	}
-	if (m_type == OT_DROPPEDITEM) {
+	if (m_type == ObjectTypes::Temporary) {
 		bool cursordelete = false;
 		bool duplicate_lore = false;
 		if (m_inst && sender) {
@@ -662,50 +670,57 @@ bool Object::HandleClick(Client* sender, const ClickObject_Struct* click_object)
 	return true;
 }
 
-// Add new Zone Object (theoretically only called for items dropped to ground)
-uint32 ZoneDatabase::AddObject(uint32 type, uint32 icon, const Object_Struct& object, const EQ::ItemInstance* inst)
+uint32 ZoneDatabase::AddObject(
+	uint32 type,
+	uint32 icon,
+	const Object_Struct& o,
+	const EQ::ItemInstance* inst
+)
 {
-	uint32 database_id = 0;
 	uint32 item_id = 0;
-	int16 charges = 0;
+	int16  charges = 0;
 
 	if (inst && inst->GetItem()) {
 		item_id = inst->GetItem()->ID;
 		charges = inst->GetCharges();
 	}
 
-	// SQL Escape object_name
-	uint32 len = strlen(object.object_name) * 2 + 1;
-	auto object_name = new char[len];
-	DoEscapeString(object_name, object.object_name, strlen(object.object_name));
+	auto e = ObjectRepository::NewEntity();
 
-    // Save new record for object
-	std::string query = StringFormat("INSERT INTO object "
-                                    "(zoneid, xpos, ypos, zpos, heading, "
-                                    "itemid, charges, objectname, type, icon) "
-                                    "values (%i, %f, %f, %f, %f, %i, %i, '%s', %i, %i)",
-                                    object.zone_id, object.x, object.y, object.z, object.heading,
-                                    item_id, charges, object_name, type, icon);
-    safe_delete_array(object_name);
-	auto results = QueryDatabase(query);
-	if (!results.Success()) {
-		LogError("Unable to insert object: [{}]", results.ErrorMessage().c_str());
+	e.zoneid     = o.zone_id;
+	e.xpos       = o.x;
+	e.ypos       = o.y;
+	e.zpos       = o.z;
+	e.heading    = o.heading;
+	e.itemid     = item_id;
+	e.charges    = charges;
+	e.objectname = o.object_name;
+	e.type       = type;
+	e.icon       = icon;
+
+	e = ObjectRepository::InsertOne(*this, e);
+
+	if (!e.id) {
 		return 0;
 	}
 
-	// Save container contents, if container
 	if (inst && inst->IsType(EQ::item::ItemClassBag)) {
-		SaveWorldContainer(object.zone_id, database_id, inst);
+		SaveWorldContainer(o.zone_id, e.id, inst);
 	}
 
-	return database_id;
+	return e.id;
 }
 
-// Update information about existing object in database
-void ZoneDatabase::UpdateObject(uint32 id, uint32 type, uint32 icon, const Object_Struct& object, const EQ::ItemInstance* inst)
+void ZoneDatabase::UpdateObject(
+	uint32 object_id,
+	uint32 type,
+	uint32 icon,
+	const Object_Struct& o,
+	const EQ::ItemInstance* inst
+)
 {
 	uint32 item_id = 0;
-	int16 charges = 0;
+	int16  charges = 0;
 
 	if (inst && inst->GetItem()) {
 		item_id = inst->GetItem()->ID;
@@ -713,82 +728,82 @@ void ZoneDatabase::UpdateObject(uint32 id, uint32 type, uint32 icon, const Objec
 	}
 
 	if (inst && !inst->IsType(EQ::item::ItemClassBag)) {
-		uint32 len         = strlen(object.object_name) * 2 + 1;
-		auto   object_name = new char[len];
-		DoEscapeString(object_name, object.object_name, strlen(object.object_name));
+		auto e = ObjectRepository::FindOne(*this, object_id);
 
-		// Save new record for object
-		std::string query = StringFormat(
-			"UPDATE object SET "
-			"zoneid = %i, xpos = %f, ypos = %f, zpos = %f, heading = %f, "
-			"itemid = %i, charges = %i, objectname = '%s', type = %i, icon = %i, "
-			"size = %f, tilt_x = %f, tilt_y = %f "
-			"WHERE id = %i",
-			object.zone_id, object.x, object.y, object.z, object.heading,
-			item_id, charges, object_name, type, icon,
-			object.size, object.tilt_x, object.tilt_y, id
-		);
-		safe_delete_array(object_name);
-		auto results = QueryDatabase(query);
-		if (!results.Success()) {
-			LogError("Unable to update object: [{}]", results.ErrorMessage().c_str());
+		e.zoneid     = o.zone_id;
+		e.xpos       = o.x;
+		e.ypos       = o.y;
+		e.zpos       = o.z;
+		e.heading    = o.heading;
+		e.itemid     = item_id;
+		e.charges    = charges;
+		e.objectname = o.object_name;
+		e.type       = type;
+		e.icon       = icon;
+		e.size       = o.size;
+		e.tilt_x     = o.tilt_x;
+		e.tilt_y     = o.tilt_y;
+
+		const int updated = ObjectRepository::UpdateOne(*this, e);
+
+		if (!updated) {
 			return;
 		}
 	}
 
-	// Save container contents, if container
 	if (inst && inst->IsType(EQ::item::ItemClassBag)) {
-		SaveWorldContainer(object.zone_id, id, inst);
+		SaveWorldContainer(o.zone_id, object_id, inst);
 	}
 }
 
-//
-Ground_Spawns* ZoneDatabase::LoadGroundSpawns(uint32 zone_id, int16 version, Ground_Spawns* gs) {
-
-	std::string query = StringFormat(
-		"SELECT max_x, max_y, max_z, "
-		"min_x, min_y, heading, name, "
-		"item, max_allowed, respawn_timer "
-		"FROM ground_spawns "
-		"WHERE zoneid = %i AND (version = %u OR version = -1) %s "
-		"LIMIT 50",
-		zone_id,
-		version,
-		ContentFilterCriteria::apply().c_str()
+GroundSpawns* ZoneDatabase::LoadGroundSpawns(
+	uint32 zone_id,
+	int16 instance_version,
+	GroundSpawns* gs
+)
+{
+	const auto& l = GroundSpawnsRepository::GetWhere(
+		*this,
+		fmt::format(
+			"`zoneid` = {} AND (`version` = {} OR `version` = -1) {} LIMIT 50",
+			zone_id,
+			instance_version,
+			ContentFilterCriteria::apply()
+		)
 	);
 
-	auto results = QueryDatabase(query);
-	if (!results.Success()) {
+	if (l.empty()) {
 		return gs;
 	}
 
-	int spawnIndex=0;
-    for (auto row = results.begin(); row != results.end(); ++row, ++spawnIndex) {
-        gs->spawn[spawnIndex].max_x=Strings::ToFloat(row[0]);
-        gs->spawn[spawnIndex].max_y=Strings::ToFloat(row[1]);
-        gs->spawn[spawnIndex].max_z=Strings::ToFloat(row[2]);
-        gs->spawn[spawnIndex].min_x=Strings::ToFloat(row[3]);
-        gs->spawn[spawnIndex].min_y=Strings::ToFloat(row[4]);
-        gs->spawn[spawnIndex].heading=Strings::ToFloat(row[5]);
-        strcpy(gs->spawn[spawnIndex].name,row[6]);
-        gs->spawn[spawnIndex].item=Strings::ToInt(row[7]);
-        gs->spawn[spawnIndex].max_allowed=Strings::ToInt(row[8]);
-        gs->spawn[spawnIndex].respawntimer=Strings::ToInt(row[9]);
-    }
+	uint32 slot_id = 0;
+
+	for (const auto& e : l) {
+		strcpy(gs->spawn[slot_id].name, e.name.c_str());
+
+		gs->spawn[slot_id].max_x        = e.max_x;
+		gs->spawn[slot_id].max_y        = e.max_y;
+		gs->spawn[slot_id].max_z        = e.max_z;
+		gs->spawn[slot_id].min_x        = e.min_x;
+		gs->spawn[slot_id].min_y        = e.min_y;
+		gs->spawn[slot_id].heading      = e.heading;
+		gs->spawn[slot_id].item         = e.item;
+		gs->spawn[slot_id].max_allowed  = e.max_allowed;
+		gs->spawn[slot_id].respawntimer = e.respawn_timer;
+
+		slot_id++;
+	}
+
 	return gs;
 }
 
-void ZoneDatabase::DeleteObject(uint32 id)
+void ZoneDatabase::DeleteObject(uint32 object_id)
 {
-	if (id == 0) {
+	if (!object_id) {
 		return;
 	}
 
-	std::string query = StringFormat("DELETE FROM object WHERE id = %i", id);
-	auto results = QueryDatabase(query);
-	if (!results.Success()) {
-		LogError("Unable to delete object: [{}]", results.ErrorMessage().c_str());
-	}
+	ObjectRepository::DeleteOne(*this, object_id);
 }
 
 uint32 Object::GetDBID()
@@ -969,7 +984,7 @@ void Object::SetSize(float size)
 
 void Object::SetSolidType(uint16 solidtype)
 {
-	m_data.solidtype = solidtype;
+	m_data.solid_type = solidtype;
 	auto app = new EQApplicationPacket();
 	auto app2 = new EQApplicationPacket();
 	CreateDeSpawnPacket(app);
@@ -987,7 +1002,7 @@ float Object::GetSize()
 
 uint16 Object::GetSolidType()
 {
-	return m_data.solidtype;
+	return m_data.solid_type;
 }
 
 const char* Object::GetModelName()

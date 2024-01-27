@@ -4739,3 +4739,81 @@ bool Client::IsAugmentRestricted(uint8 item_type, uint32 augment_restriction)
 
 	return false;
 }
+
+void Client::SummonItemIntoInventory(
+	uint32 item_id,
+	int16 charges,
+	uint32 aug1,
+	uint32 aug2,
+	uint32 aug3,
+	uint32 aug4,
+	uint32 aug5,
+	uint32 aug6,
+	bool is_attuned
+)
+{
+	auto *inst = database.CreateItem(
+		item_id,
+		charges,
+		aug1,
+		aug2,
+		aug3,
+		aug4,
+		aug5,
+		aug6,
+		is_attuned
+	);
+
+	if (!inst) {
+		return;
+	}
+
+	const bool  is_arrow = inst->GetItem()->ItemType == EQ::item::ItemTypeArrow;
+	const int16 slot_id  = m_inv.FindFreeSlot(
+		inst->IsClassBag(),
+		true,
+		inst->GetItem()->Size,
+		is_arrow
+	);
+
+	SummonItem(
+		item_id,
+		charges,
+		aug1,
+		aug2,
+		aug3,
+		aug4,
+		aug5,
+		aug6,
+		is_attuned,
+		slot_id
+	);
+}
+
+bool Client::HasItemOnCorpse(uint32 item_id)
+{
+	const uint32 corpse_count = GetCorpseCount();
+	if (!corpse_count) {
+		return EQ::invslot::SLOT_INVALID;
+	}
+
+	for (int i = 0; i < corpse_count; i++) {
+		const uint32 corpse_id = GetCorpseID(i);
+
+		for (int16 slot_id = EQ::invslot::POSSESSIONS_BEGIN; slot_id < EQ::invslot::POSSESSIONS_END; slot_id++) {
+			const uint32 current_item_id = GetCorpseItemAt(corpse_id, slot_id);
+			if (current_item_id && current_item_id == item_id) {
+				return true;
+			}
+		}
+
+		for (int16 slot_id = EQ::invbag::GENERAL_BAGS_BEGIN; slot_id < EQ::invbag::GENERAL_BAGS_END; slot_id++) {
+			const uint32 current_item_id = GetCorpseItemAt(corpse_id, slot_id);
+			if (current_item_id && current_item_id == item_id) {
+				return true;
+			}
+		}
+	}
+
+	return false;
+}

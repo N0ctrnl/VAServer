@@ -41,8 +41,11 @@
 #include "repositories/criteria/content_filter_criteria.h"
 #include "repositories/account_repository.h"
 #include "repositories/faction_association_repository.h"
+#include "repositories/starting_items_repository.h"
 #include "path_manager.h"
 #include "repositories/loottable_repository.h"
+#include "repositories/character_item_recast_repository.h"
+#include "repositories/character_corpses_repository.h"
 
 namespace ItemField
 {
@@ -446,45 +449,81 @@ bool SharedDatabase::SetSharedPlatinum(uint32 account_id, int32 amount_to_add) {
 	return true;
 }
 
-bool SharedDatabase::SetStartingItems(PlayerProfile_Struct* pp, EQ::InventoryProfile* inv, uint32 si_race, uint32 si_class, uint32 si_deity, uint32 si_current_zone, char* si_name, int admin_level) {
+bool SharedDatabase::SetStartingItems(
+	PlayerProfile_Struct *pp,
+	EQ::InventoryProfile *inv,
+	uint32 si_race,
+	uint32 si_class,
+	uint32 si_deity,
+	uint32 si_current_zone,
+	char *si_name,
+	int admin_level
+)
+{
+	const EQ::ItemData *item_data;
 
-	const EQ::ItemData *myitem;
+	const auto &l = StartingItemsRepository::All(*this);
 
-	const std::string query   = StringFormat(
-		"SELECT itemid, item_charges, slot FROM starting_items "
-		"WHERE (race = %i or race = 0) AND (class = %i or class = 0) AND "
-		"(deityid = %i or deityid = 0) AND (zoneid = %i or zoneid = 0) AND "
-		"gm <= %i %s ORDER BY id",
-		si_race,
-		si_class,
-		si_deity,
-		si_current_zone,
-		admin_level,
-		ContentFilterCriteria::apply().c_str()
-	);
-
-	auto results = QueryDatabase(query);
-	if (!results.Success()) {
+	if (l.empty()) {
 		return false;
 	}
 
+	std::vector<StartingItemsRepository::StartingItems> v;
 
-	for (auto& row = results.begin(); row != results.end(); ++row) {
-		const int32 itemid = Strings::ToInt(row[0]);
-		const int32 charges = Strings::ToInt(row[1]);
-		int32 slot = Strings::ToInt(row[2]);
-		myitem = GetItem(itemid);
+	for (const auto &e : l) {
+		const auto &classes = Strings::Split(e.class_list, "|");
+		const auto &deities = Strings::Split(e.deity_list, "|");
+		const auto &races   = Strings::Split(e.race_list, "|");
+		const auto &zones   = Strings::Split(e.zone_id_list, "|");
 
-		if(!myitem)
+		const std::string &all = std::to_string(0);
+
+		if (classes[0] != all) {
+			if (!Strings::Contains(classes, std::to_string(si_class))) {
+				continue;
+			}
+		}
+
+		if (deities[0] != all) {
+			if (!Strings::Contains(deities, std::to_string(si_deity))) {
+				continue;
+			}
+		}
+
+		if (races[0] != all) {
+			if (!Strings::Contains(races, std::to_string(si_race))) {
+				continue;
+			}
+		}
+
+		if (zones[0] != all) {
+			if (!Strings::Contains(zones, std::to_string(si_current_zone))) {
+				continue;
+			}
+		}
+
+		v.emplace_back(e);
+	}
+
+	for (const auto &e : v) {
+		const uint32 item_id      = e.item_id;
+		const uint8  item_charges = e.item_charges;
+		int32        slot         = e.inventory_slot;
+
+		item_data = GetItem(item_id);
+
+		if (!item_data) {
 			continue;
+		}
 
-		const EQ::ItemInstance* myinst = CreateBaseItem(myitem, charges);
+		const auto *inst = CreateBaseItem(item_data, item_charges);
 
-		if(slot < 0)
-			slot = inv->FindFreeSlot(0, 0);
+		if (slot < EQ::invslot::slotCharm) {
+			slot = inv->FindFreeSlot(false, false);
+		}
 
-		inv->PutItem(slot, *myinst);
-		safe_delete(myinst);
+		inv->PutItem(slot, *inst);
+		safe_delete(inst);
 	}
 
 	return true;
@@ -845,34 +884,49 @@ bool SharedDatabase::GetInventory(uint32 account_id, char *name, EQ::InventoryPr
 std::map<uint32, uint32> SharedDatabase::GetItemRecastTimestamps(uint32 char_id)
 {
 	std::map<uint32, uint32> timers;
-	const std::string query = StringFormat("SELECT recast_type,timestamp FROM character_item_recast WHERE id=%u", char_id);
-	auto results = QueryDatabase(query);
-	if (!results.Success() || results.RowCount() == 0)
-		return timers;
 
-	for (auto& row = results.begin(); row != results.end(); ++row)
-		timers[Strings::ToUnsignedInt(row[0])] = Strings::ToUnsignedInt(row[1]);
-	return timers; // RVO or move assigned
+	const auto& l = CharacterItemRecastRepository::GetWhere(
+		*this,
+		fmt::format(
+			"`id` = {}",
+			char_id
+		)
+	);
+
+	if (l.empty()) {
+		return timers;
+	}
+
+	for (const auto& e : l) {
+		timers[e.recast_type] = e.timestamp;
+	}
+
+	return timers;
 }
 
 uint32 SharedDatabase::GetItemRecastTimestamp(uint32 char_id, uint32 recast_type)
 {
-	const std::string query = StringFormat("SELECT timestamp FROM character_item_recast WHERE id=%u AND recast_type=%u",
-	                                       char_id, recast_type);
-	auto results = QueryDatabase(query);
-	if (!results.Success() || results.RowCount() == 0)
-		return 0;
+	const auto& l = CharacterItemRecastRepository::GetWhere(
+		*this,
+		fmt::format(
+			"`id` = {} AND `recast_type` = {}",
+			char_id,
+			recast_type
+		)
+	);
 
-	auto& row = results.begin();
-	return Strings::ToUnsignedInt(row[0]);
+	return l.empty() ? 0 : l[0].timestamp;
 }
 
 void SharedDatabase::ClearOldRecastTimestamps(uint32 char_id)
 {
-	// This actually isn't strictly live-like. Live your recast timestamps are forever
-	const std::string query =
-	    StringFormat("DELETE FROM character_item_recast WHERE id = %u and timestamp < UNIX_TIMESTAMP()", char_id);
-	QueryDatabase(query);
+	CharacterItemRecastRepository::DeleteWhere(
+		*this,
+		fmt::format(
+			"`id` = {} AND `timestamp` < UNIX_TIMESTAMP()",
+			char_id
+		)
+	);
 }
 
 void SharedDatabase::GetItemsCount(int32 &item_count, uint32 &max_id)
@@ -1614,27 +1668,18 @@ EQ::ItemInstance* SharedDatabase::CreateBaseItem(const EQ::ItemData* item, int16
 	return inst;
 }
 
-int32 SharedDatabase::DeleteStalePlayerCorpses() {
-	if(RuleB(Zone, EnableShadowrest)) {
-		const std::string query = StringFormat(
-			"UPDATE `character_corpses` SET `is_buried` = 1 WHERE `is_buried` = 0 AND "
-            "(UNIX_TIMESTAMP() - UNIX_TIMESTAMP(time_of_death)) > %d AND NOT time_of_death = 0",
-             (RuleI(Character, CorpseDecayTimeMS) / 1000));
-		const auto results = QueryDatabase(query);
-		if (!results.Success())
-			return -1;
-
-		return results.RowsAffected();
-	}
-
-	const std::string query = StringFormat(
-		"DELETE FROM `character_corpses` WHERE (UNIX_TIMESTAMP() - UNIX_TIMESTAMP(time_of_death)) > %d "
-		"AND NOT time_of_death = 0", (RuleI(Character, CorpseDecayTimeMS) / 1000));
-	const auto results = QueryDatabase(query);
-    if (!results.Success())
-        return -1;
-
-    return results.RowsAffected();
+int SharedDatabase::DeleteStalePlayerCorpses() {
+	return (
+		RuleB(Zone, EnableShadowrest) ?
+		CharacterCorpsesRepository::BuryDecayedCorpses(*this) :
+		CharacterCorpsesRepository::DeleteWhere(
+			*this,
+			fmt::format(
+				"(UNIX_TIMESTAMP() - UNIX_TIMESTAMP(time_of_death)) > {} AND time_of_death != 0",
+				RuleI(Character, CorpseDecayTimeMS) / 1000
+			)
+		)
+	);
 }
 
 bool SharedDatabase::GetCommandSettings(std::map<std::string, std::pair<uint8, std::vector<std::string>>> &command_settings)
@@ -1771,7 +1816,7 @@ bool SharedDatabase::LoadSkillCaps(const std::string &prefix) {
 }
 
 void SharedDatabase::LoadSkillCaps(void *data) {
-	const uint32 class_count = PLAYER_CLASS_COUNT;
+	const uint32 class_count = Class::PLAYER_CLASS_COUNT;
 	const uint32 skill_count = EQ::skills::HIGHEST_SKILL + 1;
 	const uint32 level_count = HARD_LEVEL_CAP + 1;
 	uint16 *skill_caps_table = static_cast<uint16*>(data);
@@ -1811,7 +1856,7 @@ uint16 SharedDatabase::GetSkillCap(uint8 Class_, EQ::skills::SkillType Skill, ui
 		SkillMaxLevel = RuleI(Character, MaxLevel);
 	}
 
-	const uint32 class_count = PLAYER_CLASS_COUNT;
+	const uint32 class_count = Class::PLAYER_CLASS_COUNT;
 	const uint32 skill_count = EQ::skills::HIGHEST_SKILL + 1;
 	const uint32 level_count = HARD_LEVEL_CAP + 1;
 	if(Class_ > class_count || static_cast<uint32>(Skill) > skill_count || Level > level_count) {
@@ -1841,7 +1886,7 @@ uint8 SharedDatabase::GetTrainLevel(uint8 Class_, EQ::skills::SkillType Skill, u
 		SkillMaxLevel = RuleI(Character, MaxLevel);
 	}
 
-	const uint32 class_count = PLAYER_CLASS_COUNT;
+	const uint32 class_count = Class::PLAYER_CLASS_COUNT;
 	const uint32 skill_count = EQ::skills::HIGHEST_SKILL + 1;
 	const uint32 level_count = HARD_LEVEL_CAP + 1;
 	if(Class_ > class_count || static_cast<uint32>(Skill) > skill_count || Level > level_count) {
@@ -2024,7 +2069,7 @@ void SharedDatabase::LoadSpells(void *data, int max_spells) {
 		sp[tempid].environment_type=Strings::ToInt(row[102]);
 		sp[tempid].time_of_day=Strings::ToInt(row[103]);
 
-		for(y=0; y < PLAYER_CLASS_COUNT;y++)
+		for(y=0; y < Class::PLAYER_CLASS_COUNT;y++)
 			sp[tempid].classes[y]=Strings::ToInt(row[104+y]);
 
 		sp[tempid].casting_animation=Strings::ToInt(row[120]);

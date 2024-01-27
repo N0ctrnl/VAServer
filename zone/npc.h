@@ -192,10 +192,20 @@ public:
 	virtual void SpellProcess();
 	virtual void FillSpawnStruct(NewSpawn_Struct* ns, Mob* ForWho);
 
-	void	AddItem(const EQ::ItemData* item, uint16 charges, bool equipitem = true);
-	void	AddItem(uint32 itemid, uint16 charges, bool equipitem = true, uint32 aug1 = 0, uint32 aug2 = 0, uint32 aug3 = 0, uint32 aug4 = 0, uint32 aug5 = 0, uint32 aug6 = 0);
+	void AddItem(const EQ::ItemData *item, uint16 charges, bool equip_item = true);
+	void AddItem(
+		uint32 item_id,
+		uint16 charges,
+		bool equip_item = true,
+		uint32 augment_one = 0,
+		uint32 augment_two = 0,
+		uint32 augment_three = 0,
+		uint32 augment_four = 0,
+		uint32 augment_five = 0,
+		uint32 augment_six = 0
+	);
 	void	AddLootTable();
-	void	AddLootTable(uint32 ldid);
+	void	AddLootTable(uint32 loottable_id);
 	void	CheckGlobalLootTables();
 	void	DescribeAggro(Client *to_who, Mob *mob, bool verbose);
 	void	RemoveItem(uint32 item_id, uint16 quantity = 0, uint16 slot = 0);
@@ -203,7 +213,7 @@ public:
 	void	ClearItemList();
 	inline const ItemList &GetItemList() { return itemlist; }
 	ServerLootItem_Struct*	GetItem(int slot_id);
-	void	AddCash(uint16 in_copper, uint16 in_silver, uint16 in_gold, uint16 in_platinum);
+	void	AddCash(uint32 in_copper, uint32 in_silver, uint32 in_gold, uint32 in_platinum);
 	void	RemoveCash();
 	void	QueryLoot(Client* to, bool is_pet_query = false);
 	bool	HasItem(uint32 item_id);
@@ -314,12 +324,12 @@ public:
 		ItemList *itemlist,
 		LootDropEntries_Struct loot_drop,
 		bool wear_change = false,
-		uint32 aug1 = 0,
-		uint32 aug2 = 0,
-		uint32 aug3 = 0,
-		uint32 aug4 = 0,
-		uint32 aug5 = 0,
-		uint32 aug6 = 0
+		uint32 augment_one = 0,
+		uint32 augment_two = 0,
+		uint32 augment_three = 0,
+		uint32 augment_four = 0,
+		uint32 augment_five = 0,
+		uint32 augment_six = 0
 	);
 
 	bool MeetsLootDropLevelRequirements(LootDropEntries_Struct loot_drop, bool verbose=false);
@@ -373,18 +383,19 @@ public:
 	void				AI_SetRoambox(float distance, float max_x, float min_x, float max_y, float min_y, uint32 delay = 2500, uint32 min_delay = 2500);
 
 	//mercenary stuff
-	void	LoadMercTypes();
-	void	LoadMercs();
-	std::list<MercType> GetMercTypesList() {return mercTypeList; };
-	std::list<MercType> GetMercTypesList( uint32 expansion );
-	std::list<MercData> GetMercsList() {return mercDataList; };
-	std::list<MercData> GetMercsList( uint32 expansion );
-	int		GetNumMercTypes() { return static_cast<int>(mercTypeList.size()); };
-	int		GetNumMercTypes( uint32 expansion );
-	int		GetNumMercs() { return static_cast<int>(mercDataList.size()); };
-	int		GetNumMercs( uint32 expansion );
+	void	LoadMercenaryTypes();
+	void	LoadMercenaries();
+	std::list<MercType> GetMercenaryTypesList() {return mercTypeList; };
+	std::list<MercType> GetMercenaryTypesList( uint32 expansion );
+	std::list<MercData> GetMercenariesList() {return mercDataList; };
+	std::list<MercData> GetMercenariesList( uint32 expansion );
+	int		GetNumMercenaryTypes() { return static_cast<int>(mercTypeList.size()); };
+	int		GetNumMercenaryTypes( uint32 expansion );
+	int		GetNumberOfMercenaries() { return static_cast<int>(mercDataList.size()); };
+	int		GetNumberOfMercenaries( uint32 expansion );
 
-	inline bool WillAggroNPCs() const { return(npc_aggro); }
+	inline bool GetNPCAggro() const { return npc_aggro; }
+	inline void SetNPCAggro(bool in_npc_aggro) { npc_aggro = in_npc_aggro; }
 
 	inline void GiveNPCTypeData(NPCType *ours) { NPCTypedata_ours = ours; }
 	inline const uint32 GetNPCSpellsID()	const { return npc_spells_id; }
@@ -464,8 +475,8 @@ public:
 	Timer *GetRefaceTimer() const { return reface_timer; }
 	const uint32 GetAltCurrencyType() const { return NPCTypedata->alt_currency_type; }
 
-	NPC_Emote_Struct* GetNPCEmote(uint32 emoteid, uint8 event_);
-	void DoNPCEmote(uint8 event_, uint32 emoteid);
+	NPC_Emote_Struct* GetNPCEmote(uint32 emote_id, uint8 event_);
+	void DoNPCEmote(uint8 event_, uint32 emote_id, Mob* t = nullptr);
 	bool CanTalk();
 	void DoQuestPause(Mob *other);
 

@@ -106,7 +106,7 @@ public:
 	void depopall(int npc_type = 0);
 	void depopzone(bool StartSpawnTimer = true);
 	void repopzone();
-	void processmobswhilezoneempty(bool on);
+	void processmobswhilezoneempty(bool idle_when_empty);
 	void settarget(const char *type, int target_id);
 	void follow(int entity_id, int distance);
 	void sfollow();
@@ -120,7 +120,7 @@ public:
 	std::string getskillname(int skill_id);
 	std::string getldonthemename(uint32 theme_id);
 	std::string getfactionname(int faction_id);
-	std::string getlanguagename(int language_id);
+	std::string getlanguagename(uint8 language_id);
 	std::string getbodytypename(uint32 bodytype_id);
 	std::string getconsiderlevelname(uint8 consider_level);
 	void safemove();
@@ -142,7 +142,7 @@ public:
 	void movegrp(int zoneid, float x, float y, float z);
 	void doanim(int animation_id, int animation_speed = 0, bool ackreq = true, eqFilterType filter = FilterNone);
 	void addskill(int skill_id, int value);
-	void setlanguage(int skill_id, int value);
+	void setlanguage(uint8 language_id, uint8 language_skill);
 	void setskill(int skill_id, int value);
 	void setallskill(int value);
 	void attack(const char *client_name);
@@ -193,9 +193,9 @@ public:
 	void sethp(int64 hpperc);
 	bool summonburiedplayercorpse(uint32 char_id, const glm::vec4& position);
 	bool summonallplayercorpses(uint32 char_id, const glm::vec4& position);
-	uint32 getplayerburiedcorpsecount(uint32 char_id);
-	int getplayercorpsecount(uint32 char_id);
-	int getplayercorpsecountbyzoneid(uint32 char_id, uint32 zone_id);
+	int64 getplayerburiedcorpsecount(uint32 char_id);
+	int64 getplayercorpsecount(uint32 character_id);
+	int64 getplayercorpsecountbyzoneid(uint32 character_id, uint32 zone_id);
 	bool buryplayercorpse(uint32 char_id);
 	void forcedooropen(uint32 doorid, bool altmode);
 	void forcedoorclose(uint32 doorid, bool altmode);
@@ -262,7 +262,7 @@ public:
 	void UpdateSpawnTimer(uint32 id, uint32 newTime);
 	void MerchantSetItem(uint32 NPCid, uint32 itemid, uint32 quantity = 0);
 	uint32 MerchantCountItem(uint32 NPCid, uint32 itemid);
-	uint16 CreateInstance(const char *zone_short_name, int16 instance_version, uint32 duration);
+	uint16 CreateInstance(const std::string& zone_short_name, int16 instance_version, uint32 duration);
 	void UpdateInstanceTimer(uint16 instance_id, uint32 new_duration);
 	void UpdateZoneHeader(std::string type, std::string value);
 	uint32 GetInstanceTimer();
@@ -270,7 +270,7 @@ public:
 	void DestroyInstance(uint16 instance_id);
 	uint16 GetInstanceID(const char *zone, int16 version);
 	std::vector<uint16> GetInstanceIDs(std::string zone_name, uint32 character_id = 0);
-	uint16 GetInstanceIDByCharID(const char *zone, int16 version, uint32 char_id);
+	uint16 GetInstanceIDByCharID(const std::string& zone_short_name, int16 instance_version, uint32 character_id);
 	void AssignToInstance(uint16 instance_id);
 	void AssignToInstanceByCharID(uint16 instance_id, uint32 char_id);
 	void AssignGroupToInstance(uint16 instance_id);
@@ -333,10 +333,10 @@ public:
 	void ClearNPCTypeCache(int npctype_id);
 	void ReloadZoneStaticData();
 	std::string gethexcolorcode(std::string color_name);
-	double GetAAEXPModifierByCharID(uint32 character_id, uint32 zone_id, int16 instance_version = -1) const;
-	double GetEXPModifierByCharID(uint32 character_id, uint32 zone_id, int16 instance_version = -1) const;
-	void SetAAEXPModifierByCharID(uint32 character_id, uint32 zone_id, double aa_modifier, int16 instance_version = -1);
-	void SetEXPModifierByCharID(uint32 character_id, uint32 zone_id, double exp_modifier, int16 instance_version = -1);
+	float GetAAEXPModifierByCharID(uint32 character_id, uint32 zone_id, int16 instance_version = -1) const;
+	float GetEXPModifierByCharID(uint32 character_id, uint32 zone_id, int16 instance_version = -1) const;
+	void SetAAEXPModifierByCharID(uint32 character_id, uint32 zone_id, float aa_modifier, int16 instance_version = -1);
+	void SetEXPModifierByCharID(uint32 character_id, uint32 zone_id, float exp_modifier, int16 instance_version = -1);
 	std::string getgendername(uint32 gender_id);
 	std::string getdeityname(uint32 deity_id);
 	std::string getinventoryslotname(int16 slot_id);
@@ -365,8 +365,8 @@ public:
 	std::string GetEncounter() const;
 	inline bool ProximitySayInUse() { return HaveProximitySays; }
 
-	int createbotcount(uint8 class_id = NO_CLASS);
-	int spawnbotcount(uint8 class_id = NO_CLASS);
+	int createbotcount(uint8 class_id = Class::None);
+	int spawnbotcount(uint8 class_id = Class::None);
 	bool botquest();
 	bool createBot(const char *name, const char *lastname, uint8 level, uint16 race, uint8 botclass, uint8 gender);
 

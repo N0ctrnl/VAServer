@@ -1,11 +1,11 @@
-#ifndef EQEMU_ITEM_TICK_REPOSITORY_H
-#define EQEMU_ITEM_TICK_REPOSITORY_H
+#ifndef EQEMU_KEYRING_REPOSITORY_H
+#define EQEMU_KEYRING_REPOSITORY_H
 
 #include "../database.h"
 #include "../strings.h"
-#include "base/base_item_tick_repository.h"
+#include "base/base_keyring_repository.h"
 
-class ItemTickRepository: public BaseItemTickRepository {
+class KeyringRepository: public BaseKeyringRepository {
 public:
 
     /**
@@ -32,10 +32,10 @@ public:
      *
      * Example custom methods in a repository
      *
-     * ItemTickRepository::GetByZoneAndVersion(int zone_id, int zone_version)
-     * ItemTickRepository::GetWhereNeverExpires()
-     * ItemTickRepository::GetWhereXAndY()
-     * ItemTickRepository::DeleteWhereXAndY()
+     * KeyringRepository::GetByZoneAndVersion(int zone_id, int zone_version)
+     * KeyringRepository::GetWhereNeverExpires()
+     * KeyringRepository::GetWhereXAndY()
+     * KeyringRepository::DeleteWhereXAndY()
      *
      * Most of the above could be covered by base methods, but if you as a developer
      * find yourself re-using logic for other parts of the code, its best to just make a
@@ -47,4 +47,4 @@ public:
 
 };
 
-#endif //EQEMU_ITEM_TICK_REPOSITORY_H
+#endif //EQEMU_KEYRING_REPOSITORY_H

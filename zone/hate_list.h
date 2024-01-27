@@ -41,16 +41,12 @@ public:
 	HateList();
 	~HateList();
 
-	Mob *GetClosestEntOnHateList(Mob *hater, bool skip_mezzed = false, EntityFilterType entity_type = EntityFilterType::All);
+	Mob *GetClosestEntOnHateList(Mob *hater, bool skip_mezzed = false, EntityFilterType filter_type = EntityFilterType::All);
 	Mob *GetDamageTopOnHateList(Mob *hater); // didn't add 'skip_mezzed' due to calls being in ::Death()
-	Mob *GetEntWithMostHateOnList(Mob *center, Mob *skip = nullptr, bool skip_mezzed = false);
-	Mob *GetRandomEntOnHateList(bool skip_mezzed = false);
-	Mob *GetEntWithMostHateOnList(bool skip_mezzed = false);
-	Mob *GetEscapingEntOnHateList(Mob *center, float range = 0.0f, bool first = false);
-
-	Bot* GetRandomBotOnHateList(bool skip_mezzed = false);
-	Client *GetRandomClientOnHateList(bool skip_mezzed = false);
-	NPC *GetRandomNPCOnHateList(bool skip_mezzed = false);
+	Mob *GetMobWithMostHateOnList(Mob *center, Mob *skip = nullptr, bool skip_mezzed = false, EntityFilterType filter_type = EntityFilterType::All);
+	Mob *GetRandomMobOnHateList(EntityFilterType filter_type = EntityFilterType::All);
+	Mob *GetMobWithMostHateOnList(bool skip_mezzed = false);
+	Mob *GetEscapingMobOnHateList(Mob *center, float range = 0.0f, bool first = false);
 
 	bool IsEntOnHateList(Mob *mob);
 	bool IsHateListEmpty();
@@ -88,7 +84,7 @@ public:
 	void SetHateAmountOnEnt(Mob *other, int64 in_hate, uint64 in_damage);
 	void SetHateOwner(Mob *new_hate_owner) { hate_owner = new_hate_owner; }
 	void SpellCast(Mob *caster, uint32 spell_id, float range, Mob *ae_center = nullptr);
-	void WipeHateList();
+	void WipeHateList(bool npc_only = false);
 	void RemoveStaleEntries(int time_ms, float dist);
 
 

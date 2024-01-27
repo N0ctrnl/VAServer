@@ -29,6 +29,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../common/repositories/account_repository.h"
+
 // Disgrace: for windows compile
 #ifdef _WINDOWS
 #include <windows.h>
@@ -52,6 +54,7 @@
 
 #include "repositories/zone_repository.h"
 #include "zone_store.h"
+#include "repositories/merchantlist_temp_repository.h"
 
 extern Client client;
 
@@ -1219,8 +1222,9 @@ void Database::GetAccountFromID(uint32 id, char* oAccountName, int16* oStatus) {
 		*oStatus = Strings::ToInt(row[1]);
 }
 
-void Database::ClearMerchantTemp(){
-	QueryDatabase("DELETE FROM merchantlist_temp");
+void Database::ClearMerchantTemp()
+{
+	MerchantlistTempRepository::ClearTemporaryMerchantLists(*this);
 }
 
 bool Database::UpdateName(const char* oldname, const char* newname) {
@@ -1643,25 +1647,20 @@ void Database::ClearGroupLeader(uint32 gid) {
 		std::cout << "Unable to clear group leader: " << results.ErrorMessage() << std::endl;
 }
 
-uint8 Database::GetAgreementFlag(uint32 acctid) {
-
-	std::string query = StringFormat("SELECT rulesflag FROM account WHERE id=%i",acctid);
-	auto results = QueryDatabase(query);
-
-	if (!results.Success())
+uint8 Database::GetAgreementFlag(uint32 account_id)
+{
+	const auto& e = AccountRepository::FindOne(*this, account_id);
+	if (!e.id) {
 		return 0;
+	}
 
-	if (results.RowCount() != 1)
-		return 0;
-
-	auto row = results.begin();
-
-	return Strings::ToUnsignedInt(row[0]);
+	return e.rulesflag;
 }
 
-void Database::SetAgreementFlag(uint32 acctid) {
-	std::string query = StringFormat("UPDATE account SET rulesflag=1 where id=%i", acctid);
-	QueryDatabase(query);
+void Database::SetAgreementFlag(uint32 account_id) {
+	auto e = AccountRepository::FindOne(*this, account_id);
+	e.rulesflag = 1;
+	AccountRepository::UpdateOne(*this, e);
 }
 
 void Database::ClearRaid(uint32 rid) {
@@ -2249,6 +2248,11 @@ bool Database::CopyCharacter(
 	row     = results.begin();
 	std::string new_character_id = row[0];
 
+	std::vector<std::string> tables_to_zero_id = {
+		"keyring",
+		"data_buckets",
+	};
+
 	TransactionBegin();
 	for (const auto &iter : DatabaseSchema::GetCharacterTables()) {
 		std::string table_name               = iter.first;
@@ -2281,6 +2285,10 @@ bool Database::CopyCharacter(
 			for (int                 column_index = 0; column_index < column_count; column_index++) {
 				std::string column = columns[column_index];
 				std::string value  = row[column_index] ? row[column_index] : "null";
+
+				if (column == "id" && Strings::Contains(tables_to_zero_id, table_name)) {
+					value = "0";
+				}
 
 				if (column == character_id_column_name) {
 					value = new_character_id;
@@ -2329,7 +2337,6 @@ bool Database::CopyCharacter(
 			if (!insert.ErrorMessage().empty()) {
 				TransactionRollback();
 				return false;
-				break;
 			}
 		}
 	}
