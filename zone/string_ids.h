@@ -140,6 +140,7 @@
 #define SONG_NEEDS_BRASS			408		//You need to play a brass instrument for this song
 #define AA_GAIN_ABILITY				410		//You have gained the ability "%T1" at a cost of %2 ability %T3.
 #define AA_IMPROVE					411		//You have improved %T1 %2 at a cost of %3 ability %T4.
+#define TAUNT_SUCCESS				412		//You taunt %1 to ignore others and attack you!
 #define AA_REUSE_MSG				413		//You can use the ability %B1(1) again in %2 hour(s) %3 minute(s) %4 seconds.
 #define AA_REUSE_MSG2				414		//You can use the ability %B1(1) again in %2 minute(s) %3 seconds.
 #define YOU_HEALED					419		//%1 has healed you for %2 points of damage.
@@ -277,6 +278,7 @@
 #define GROWS_DIM					1237	//Your %1 grows dim.
 #define BEGINS_TO_SHINE				1238	//Your %1 begins to shine.
 #define SURNAME_REJECTED			1374	//Your new surname was rejected. Please try a different name.
+#define GUILD_DISBANDED				1377    //Your guild has been disbanded!  You are no longer a member of any guild.
 #define DUEL_DECLINE				1383	//%1 has declined your challenge to duel to the death.
 #define DUEL_ACCEPTED				1384	//%1 has already accepted a duel with someone else.
 #define DUEL_CONSIDERING			1385	//%1 is considering a duel with someone else.
@@ -383,6 +385,7 @@
 #define DUNGEON_SEALED				5141	//The gateway to the dungeon is sealed off to you.  Perhaps you would be able to enter if you needed to adventure there.
 #define ADVENTURE_COMPLETE			5147	//You received %1 points for successfully completing the adventure.
 #define SUCCOR_FAIL					5169	//The portal collapes before you can escape!
+#define NO_PROPER_ACCESS			5410    //You don't have the proper access rights.
 #define AUGMENT_RESTRICTED			5480	//The item does not satisfy the augment's restrictions.
 #define PET_ATTACKING				5501	//%1 tells you, 'Attacking %2 Master.'
 #define AVOID_STUNNING_BLOW			5753	//You avoid the stunning blow.
@@ -407,6 +410,7 @@
 #define TRANSFORM_FAILED			6326	//This mold cannot be applied to your %1.
 #define TRANSFORM_COMPLETE			6327	//You have successfully transformed your %1.
 #define DETRANSFORM_FAILED			6341 	//%1 has no transformation that can be removed.
+#define GUILD_PERMISSION_FAILED		6418	//You do not have permission to change access options.
 #define GENERIC_STRING				6688	//%1 (used to any basic message)
 #define SENTINEL_TRIG_YOU			6724	//You have triggered your sentinel.
 #define SENTINEL_TRIG_OTHER			6725	//%1 has triggered your sentinel.
@@ -479,6 +483,10 @@
 #define NO_CAST_OUT_OF_COMBAT		9191	//You can not cast this spell while out of combat.
 #define NO_ABILITY_IN_COMBAT		9192	//You can not use this ability while in combat.
 #define NO_ABILITY_OUT_OF_COMBAT	9194	//You can not use this ability while out of combat.
+#define GAIN_GROUPXP_BONUS			9298	//You gain party experience (with a bonus)!
+#define GAIN_GROUPXP_PENALTY		9301	//You gain party experience (with a penalty)!
+#define GAIN_RAIDXP_BONUS			9302	//You gained raid experience (with a bonus)!
+#define GAIN_RAIDXP_PENALTY			9303	//You gained raid experience (with a penalty)!
 #define LESSER_SPELL_VERSION        11004   //%1 is a lesser version of %2 and cannot be scribed
 #define AE_RAMPAGE					11015	//%1 goes on a WILD RAMPAGE!
 #define GROUP_IS_FULL				12000	//You cannot join that group, it is full.
@@ -558,6 +566,8 @@
 #define TOGGLE_OFF					13173	//Asking server to turn OFF all incoming tells for you.
 #define DUEL_INPROGRESS				13251	//You have already accepted a duel with someone else cowardly dog.
 #define OTHER_HIT_DOT				13327	//%1 has taken %2 damage from %3 by %4.
+#define GAIN_XP_BONUS				14541	//You gain experience (with a bonus)!
+#define GAIN_XP_PENALTY				14542	//You gain experience (with a penalty)!
 #define GENERIC_MISS				15041	//%1 missed %2
 
 #endif

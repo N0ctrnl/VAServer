@@ -313,12 +313,12 @@ int Perl__getinventoryslotid(std::string identifier)
 	return result;
 }
 
-void Perl__castspell(int spell_id, int target_id)
+void Perl__castspell(uint16 spell_id, uint16 target_id)
 {
 	quest_manager.castspell(spell_id, target_id);
 }
 
-void Perl__selfcast(int spell_id)
+void Perl__selfcast(uint16 spell_id)
 {
 	quest_manager.selfcast(spell_id);
 }
@@ -353,47 +353,67 @@ void Perl__zoneraid(const char* zone_name)
 	quest_manager.ZoneRaid(zone_name);
 }
 
-bool Perl__hastimer(const char* timer_name)
+bool Perl__hastimer(std::string timer_name)
 {
 	return quest_manager.hastimer(timer_name);
 }
 
-bool Perl__ispausedtimer(const char* timer_name)
+bool Perl__ispausedtimer(std::string timer_name)
 {
 	return quest_manager.ispausedtimer(timer_name);
 }
 
-uint32_t Perl__getremainingtimeMS(const char* timer_name)
+uint32_t Perl__getremainingtimeMS(std::string timer_name)
 {
 	return quest_manager.getremainingtimeMS(timer_name);
 }
 
-uint32_t Perl__gettimerdurationMS(const char* timer_name)
+uint32_t Perl__gettimerdurationMS(std::string timer_name)
 {
 	return quest_manager.gettimerdurationMS(timer_name);
 }
 
-void Perl__settimer(const char* timer_name, int seconds)
+void Perl__settimer(std::string timer_name, uint32 seconds)
 {
 	quest_manager.settimer(timer_name, seconds);
 }
 
-void Perl__settimerMS(const char* timer_name, int milliseconds)
+void Perl__settimer(std::string timer_name, uint32 seconds, Mob* m)
+{
+	quest_manager.settimer(timer_name, seconds);
+}
+
+void Perl__settimer(std::string timer_name, uint32 seconds, EQ::ItemInstance* inst)
+{
+	quest_manager.settimer(timer_name, seconds);
+}
+
+void Perl__settimerMS(std::string timer_name, uint32 milliseconds)
 {
 	quest_manager.settimerMS(timer_name, milliseconds);
 }
 
-void Perl__pausetimer(const char* timer_name)
+void Perl__settimerMS(std::string timer_name, uint32 milliseconds, Mob* m)
+{
+	quest_manager.settimerMS(timer_name, milliseconds, m);
+}
+
+void Perl__settimerMS(std::string timer_name, uint32 milliseconds, EQ::ItemInstance* inst)
+{
+	quest_manager.settimerMS(timer_name, milliseconds, inst);
+}
+
+void Perl__pausetimer(std::string timer_name)
 {
 	quest_manager.pausetimer(timer_name);
 }
 
-void Perl__resumetimer(const char* timer_name)
+void Perl__resumetimer(std::string timer_name)
 {
 	quest_manager.resumetimer(timer_name);
 }
 
-void Perl__stoptimer(const char* timer_name)
+void Perl__stoptimer(std::string timer_name)
 {
 	quest_manager.stoptimer(timer_name);
 }
@@ -5762,6 +5782,57 @@ std::string Perl__convert_money_to_string(perl::hash table)
 	return Strings::Money(platinum, gold, silver, copper);
 }
 
+uint8 Perl__GetBotClassByID(uint32 bot_id)
+{
+	return database.botdb.GetBotClassByID(bot_id);
+}
+
+uint8 Perl__GetBotGenderByID(uint32 bot_id)
+{
+	return database.botdb.GetBotGenderByID(bot_id);
+}
+
+perl::array Perl__GetBotIDsByCharacterID(uint32 character_id)
+{
+	perl::array result;
+
+	const auto bot_ids = database.botdb.GetBotIDsByCharacterID(character_id);
+
+	for (int i = 0; i < bot_ids.size(); i++) {
+		result.push_back(bot_ids[i]);
+	}
+
+	return result;
+}
+
+perl::array Perl__GetBotIDsByCharacterID(uint32 character_id, uint8 class_id)
+{
+	perl::array result;
+
+	const auto bot_ids = database.botdb.GetBotIDsByCharacterID(character_id, class_id);
+
+	for (int i = 0; i < bot_ids.size(); i++) {
+		result.push_back(bot_ids[i]);
+	}
+
+	return result;
+}
+
+uint8 Perl__GetBotLevelByID(uint32 bot_id)
+{
+	return database.botdb.GetBotLevelByID(bot_id);
+}
+
+std::string Perl__GetBotNameByID(uint32 bot_id)
+{
+	return database.botdb.GetBotNameByID(bot_id);
+}
+
+uint16 Perl__GetBotRaceByID(uint32 bot_id)
+{
+	return database.botdb.GetBotRaceByID(bot_id);
+}
+
 void perl_register_quest()
 {
 	perl::interpreter perl(PERL_GET_THX);
@@ -5792,6 +5863,13 @@ void perl_register_quest()
 	package.add("FlagInstanceByGroupLeader", &Perl__FlagInstanceByGroupLeader);
 	package.add("FlagInstanceByRaidLeader", &Perl__FlagInstanceByRaidLeader);
 	package.add("FlyMode", &Perl__FlyMode);
+	package.add("GetBotClassByID", &Perl__GetBotClassByID);
+	package.add("GetBotGenderByID", &Perl__GetBotGenderByID);
+	package.add("GetBotIDsByCharacterID", (perl::array(*)(uint32))&Perl__GetBotIDsByCharacterID);
+	package.add("GetBotIDsByCharacterID", (perl::array(*)(uint32, uint8))&Perl__GetBotIDsByCharacterID);
+	package.add("GetBotLevelByID", &Perl__GetBotLevelByID);
+	package.add("GetBotNameByID", &Perl__GetBotNameByID);
+	package.add("GetBotRaceByID", &Perl__GetBotRaceByID);
 	package.add("GetCharactersInInstance", &Perl__GetCharactersInInstance);
 	package.add("GetInstanceID", &Perl__GetInstanceID);
 	package.add("GetInstanceIDByCharID", &Perl__GetInstanceIDByCharID);
@@ -6606,8 +6684,12 @@ void perl_register_quest()
 	package.add("settarget", &Perl__settarget);
 	package.add("settime", (void(*)(int, int))&Perl__settime);
 	package.add("settime", (void(*)(int, int, bool))&Perl__settime);
-	package.add("settimer", &Perl__settimer);
-	package.add("settimerMS", &Perl__settimerMS);
+	package.add("settimer", (void(*)(std::string, uint32))&Perl__settimer),
+	package.add("settimer", (void(*)(std::string, uint32, EQ::ItemInstance*))&Perl__settimer),
+	package.add("settimer", (void(*)(std::string, uint32, Mob*))&Perl__settimer),
+	package.add("settimerMS", (void(*)(std::string, uint32))&Perl__settimerMS);
+	package.add("settimerMS", (void(*)(std::string, uint32, EQ::ItemInstance*))&Perl__settimerMS);
+	package.add("settimerMS", (void(*)(std::string, uint32, Mob*))&Perl__settimerMS);
 	package.add("sfollow", &Perl__sfollow);
 	package.add("shout", &Perl__shout);
 	package.add("shout2", &Perl__shout2);

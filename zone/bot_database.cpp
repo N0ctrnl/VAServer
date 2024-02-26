@@ -1842,7 +1842,7 @@ bool BotDatabase::SaveOwnerOption(const uint32 owner_id, size_t type, const bool
 		Client::booDeathMarquee,
 		Client::booStatsUpdate,
 		Client::booSpawnMessageClassSpecific,
-		Client::booAltCombat,
+		Client::booUnused,
 		Client::booAutoDefend,
 		Client::booBuffCounter,
 		Client::booMonkWuMessage
@@ -2317,4 +2317,66 @@ bool BotDatabase::SaveBotCasterRange(const uint32 bot_id, const uint32 bot_caste
 	e.caster_range = bot_caster_range_value;
 
 	return BotDataRepository::UpdateOne(database, e);
+}
+
+const uint8 BotDatabase::GetBotClassByID(const uint32 bot_id)
+{
+	const auto& e = BotDataRepository::FindOne(database, bot_id);
+
+	return e.bot_id ? e.class_ : Class::None;
+}
+
+const uint8 BotDatabase::GetBotGenderByID(const uint32 bot_id)
+{
+	const auto& e = BotDataRepository::FindOne(database, bot_id);
+
+	return e.bot_id ? e.gender : Gender::Neuter;
+}
+
+std::vector<uint32> BotDatabase::GetBotIDsByCharacterID(const uint32 character_id, uint8 class_id)
+{
+	std::vector<uint32> v;
+
+	const auto& l = BotDataRepository::GetWhere(
+		database,
+		fmt::format(
+			"`owner_id` = {}{}",
+			character_id,
+			(
+				class_id ?
+				fmt::format(
+					" AND `class` = {}",
+					class_id
+				) :
+				""
+			)
+		)
+	);
+
+	for (const auto& e : l) {
+		v.push_back(e.bot_id);
+	}
+
+	return v;
+}
+
+const uint8 BotDatabase::GetBotLevelByID(const uint32 bot_id)
+{
+	const auto& e = BotDataRepository::FindOne(database, bot_id);
+
+	return e.bot_id ? e.level : 0;
+}
+
+const std::string& BotDatabase::GetBotNameByID(const uint32 bot_id)
+{
+	const auto& e = BotDataRepository::FindOne(database, bot_id);
+
+	return e.bot_id ? e.name : std::string();
+}
+
+const uint16 BotDatabase::GetBotRaceByID(const uint32 bot_id)
+{
+	const auto& e = BotDataRepository::FindOne(database, bot_id);
+
+	return e.bot_id ? e.race : Race::Doug;
 }

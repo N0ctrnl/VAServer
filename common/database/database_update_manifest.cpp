@@ -4844,7 +4844,7 @@ UPDATE data_buckets SET bot_id = SUBSTRING_INDEX(SUBSTRING_INDEX( `key`, '-', 2 
 			ADD COLUMN `marked_npc_3_zone_id` INT UNSIGNED NOT NULL DEFAULT '0' AFTER `marked_npc_3_entity_id`,
 			ADD COLUMN `marked_npc_3_instance_id` INT UNSIGNED NOT NULL DEFAULT '0' AFTER `marked_npc_3_zone_id`;
 		)"
-    },
+	},
 	ManifestEntry{
 		.version = 9235,
 		.description = "2023_07_31_character_stats_record.sql",
@@ -5247,7 +5247,7 @@ MODIFY COLUMN `name` varchar(200) CHARACTER SET latin1 COLLATE latin1_swedish_ci
 	ManifestEntry{
 		.version = 9257,
 		.description = "2024_01_16_ground_spawns_fix_z.sql",
-		.check = "SHOW COLUMNS FROM `ground_spawns` LIKE `fix_z`",
+		.check = "SHOW COLUMNS FROM `ground_spawns` LIKE 'fix_z'",
 		.condition = "empty",
 		.match = "",
 		.sql = R"(
@@ -5259,7 +5259,7 @@ ADD COLUMN `fix_z` tinyint(1) UNSIGNED NOT NULL DEFAULT 1 AFTER `respawn_timer`;
 	ManifestEntry{
 		.version = 9258,
 		.description = "2024_02_04_base_data.sql",
-		.check = "SHOW COLUMNS FROM `base_data` LIKE `hp_regen`",
+		.check = "SHOW COLUMNS FROM `base_data` LIKE 'hp_regen'",
 		.condition = "empty",
 		.match = "",
 		.sql = R"(
@@ -5284,6 +5284,132 @@ ADD COLUMN `gm_exp` int(11) UNSIGNED NOT NULL DEFAULT 0 AFTER `rez_time`,
 ADD COLUMN `killed_by` int(11) UNSIGNED NOT NULL DEFAULT 0 AFTER `gm_exp`,
 ADD COLUMN `rezzable` tinyint(1) UNSIGNED NOT NULL DEFAULT 0 AFTER `killed_by`;
 )"
+	},
+	ManifestEntry{
+		.version = 9260,
+		.description = "2023_11_11_guild_features.sql",
+		.check = "SHOW TABLES LIKE 'guild_permissions'",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+CREATE TABLE `guild_permissions` (
+	`id` INT(11) NOT NULL AUTO_INCREMENT,
+	`perm_id` INT(11) NOT NULL DEFAULT '0',
+	`guild_id` INT(11) NOT NULL DEFAULT '0',
+	`permission` INT(11) NOT NULL DEFAULT '0',
+	PRIMARY KEY (`id`) USING BTREE,
+	UNIQUE INDEX `perm_id_guild_id` (`perm_id`, `guild_id`) USING BTREE
+)
+ENGINE=InnoDB
+AUTO_INCREMENT=1;
+
+UPDATE guild_ranks SET title = 'Leader' WHERE `rank` = '1';
+UPDATE guild_ranks SET title = 'Senior Officer' WHERE `rank` = '2';
+UPDATE guild_ranks SET title = 'Officer' WHERE `rank` = '3';
+UPDATE guild_ranks SET title = 'Senior Member' WHERE `rank` = '4';
+UPDATE guild_ranks SET title = 'Member' WHERE `rank` = '5';
+UPDATE guild_ranks SET title = 'Junior Member' WHERE `rank` = '6';
+UPDATE guild_ranks SET title = 'Initiate' WHERE `rank` = '7';
+UPDATE guild_ranks SET title = 'Recruit' WHERE `rank` = '8';
+
+DELETE FROM guild_ranks WHERE `rank` = 0;
+
+ALTER TABLE `guild_ranks`
+	DROP COLUMN `can_hear`,
+	DROP COLUMN `can_speak`,
+	DROP COLUMN `can_invite`,
+	DROP COLUMN `can_remove`,
+	DROP COLUMN `can_promote`,
+	DROP COLUMN `can_demote`,
+	DROP COLUMN `can_motd`,
+	DROP COLUMN `can_warpeace`;
+
+UPDATE guild_members SET `rank` = '5' WHERE `rank` = '0';
+UPDATE guild_members SET `rank` = '3' WHERE `rank` = '1';
+UPDATE guild_members SET `rank` = '1' WHERE `rank` = '2';
+
+ALTER TABLE `guild_members`
+	ADD COLUMN `online` TINYINT(3) UNSIGNED NOT NULL DEFAULT '0' AFTER `alt`;
+
+ALTER TABLE `guilds`
+	ADD COLUMN `favor` INT(10) UNSIGNED NOT NULL DEFAULT '0' AFTER `url`;
+
+CREATE TABLE guild_tributes (
+  guild_id int(11) unsigned NOT NULL DEFAULT 0,
+  tribute_id_1 int(11) unsigned NOT NULL DEFAULT 0,
+  tribute_id_1_tier int(11) unsigned NOT NULL DEFAULT 0,
+  tribute_id_2 int(11) unsigned NOT NULL DEFAULT 0,
+  tribute_id_2_tier int(11) unsigned NOT NULL DEFAULT 0,
+  time_remaining int(11) unsigned NOT NULL DEFAULT 0,
+  enabled int(11) unsigned NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id) USING BTREE
+) ENGINE=InnoDB;
+)"
+	},
+	ManifestEntry{
+		.version = 9261,
+		.description = "2024_02_11_character_corpses.sql",
+		.check = "SHOW COLUMNS FROM `character_corpses` LIKE 'time_of_death'",
+		.condition = "contains",
+		.match = "0000-00-00 00:00:00",
+		.sql = R"(
+ALTER TABLE `character_corpses` MODIFY COLUMN `time_of_death` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP;
+		)"
+	},
+	ManifestEntry{
+		.version = 9262,
+		.description = "2024_02_11_object_contents.sql",
+		.check = "SHOW COLUMNS FROM `object_contents` LIKE 'droptime'",
+		.condition = "contains",
+		.match = "0000-00-00 00:00:00",
+		.sql = R"(
+ALTER TABLE `object_contents` MODIFY COLUMN `droptime` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP;
+		)"
+	},
+	ManifestEntry{
+		.version = 9263,
+		.description = "2024_02_16_rearrange_zone_columns.sql",
+		.check = "show columns from zone like 'note'",
+		.condition = "missing",
+		.match = "varchar(200)",
+		.sql = R"(
+ALTER TABLE `zone`
+MODIFY COLUMN `id` int(10) NOT NULL AUTO_INCREMENT FIRST,
+MODIFY COLUMN `zoneidnumber` int(4) NOT NULL DEFAULT 0 AFTER `id`,
+MODIFY COLUMN `version` tinyint(3) UNSIGNED NOT NULL DEFAULT 0 AFTER `zoneidnumber`,
+MODIFY COLUMN `short_name` varchar(32) CHARACTER SET latin1 COLLATE latin1_swedish_ci NULL DEFAULT NULL AFTER `version`,
+MODIFY COLUMN `long_name` text CHARACTER SET latin1 COLLATE latin1_swedish_ci NOT NULL AFTER `short_name`,
+MODIFY COLUMN `min_status` tinyint(3) UNSIGNED NOT NULL DEFAULT 0 AFTER `long_name`,
+MODIFY COLUMN `note` varchar(200) CHARACTER SET latin1 COLLATE latin1_swedish_ci NULL DEFAULT NULL AFTER `map_file_name`,
+MODIFY COLUMN `min_expansion` tinyint(4) NOT NULL DEFAULT -1 AFTER `note`,
+MODIFY COLUMN `max_expansion` tinyint(4) NOT NULL DEFAULT -1 AFTER `min_expansion`,
+MODIFY COLUMN `content_flags` varchar(100) CHARACTER SET latin1 COLLATE latin1_swedish_ci NULL DEFAULT NULL AFTER `max_expansion`,
+MODIFY COLUMN `content_flags_disabled` varchar(100) CHARACTER SET latin1 COLLATE latin1_swedish_ci NULL DEFAULT NULL AFTER `content_flags`,
+MODIFY COLUMN `expansion` tinyint(3) NOT NULL DEFAULT 0 AFTER `content_flags_disabled`,
+MODIFY COLUMN `file_name` varchar(16) CHARACTER SET latin1 COLLATE latin1_swedish_ci NULL DEFAULT NULL AFTER `expansion`,
+MODIFY COLUMN `safe_x` float NOT NULL DEFAULT 0 AFTER `file_name`,
+MODIFY COLUMN `safe_y` float NOT NULL DEFAULT 0 AFTER `safe_x`,
+MODIFY COLUMN `safe_z` float NOT NULL DEFAULT 0 AFTER `safe_y`,
+MODIFY COLUMN `safe_heading` float NOT NULL DEFAULT 0 AFTER `safe_z`;
+		)",
+		.content_schema_update = true
+	},
+	ManifestEntry{
+		.version = 9264,
+		.description = "2024_02_18_starting_items_augments.sql",
+		.check = "SHOW COLUMNS FROM `starting_items` LIKE 'augment_one'",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+ALTER TABLE `starting_items`
+ADD COLUMN `augment_one` int(11) UNSIGNED NOT NULL DEFAULT 0 AFTER `item_charges`,
+ADD COLUMN `augment_two` int(11) UNSIGNED NOT NULL DEFAULT 0 AFTER `augment_one`,
+ADD COLUMN `augment_three` int(11) UNSIGNED NOT NULL DEFAULT 0 AFTER `augment_two`,
+ADD COLUMN `augment_four` int(11) UNSIGNED NOT NULL DEFAULT 0 AFTER `augment_three`,
+ADD COLUMN `augment_five` int(11) UNSIGNED NOT NULL DEFAULT 0 AFTER `augment_four`,
+ADD COLUMN `augment_six` int(11) UNSIGNED NOT NULL DEFAULT 0 AFTER `augment_five`;
+		)",
+		.content_schema_update = true
 	}
 // -- template; copy/paste this when you need to create a new entry
 //	ManifestEntry{

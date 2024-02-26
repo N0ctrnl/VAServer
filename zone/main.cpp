@@ -318,7 +318,7 @@ int main(int argc, char **argv)
 	}
 
 	/* Guilds */
-	guild_mgr.SetDatabase(&database);
+	guild_mgr.SetDatabase(&database)->SetContentDatabase(&content_db);
 	GuildBanks = nullptr;
 
 #ifdef _EQDEBUG
@@ -371,7 +371,7 @@ int main(int argc, char **argv)
 		LogError("Loading items failed!");
 		LogError("Failed. But ignoring error and going on..");
 	}
-	
+
 	if (!content_db.LoadSkillCaps(std::string(hotfix_name))) {
 		LogError("Loading skill caps failed!");
 		return 1;
@@ -380,6 +380,7 @@ int main(int argc, char **argv)
 		LogError("Loading spells failed!");
 		return 1;
 	}
+
 
 	guild_mgr.LoadGuilds();
 	content_db.LoadFactionData();
@@ -401,6 +402,8 @@ int main(int argc, char **argv)
 	}
 
 	content_service.SetDatabase(&database)
+		->SetContentDatabase(&content_db)
+		->SetContentZones(zone_store.GetZones())
 		->SetExpansionContext()
 		->ReloadContentFlags();
 
