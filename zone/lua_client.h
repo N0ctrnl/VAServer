@@ -57,8 +57,9 @@ public:
 	void SetBaseClass(int v);
 	void SetBaseRace(int v);
 	void SetBaseGender(int v);
-	int GetClassBitmask();
-	int GetRaceBitmask();
+	uint16 GetClassBitmask();
+	uint32 GetDeityBitmask();
+	uint16 GetRaceBitmask();
 	int GetBaseFace();
 	int GetLanguageSkill(int skill_id);
 	int GetLDoNPointsTheme(int theme);
@@ -496,6 +497,8 @@ public:
 	int GetAAEXPPercentage();
 	int GetEXPPercentage();
 	bool IsInAGuild();
+	luabind::object GetRaidOrGroupOrSelf(lua_State* L);
+	luabind::object GetRaidOrGroupOrSelf(lua_State* L, bool clients_only);
 
 	void ApplySpell(int spell_id);
 	void ApplySpell(int spell_id, int duration);
@@ -566,6 +569,8 @@ public:
 	void SetBotSpawnLimit(int new_spawn_limit, uint8 class_id);
 	void CampAllBots();
 	void CampAllBots(uint8 class_id);
+	bool RemoveAAPoints(uint32 points);
+	bool RemoveAlternateCurrencyValue(uint32 currency_id, uint32 amount);
 
 	void DialogueWindow(std::string markdown);
 

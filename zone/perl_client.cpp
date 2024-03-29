@@ -2007,12 +2007,17 @@ bool Perl_Client_HasDisciplineLearned(Client* self, uint16 spell_id)
 	return self->HasDisciplineLearned(spell_id);
 }
 
-uint32_t Perl_Client_GetClassBitmask(Client* self)
+uint16_t Perl_Client_GetClassBitmask(Client* self)
 {
 	return GetPlayerClassBit(self->GetClass());
 }
 
-uint32_t Perl_Client_GetRaceBitmask(Client* self) // @categories Stats and Attributes
+uint32_t Perl_Client_GetDeityBitmask(Client* self)
+{
+	return static_cast<uint32_t>(EQ::deity::GetDeityBitmask(static_cast<EQ::deity::DeityType>(self->GetDeity())));
+}
+
+uint16_t Perl_Client_GetRaceBitmask(Client* self) // @categories Stats and Attributes
 {
 	return GetPlayerRaceBit(self->GetBaseRace());
 }
@@ -3103,6 +3108,46 @@ bool Perl_Client_IsInAGuild(Client* self)
 	return self->IsInAGuild();
 }
 
+bool Perl_Client_RemoveAAPoints(Client* self, uint32 points)
+{
+	return self->RemoveAAPoints(points);
+}
+
+bool Perl_Client_RemoveAlternateCurrencyValue(Client* self, uint32 currency_id, uint32 amount)
+{
+	return self->RemoveAlternateCurrencyValue(currency_id, amount);
+}
+
+perl::array Perl_Client_GetRaidOrGroupOrSelf(Client* self)
+{
+	perl::array result;
+
+	const auto& l = self->GetRaidOrGroupOrSelf();
+
+	result.reserve(l.size());
+
+	for (const auto& e : l) {
+		result.push_back(e);
+	}
+
+	return result;
+}
+
+perl::array Perl_Client_GetRaidOrGroupOrSelf(Client* self, bool clients_only)
+{
+	perl::array result;
+
+	const auto& l = self->GetRaidOrGroupOrSelf(clients_only);
+
+	result.reserve(l.size());
+
+	for (const auto& e : l) {
+		result.push_back(e);
+	}
+
+	return result;
+}
+
 void perl_register_client()
 {
 	perl::interpreter perl(PERL_GET_THX);
@@ -3272,6 +3317,7 @@ void perl_register_client()
 	package.add("GetCorpseID", &Perl_Client_GetCorpseID);
 	package.add("GetCorpseItemAt", &Perl_Client_GetCorpseItemAt);
 	package.add("GetCustomItemData", &Perl_Client_GetCustomItemData);
+	package.add("GetDeityBitmask", &Perl_Client_GetDeityBitmask);
 	package.add("GetDiscSlotBySpellID", &Perl_Client_GetDiscSlotBySpellID);
 	package.add("GetDisciplineTimer", &Perl_Client_GetDisciplineTimer);
 	package.add("GetDuelTarget", &Perl_Client_GetDuelTarget);
@@ -3336,6 +3382,8 @@ void perl_register_client()
 	package.add("GetRaceBitmask", &Perl_Client_GetRaceBitmask);
 	package.add("GetRadiantCrystals", &Perl_Client_GetRadiantCrystals);
 	package.add("GetRaid", &Perl_Client_GetRaid);
+	package.add("GetRaidOrGroupOrSelf", (perl::array(*)(Client*))&Perl_Client_GetRaidOrGroupOrSelf);
+	package.add("GetRaidOrGroupOrSelf", (perl::array(*)(Client*, bool))&Perl_Client_GetRaidOrGroupOrSelf);
 	package.add("GetRaidPoints", &Perl_Client_GetRaidPoints);
 	package.add("GetRawItemAC", &Perl_Client_GetRawItemAC);
 	package.add("GetRawSkill", &Perl_Client_GetRawSkill);
@@ -3470,8 +3518,10 @@ void perl_register_client()
 	package.add("ReadBookByName", &Perl_Client_ReadBookByName);
 	package.add("RefundAA", &Perl_Client_RefundAA);
 	package.add("ReloadDataBuckets", &Perl_Client_ReloadDataBuckets);
+	package.add("RemoveAAPoints", &Perl_Client_RemoveAAPoints);
 	package.add("RemoveAllExpeditionLockouts", (void(*)(Client*))&Perl_Client_RemoveAllExpeditionLockouts);
 	package.add("RemoveAllExpeditionLockouts", (void(*)(Client*, std::string))&Perl_Client_RemoveAllExpeditionLockouts);
+	package.add("RemoveAlternateCurrencyValue", (bool(*)(Client*, uint32, uint32))&Perl_Client_RemoveAlternateCurrencyValue);
 	package.add("RemoveEbonCrystals", &Perl_Client_RemoveEbonCrystals);
 	package.add("RemoveExpeditionLockout", &Perl_Client_RemoveExpeditionLockout);
 	package.add("RemoveFromInstance", &Perl_Client_RemoveFromInstance);
