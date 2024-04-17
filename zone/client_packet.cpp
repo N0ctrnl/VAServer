@@ -538,6 +538,7 @@ void Client::CompleteConnect()
 	EnteringMessages(this);
 	LoadPEQZoneFlags();
 	LoadZoneFlags();
+	LoadAccountFlags();
 
 	/* Sets GM Flag if needed & Sends Petition Queue */
 	UpdateAdmin(false);
@@ -757,8 +758,10 @@ void Client::CompleteConnect()
 
 	entity_list.SendTraders(this);
 
-	Mob *pet = GetPet();
+	SendWearChangeAndLighting(EQ::textures::LastTexture);
+	Mob* pet = GetPet();
 	if (pet) {
+		pet->SendWearChangeAndLighting(EQ::textures::LastTexture);
 		pet->SendPetBuffsToClient();
 	}
 
@@ -950,8 +953,6 @@ void Client::CompleteConnect()
 		worldserver.SendPacket(p);
 		safe_delete(p);
 	}
-
-	heroforge_wearchange_timer.Start(250);
 
 	RecordStats();
 	AutoGrantAAPoints();
@@ -5189,10 +5190,10 @@ void Client::Handle_OP_Consider(const EQApplicationPacket *app)
 	con->level = GetLevelCon(t->GetLevel());
 
 	if (ClientVersion() <= EQ::versions::ClientVersion::Titanium) {
-		if (con->level == CON_GRAY) {
-			con->level = CON_GREEN;
-		} else if (con->level == CON_WHITE) {
-			con->level = CON_WHITE_TITANIUM;
+		if (con->level == ConsiderColor::Gray) {
+			con->level = ConsiderColor::Green;
+		} else if (con->level == ConsiderColor::White) {
+			con->level = ConsiderColor::WhiteTitanium;
 		}
 	}
 
@@ -5233,26 +5234,26 @@ void Client::Handle_OP_Consider(const EQApplicationPacket *app)
 	if (t->IsRaidTarget()) {
 		uint32 color = 0;
 		switch (con->level) {
-			case CON_GREEN:
+			case ConsiderColor::Green:
 				color = 2;
 				break;
-			case CON_LIGHTBLUE:
+			case ConsiderColor::LightBlue:
 				color = 10;
 				break;
-			case CON_BLUE:
+			case ConsiderColor::DarkBlue:
 				color = 4;
 				break;
-			case CON_WHITE_TITANIUM:
-			case CON_WHITE:
+			case ConsiderColor::WhiteTitanium:
+			case ConsiderColor::White:
 				color = 10;
 				break;
-			case CON_YELLOW:
+			case ConsiderColor::Yellow:
 				color = 15;
 				break;
-			case CON_RED:
+			case ConsiderColor::Red:
 				color = 13;
 				break;
-			case CON_GRAY:
+			case ConsiderColor::Gray:
 				color = 6;
 				break;
 		}
@@ -11034,7 +11035,10 @@ void Client::Handle_OP_PetCommands(const EQApplicationPacket *app)
 
 				// fix GUI sit button to be unpressed and stop sitting regen
 				SetPetCommandState(PET_BUTTON_SIT, 0);
-				mypet->SetAppearance(eaStanding);
+				if (mypet->GetPetOrder() == SPO_Sit || mypet->GetPetOrder() == SPO_FeignDeath) {
+					mypet->SetPetOrder(mypet->GetPreviousPetOrder());
+					mypet->SetAppearance(eaStanding);
+				}
 
 				zone->AddAggroMob();
 				// classic acts like qattack
@@ -11081,7 +11085,10 @@ void Client::Handle_OP_PetCommands(const EQApplicationPacket *app)
 
 				// fix GUI sit button to be unpressed and stop sitting regen
 				SetPetCommandState(PET_BUTTON_SIT, 0);
-				mypet->SetAppearance(eaStanding);
+				if (mypet->GetPetOrder() == SPO_Sit || mypet->GetPetOrder() == SPO_FeignDeath) {
+					mypet->SetPetOrder(mypet->GetPreviousPetOrder());
+					mypet->SetAppearance(eaStanding);
+				}
 
 				zone->AddAggroMob();
 				mypet->AddToHateList(GetTarget(), 1, 0, true, false, false, SPELL_UNKNOWN, true);
@@ -11147,7 +11154,7 @@ void Client::Handle_OP_PetCommands(const EQApplicationPacket *app)
 				// Set Sit button to unpressed - send stand anim/end hpregen
 				mypet->SetFeigned(false);
 				SetPetCommandState(PET_BUTTON_SIT, 0);
-				mypet->SendAppearancePacket(AppearanceType::Animation, Animation::Standing);
+				mypet->SetAppearance(eaStanding);
 
 				mypet->SayString(this, Chat::PetResponse, PET_GUARDINGLIFE);
 				mypet->SetPetOrder(SPO_Guard);
@@ -11172,7 +11179,7 @@ void Client::Handle_OP_PetCommands(const EQApplicationPacket *app)
 
 			// fix GUI sit button to be unpressed - send stand anim/end hpregen
 			SetPetCommandState(PET_BUTTON_SIT, 0);
-			mypet->SendAppearancePacket(AppearanceType::Animation, Animation::Standing);
+			mypet->SetAppearance(eaStanding);
 
 			if (mypet->IsPetStop()) {
 				mypet->SetPetStop(false);
@@ -11220,7 +11227,7 @@ void Client::Handle_OP_PetCommands(const EQApplicationPacket *app)
 
 			// Set Sit button to unpressed - send stand anim/end hpregen
 			SetPetCommandState(PET_BUTTON_SIT, 0);
-			mypet->SendAppearancePacket(AppearanceType::Animation, Animation::Standing);
+			mypet->SetAppearance(eaStanding);
 
 			if (mypet->IsPetStop()) {
 				mypet->SetPetStop(false);
@@ -11237,8 +11244,8 @@ void Client::Handle_OP_PetCommands(const EQApplicationPacket *app)
 			{
 				mypet->SetFeigned(false);
 				mypet->SayString(this, Chat::PetResponse, PET_SIT_STRING);
-				mypet->SetPetOrder(SPO_Follow);
-				mypet->SendAppearancePacket(AppearanceType::Animation, Animation::Standing);
+				mypet->SetPetOrder(mypet->GetPreviousPetOrder());
+				mypet->SetAppearance(eaStanding);
 			}
 			else
 			{
@@ -11248,7 +11255,7 @@ void Client::Handle_OP_PetCommands(const EQApplicationPacket *app)
 				mypet->SetRunAnimSpeed(0);
 				if (!mypet->UseBardSpellLogic())	//maybe we can have a bard pet
 					mypet->InterruptSpell(); //No cast 4 u. //i guess the pet should start casting
-				mypet->SendAppearancePacket(AppearanceType::Animation, Animation::Sitting);
+				mypet->SetAppearance(eaSitting);
 			}
 		}
 		break;
@@ -11260,8 +11267,8 @@ void Client::Handle_OP_PetCommands(const EQApplicationPacket *app)
 			mypet->SetFeigned(false);
 			mypet->SayString(this, Chat::PetResponse, PET_SIT_STRING);
 			SetPetCommandState(PET_BUTTON_SIT, 0);
-			mypet->SetPetOrder(SPO_Follow);
-			mypet->SendAppearancePacket(AppearanceType::Animation, Animation::Standing);
+			mypet->SetPetOrder(mypet->GetPreviousPetOrder());
+			mypet->SetAppearance(eaStanding);
 		}
 		break;
 	}
@@ -11276,7 +11283,7 @@ void Client::Handle_OP_PetCommands(const EQApplicationPacket *app)
 			mypet->SetRunAnimSpeed(0);
 			if (!mypet->UseBardSpellLogic())	//maybe we can have a bard pet
 				mypet->InterruptSpell(); //No cast 4 u. //i guess the pet should start casting
-			mypet->SendAppearancePacket(AppearanceType::Animation, Animation::Sitting);
+			mypet->SetAppearance(eaSitting);
 		}
 		break;
 	}
@@ -11481,7 +11488,7 @@ void Client::Handle_OP_PetCommands(const EQApplicationPacket *app)
 				mypet->SetPetOrder(SPO_FeignDeath);
 				mypet->SetRunAnimSpeed(0);
 				mypet->StopNavigation();
-				mypet->SendAppearancePacket(AppearanceType::Animation, Animation::Lying);
+				mypet->SetAppearance(eaDead);
 				mypet->SetFeigned(true);
 				mypet->SetTarget(nullptr);
 				if (!mypet->UseBardSpellLogic()) {
@@ -16025,11 +16032,11 @@ void Client::Handle_OP_WearChange(const EQApplicationPacket *app)
 		return;
 
 	// Hero Forge ID needs to be fixed here as RoF2 appears to send an incorrect value.
-	if (wc->hero_forge_model != 0 && wc->wear_slot_id >= 0 && wc->wear_slot_id < EQ::textures::weaponPrimary)
+	if (wc->wear_slot_id >= 0 && wc->wear_slot_id < EQ::textures::weaponPrimary)
 		wc->hero_forge_model = GetHerosForgeModel(wc->wear_slot_id);
 
 	// we could maybe ignore this and just send our own from moveitem
-	entity_list.QueueClients(this, app, true);
+	entity_list.QueueClients(this, app, false);
 }
 
 void Client::Handle_OP_WhoAllRequest(const EQApplicationPacket *app)
@@ -16787,7 +16794,7 @@ void Client::RecordStats()
 	r.level                    = GetLevel();
 	r.class_                   = GetBaseClass();
 	r.race                     = GetBaseRace();
-	r.hp                       = GetMaxHP() - GetSpellBonuses().HP;
+	r.hp                       = GetMaxHP() - GetSpellBonuses().FlatMaxHPChange;
 	r.mana                     = GetMaxMana() - GetSpellBonuses().Mana;
 	r.endurance                = GetMaxEndurance() - GetSpellBonuses().Endurance;
 	r.ac                       = GetDisplayAC() - GetSpellBonuses().AC;
