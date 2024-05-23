@@ -1009,8 +1009,8 @@ public:
 
 	//old AA methods that we still use
 	void ResetAA();
+	void ResetLeadershipAA();
 	void RefundAA();
-	void SendClearAA();
 	void SendClearLeadershipAA();
 	void SendClearPlayerAA();
 	inline uint32 GetAAXP() const { return m_pp.expAA; }
@@ -1042,6 +1042,7 @@ public:
 	void SetItemCooldown(uint32 item_id, bool use_saved_timer = false, uint32 in_seconds = 1);
 	uint32 GetItemCooldown(uint32 item_id);
 	void RemoveItem(uint32 item_id, uint32 quantity = 1);
+	void RemoveItemBySerialNumber(uint32 serial_number, uint32 quantity = 1);
 	bool SwapItem(MoveItem_Struct* move_in);
 	void SwapItemResync(MoveItem_Struct* move_slots);
 	void QSSwapItemAuditor(MoveItem_Struct* move_in, bool postaction_call = false);
@@ -1126,6 +1127,8 @@ public:
 	void GoFish(bool guarantee = false, bool use_bait = true);
 	void ForageItem(bool guarantee = false);
 	//Calculate vendor price modifier based on CHA: (reverse==selling)
+	float CalcClassicPriceMod(Mob* other = 0, bool reverse = false);
+	float CalcNewPriceMod(Mob* other = 0, bool reverse = false);
 	float CalcPriceMod(Mob* other = 0, bool reverse = false);
 	void ResetTrade();
 	void DropInst(const EQ::ItemInstance* inst);

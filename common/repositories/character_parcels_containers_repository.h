@@ -1,13 +1,11 @@
-#ifndef EQEMU_CHARACTER_DATA_REPOSITORY_H
-#define EQEMU_CHARACTER_DATA_REPOSITORY_H
+#ifndef EQEMU_CHARACTER_PARCELS_CONTAINERS_REPOSITORY_H
+#define EQEMU_CHARACTER_PARCELS_CONTAINERS_REPOSITORY_H
 
 #include "../database.h"
 #include "../strings.h"
-#include "base/base_character_data_repository.h"
+#include "base/base_character_parcels_containers_repository.h"
 
-
-
-class CharacterDataRepository: public BaseCharacterDataRepository {
+class CharacterParcelsContainersRepository: public BaseCharacterParcelsContainersRepository {
 public:
 
     /**
@@ -34,10 +32,10 @@ public:
      *
      * Example custom methods in a repository
      *
-     * CharacterDataRepository::GetByZoneAndVersion(int zone_id, int zone_version)
-     * CharacterDataRepository::GetWhereNeverExpires()
-     * CharacterDataRepository::GetWhereXAndY()
-     * CharacterDataRepository::DeleteWhereXAndY()
+     * CharacterParcelsContainersRepository::GetByZoneAndVersion(int zone_id, int zone_version)
+     * CharacterParcelsContainersRepository::GetWhereNeverExpires()
+     * CharacterParcelsContainersRepository::GetWhereXAndY()
+     * CharacterParcelsContainersRepository::DeleteWhereXAndY()
      *
      * Most of the above could be covered by base methods, but if you as a developer
      * find yourself re-using logic for other parts of the code, its best to just make a
@@ -46,40 +44,7 @@ public:
      */
 
 	// Custom extended repository methods here
-	static uint32 GetSecondsSinceLastLogin(Database &db, const std::string& name)
-	{
-		auto results = db.QueryDatabase(
-			fmt::format(
-				"SELECT (UNIX_TIMESTAMP(NOW()) - last_login) FROM {} WHERE name = '{}'",
-				TableName(),
-				Strings::Escape(name)
-			)
-		);
 
-		if (!results.RowCount() || !results.Success()) {
-			return 0;
-		}
-
-		auto row = results.begin();
-
-		return Strings::ToUnsignedInt(row[0]);
-	}
-
-	static CharacterData FindByName(
-		Database& db,
-		const std::string& character_name
-	)
-	{
-		auto l = CharacterDataRepository::GetWhere(
-			db,
-			fmt::format(
-				"`name` = '{}' LIMIT 1",
-				Strings::Escape(character_name)
-			)
-		);
-
-		return l.empty() ? CharacterDataRepository::NewEntity() : l.front();
-	}
 };
 
-#endif //EQEMU_CHARACTER_DATA_REPOSITORY_H
+#endif //EQEMU_CHARACTER_PARCELS_CONTAINERS_REPOSITORY_H

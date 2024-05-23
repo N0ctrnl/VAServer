@@ -5568,7 +5568,73 @@ ADD COLUMN `is_parcel_merchant` TINYINT(1) UNSIGNED NOT NULL DEFAULT '0' AFTER `
 ALTER TABLE `character_data`
 ADD COLUMN `extra_haste` int(11) NOT NULL DEFAULT 0 AFTER `wis`;
 )"
-	}
+	},
+	ManifestEntry{
+		.version = 9276,
+		.description = "2024_05_12_fix_guild_bank_dup_issue.sql",
+		.check = "SHOW COLUMNS FROM `guild_bank` WHERE FIELD = 'qty' AND Type LIKE '%unsigned';",
+		.condition = "not_empty",
+		.match = "",
+		.sql = R"(
+ALTER TABLE `guild_bank`
+	CHANGE COLUMN `qty` `qty` INT(10) NOT NULL DEFAULT '0' AFTER `itemid`;
+)"
+	},
+	ManifestEntry{
+		.version = 9277,
+		.description = "2024_05_09_parcel_enable_containers.sql",
+		.check = "SHOW TABLES LIKE 'character_parcels_containers'",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+CREATE TABLE `character_parcels_containers` (
+	`id` INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+	`parcels_id` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+	`slot_id` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+	`item_id` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+	`aug_slot_1` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+	`aug_slot_2` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+	`aug_slot_3` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+	`aug_slot_4` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+	`aug_slot_5` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+	`aug_slot_6` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+	`quantity` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+	PRIMARY KEY (`id`) USING BTREE,
+	INDEX `fk_character_parcels_id` (`parcels_id`) USING BTREE,
+	CONSTRAINT `fk_character_parcels_id` FOREIGN KEY (`parcels_id`) REFERENCES `character_parcels` (`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+)
+COLLATE='latin1_swedish_ci'
+ENGINE=InnoDB
+AUTO_INCREMENT=1
+;
+)"
+	},
+	ManifestEntry{
+		.version = 9278,
+		.description = "2024_05_06_npc_greed.sql",
+		.check = "SHOW COLUMNS FROM `npc_types` LIKE 'greed'",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+ALTER TABLE `npc_types`
+ADD COLUMN `greed` tinyint(8) UNSIGNED NOT NULL DEFAULT 0 AFTER `merchant_id`;
+ )",
+		.content_schema_update = true
+	},
+	ManifestEntry{
+		.version = 9279,
+		.description = "2024_05_13_content_flagging_npc_spells_entries.sql",
+		.check = "SHOW COLUMNS FROM `npc_spells_entries` LIKE 'content_flags'",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+ALTER TABLE `npc_spells_entries` ADD `min_expansion` tinyint(4) NOT NULL DEFAULT -1;
+ALTER TABLE `npc_spells_entries` ADD `max_expansion` tinyint(4) NOT NULL DEFAULT -1;
+ALTER TABLE `npc_spells_entries` ADD `content_flags` varchar(100) NULL;
+ALTER TABLE `npc_spells_entries` ADD `content_flags_disabled` varchar(100) NULL;
+)",
+		.content_schema_update = true
+	},
 // -- template; copy/paste this when you need to create a new entry
 //	ManifestEntry{
 //		.version = 9228,
