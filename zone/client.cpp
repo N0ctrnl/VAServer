@@ -95,8 +95,8 @@ Client::Client(EQStreamInterface *ieqs) : Mob(
 	Gender::Male, // in_gender
 	Race::Doug, // in_race
 	Class::None, // in_class
-	BT_Humanoid, // in_bodytype
-	0, // in_deity
+	BodyType::Humanoid, // in_bodytype
+	Deity::Unknown, // in_deity
 	0, // in_level
 	0, // in_npctype_id
 	0.0f, // in_size
@@ -202,11 +202,11 @@ Client::Client(EQStreamInterface *ieqs) : Mob(
 	ip = eqs->GetRemoteIP();
 	port = ntohs(eqs->GetRemotePort());
 	client_state = CLIENT_CONNECTING;
-	Trader=false;
+	SetTrader(false);
 	Buyer = false;
 	Haste = 0;
-	CustomerID = 0;
-	TraderID = 0;
+	SetCustomerID(0);
+	SetTraderID(0);
 	TrackingID = 0;
 	WID = 0;
 	account_id = 0;
@@ -421,8 +421,9 @@ Client::~Client() {
 	if (merc)
 		merc->Depop();
 
-	if(Trader)
-		database.DeleteTraderItem(CharacterID());
+	if(IsTrader()) {
+		TraderEndTrader();
+	}
 
 	if(Buyer)
 		ToggleBuyerMode(false);
@@ -2163,6 +2164,7 @@ void Client::FillSpawnStruct(NewSpawn_Struct* ns, Mob* ForWho)
 	ns->spawn.anon		= m_pp.anon;
 	ns->spawn.gm		= GetGM() ? 1 : 0;
 	ns->spawn.guildID	= GuildID();
+	ns->spawn.trader	= IsTrader();
 //	ns->spawn.linkdead	= IsLD() ? 1 : 0;
 //	ns->spawn.pvp		= GetPVP(false) ? 1 : 0;
 	ns->spawn.show_name = true;
@@ -2669,8 +2671,8 @@ bool Client::CheckIncreaseSkill(EQ::skills::SkillType skillid, Mob *against_who,
 
 	if (against_who) {
 		if (
-			against_who->GetSpecialAbility(IMMUNE_AGGRO) ||
-			against_who->GetSpecialAbility(IMMUNE_AGGRO_CLIENT) ||
+			against_who->GetSpecialAbility(SpecialAbility::AggroImmunity) ||
+			against_who->GetSpecialAbility(SpecialAbility::ClientAggroImmunity) ||
 			against_who->IsClient() ||
 			GetLevelCon(against_who->GetLevel()) == ConsiderColor::Gray
 		) {
@@ -2801,7 +2803,7 @@ uint16 Client::MaxSkill(EQ::skills::SkillType skill_id, uint8 class_id, uint8 le
 	return skill_caps.GetSkillCap(class_id, skill_id, level).cap;
 }
 
-uint8 Client::SkillTrainLevel(EQ::skills::SkillType skill_id, uint8 class_id)
+uint8 Client::GetSkillTrainLevel(EQ::skills::SkillType skill_id, uint8 class_id)
 {
 	if (
 		ClientVersion() < EQ::versions::ClientVersion::RoF2 &&
@@ -2811,7 +2813,7 @@ uint8 Client::SkillTrainLevel(EQ::skills::SkillType skill_id, uint8 class_id)
 		skill_id = EQ::skills::Skill2HPiercing;
 	}
 
-	return skill_caps.GetTrainLevel(class_id, skill_id, RuleI(Character, MaxLevel));
+	return skill_caps.GetSkillTrainLevel(class_id, skill_id, RuleI(Character, MaxLevel));
 }
 
 uint16 Client::GetMaxSkillAfterSpecializationRules(EQ::skills::SkillType skillid, uint16 maxSkill)
@@ -3199,9 +3201,7 @@ bool Client::BindWound(Mob *bindmob, bool start, bool fail)
 								percent_base = 70;
 						}
 
-						int percent_bonus = 0;
-						if (percent_base >= 70)
-							percent_bonus = spellbonuses.MaxBindWound + itembonuses.MaxBindWound + aabonuses.MaxBindWound;
+						int percent_bonus = spellbonuses.MaxBindWound + itembonuses.MaxBindWound + aabonuses.MaxBindWound;
 
 						int max_percent = percent_base + percent_bonus;
 						if (max_percent < 0)
@@ -3220,9 +3220,7 @@ bool Client::BindWound(Mob *bindmob, bool start, bool fail)
 							else if (GetSkill(EQ::skills::SkillBindWound) >= 12)
 								bindhps = GetSkill(EQ::skills::SkillBindWound) / 4; // 4:1 skill-to-hp ratio
 
-							int bonus_hp_percent = 0;
-							if (percent_base >= 70)
-								bonus_hp_percent = spellbonuses.BindWound + itembonuses.BindWound + aabonuses.BindWound;
+							int bonus_hp_percent = spellbonuses.BindWound + itembonuses.BindWound + aabonuses.BindWound;
 
 							bindhps += (bindhps * bonus_hp_percent) / 100;
 
@@ -3237,9 +3235,9 @@ bool Client::BindWound(Mob *bindmob, bool start, bool fail)
 							bindmob->SendHPUpdate();
 						}
 						else {
-							Message(Chat::Yellow, "You cannot bind wounds above %d%% hitpoints", max_percent);
+							Message(Chat::Yellow, "You cannot bind wounds above %d%% hitpoints.", max_percent);
 							if (bindmob != this && bindmob->IsClient())
-								bindmob->CastToClient()->Message(Chat::Yellow, "You cannot have your wounds bound above %d%% hitpoints", max_percent);
+								bindmob->CastToClient()->Message(Chat::Yellow, "You cannot have your wounds bound above %d%% hitpoints.", max_percent);
 						}
 					}
 				}
@@ -5062,7 +5060,7 @@ void Client::HandleLDoNOpen(NPC *target)
 			return;
 		}
 
-		if (target->GetSpecialAbility(IMMUNE_OPEN))
+		if (target->GetSpecialAbility(SpecialAbility::OpenImmunity))
 		{
 			LogDebug("[{}] tried to open [{}] but it was immune", GetName(), target->GetName());
 			return;
@@ -6994,6 +6992,10 @@ void Client::AddAutoXTarget(Mob *m, bool send)
 
 void Client::RemoveXTarget(Mob *m, bool OnlyAutoSlots)
 {
+	if (!XTargettingAvailable() || !m || !m_activeautohatermgr) {
+		return;
+	}
+
 	m_activeautohatermgr->decrement_count(m);
 	// now we may need to clean up our CurrentTargetNPC entries
 	for (int i = 0; i < GetMaxXTargets(); ++i) {
@@ -9168,29 +9170,32 @@ void Client::SetSecondaryWeaponOrnamentation(uint32 model_id)
  *
  * @param player_name
  */
-bool Client::GotoPlayer(std::string player_name)
+bool Client::GotoPlayer(const std::string& player_name)
 {
 	const auto& l = CharacterDataRepository::GetWhere(
 		database,
-		fmt::format("name = '{}' AND last_login > (UNIX_TIMESTAMP() - 600) LIMIT 1", player_name)
+		fmt::format(
+			"name = '{}' AND last_login > (UNIX_TIMESTAMP() - 600) LIMIT 1",
+			Strings::Escape(player_name)
+		)
 	);
 
 	if (l.empty()) {
 		return false;
 	}
 
-	const auto& c = l[0];
+	const auto& e = l.front();
 
-	if (c.zone_instance > 0 && !database.CheckInstanceExists(c.zone_instance)) {
+	if (e.zone_instance > 0 && !database.CheckInstanceExists(e.zone_instance)) {
 		Message(Chat::Yellow, "Instance no longer exists...");
 		return false;
 	}
 
-	if (c.zone_instance > 0) {
-		database.AddClientToInstance(c.zone_instance, CharacterID());
+	if (e.zone_instance > 0) {
+		database.AddClientToInstance(e.zone_instance, CharacterID());
 	}
 
-	MovePC(c.zone_id, c.zone_instance, c.x, c.y, c.z, c.heading);
+	MovePC(e.zone_id, e.zone_instance, e.x, e.y, e.z, e.heading);
 
 	return true;
 }
@@ -11781,11 +11786,11 @@ void Client::RegisterBug(BugReport_Struct* r) {
 	b.target_id           = r->target_id;
 	b.target_name         = r->target_name;
 	b.optional_info_mask  = r->optional_info_mask;
-	b._can_duplicate      = ((r->optional_info_mask & EQ::bug::infoCanDuplicate) != 0 ? 1 : 0);
-	b._crash_bug          = ((r->optional_info_mask & EQ::bug::infoCrashBug) != 0 ? 1 : 0);
-	b._target_info        = ((r->optional_info_mask & EQ::bug::infoTargetInfo) != 0 ? 1 : 0);
-	b._character_flags    = ((r->optional_info_mask & EQ::bug::infoCharacterFlags) != 0 ? 1 : 0);
-	b._unknown_value      = ((r->optional_info_mask & EQ::bug::infoUnknownValue) != 0 ? 1 : 0);
+	b._can_duplicate      = ((r->optional_info_mask & Bug::InformationFlag::Repeatable) != 0 ? 1 : 0);
+	b._crash_bug          = ((r->optional_info_mask & Bug::InformationFlag::Crash) != 0 ? 1 : 0);
+	b._target_info        = ((r->optional_info_mask & Bug::InformationFlag::TargetInfo) != 0 ? 1 : 0);
+	b._character_flags    = ((r->optional_info_mask & Bug::InformationFlag::CharacterFlags) != 0 ? 1 : 0);
+	b._unknown_value      = ((r->optional_info_mask & Bug::InformationFlag::Unknown) != 0 ? 1 : 0);
 	b.bug_report          = r->bug_report;
 	b.system_info         = r->system_info;
 
@@ -11969,7 +11974,7 @@ void Client::SendPath(Mob* target)
 		RuleB(Bazaar, EnableWarpToTrader) &&
 		target->IsClient() &&
 		(
-			target->CastToClient()->Trader ||
+			target->CastToClient()->IsTrader() ||
 			target->CastToClient()->Buyer
 		)
 		) {
