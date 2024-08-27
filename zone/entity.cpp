@@ -1655,7 +1655,10 @@ void EntityList::QueueClientsByTarget(Mob *sender, const EQApplicationPacket *ap
 					Send = clear_target_window;
 					if (c->GetGM() || RuleB(Spells, AlwaysSendTargetsBuffs)) {
 						if (c->GetGM()) {
-							c->Message(Chat::White, "Your GM flag allows you to always see your targets' buffs.");
+							if (!c->EntityVariableExists(SEE_BUFFS_FLAG)) {
+								c->Message(Chat::White, "Your GM flag allows you to always see your targets' buffs.");
+								c->SetEntityVariable(SEE_BUFFS_FLAG, "1");
+							}
 						}
 
 						Send = !clear_target_window;
@@ -4478,6 +4481,36 @@ void EntityList::QuestJournalledSayClose(
 	// client only bothers logging if target spawn ID matches, safe to send to everyone
 	QueueCloseClients(sender, outapp, false, dist);
 	delete outapp;
+}
+
+bool Entity::CheckCoordLosNoZLeaps(float cur_x, float cur_y, float cur_z,
+		float trg_x, float trg_y, float trg_z, float perwalk)
+{
+	if (zone->zonemap == nullptr) {
+		return true;
+	}
+
+	glm::vec3 myloc;
+	glm::vec3 oloc;
+	glm::vec3 hit;
+
+	myloc.x = cur_x;
+	myloc.y = cur_y;
+	myloc.z = cur_z+5;
+
+	oloc.x = trg_x;
+	oloc.y = trg_y;
+	oloc.z = trg_z+5;
+
+	if (myloc.x == oloc.x && myloc.y == oloc.y && myloc.z == oloc.z) {
+		return true;
+	}
+
+	if (!zone->zonemap->LineIntersectsZoneNoZLeaps(myloc,oloc,perwalk,&hit)) {
+		return true;
+	}
+
+	return false;
 }
 
 Corpse *EntityList::GetClosestCorpse(Mob *sender, const char *Name)

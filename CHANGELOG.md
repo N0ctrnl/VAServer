@@ -1,3 +1,96 @@
+## [22.54.0] 7/30/2024
+
+### Code
+
+* Cleanup Client File Exporting ([#4348](https://github.com/EQEmu/Server/pull/4348)) @Kinglykrab 2024-07-31
+* Cleanup Stance Code ([#4368](https://github.com/EQEmu/Server/pull/4368)) @Kinglykrab 2024-07-03
+* Mask GM Show Buff message behind EntityVariable ([#4419](https://github.com/EQEmu/Server/pull/4419)) @nytmyr 2024-07-22
+
+### Commands
+
+* Extend #devtools Functionality ([#4425](https://github.com/EQEmu/Server/pull/4425)) @Kinglykrab 2024-07-23
+
+### Databuckets
+
+* Remove memory reserve from bulk load ([#4427](https://github.com/EQEmu/Server/pull/4427)) @Akkadius 2024-07-23
+
+### Feature
+
+* Add Barter/Buyer Features ([#4405](https://github.com/EQEmu/Server/pull/4405)) @neckkola 2024-07-30
+* Add Parcel notification for online players when using the Quest API ([#4418](https://github.com/EQEmu/Server/pull/4418)) @neckkola 2024-07-22
+* Implement Move Multiple Items ([#4259](https://github.com/EQEmu/Server/pull/4259)) @catapultam-habeo 2024-07-30
+
+### Fixes
+
+* Aegolism Spell line stacking ([#4399](https://github.com/EQEmu/Server/pull/4399)) @KayenEQ 2024-07-07
+* AllowRaidTargetBlind logic backwards ([#4400](https://github.com/EQEmu/Server/pull/4400)) @fryguy503 2024-07-01
+* AutoSplit unknown bug and cleanup. ([#4401](https://github.com/EQEmu/Server/pull/4401)) @fryguy503 2024-07-07
+* Corpse Call removing Resurrection Effects ([#4410](https://github.com/EQEmu/Server/pull/4410)) @fryguy503 2024-07-22
+* Fix #parcels add subcommand ([#4431](https://github.com/EQEmu/Server/pull/4431)) @neckkola 2024-07-29
+* Fix #setlevel Allowing Skills Above Max ([#4423](https://github.com/EQEmu/Server/pull/4423)) @Kinglykrab 2024-07-23
+* Fix Bot::SetBotStance ([#4426](https://github.com/EQEmu/Server/pull/4426)) @Kinglykrab 2024-07-23
+* Fix Client::RemoveTitle ([#4421](https://github.com/EQEmu/Server/pull/4421)) @Kinglykrab 2024-07-23
+* Fix EVENT_USE_SKILL with Sense Heading ([#4424](https://github.com/EQEmu/Server/pull/4424)) @Kinglykrab 2024-07-23
+* Fix for random disconnects when a large number of guild members zone or disconnect ([#4402](https://github.com/EQEmu/Server/pull/4402)) @neckkola 2024-07-10
+* Fix issue with quest::echo and quest::me ([#4433](https://github.com/EQEmu/Server/pull/4433)) @Kinglykrab 2024-07-30
+* Personal tributes for bard items were not applying correctly ([#4416](https://github.com/EQEmu/Server/pull/4416)) @neckkola 2024-07-16
+* Potential fix for some undesired ranged explotative behavior. ([#4413](https://github.com/EQEmu/Server/pull/4413)) @fryguy503 2024-07-22
+* Proximity Aggro for Frustrated and Undead ([#4411](https://github.com/EQEmu/Server/pull/4411)) @fryguy503 2024-07-22
+* Slay Adjustments ([#4389](https://github.com/EQEmu/Server/pull/4389)) @fryguy503 2024-07-07
+* Stop DOSing ourselves with OP_WearChange ([#4432](https://github.com/EQEmu/Server/pull/4432)) @catapultam-habeo 2024-07-30
+* [Quest API] Fix getraididbycharid and getgroupidbycharid ([#4417](https://github.com/EQEmu/Server/pull/4417)) @nytmyr 2024-07-16
+
+### Improvement
+
+* Flee Overhaul ([#4407](https://github.com/EQEmu/Server/pull/4407)) @fryguy503 2024-07-30
+
+### Rules
+
+* Add HasteCap and Hastev3Cap rules for NPCs, Bots and Mercs ([#4406](https://github.com/EQEmu/Server/pull/4406)) @nytmyr 2024-07-22
+
+### Zone Instances
+
+* Revert " Handle routing to instances when using evac/succor " (#4429) ([#4297](https://github.com/EQEmu/Server/pull/4297)) @Akkadius 2024-07-30
+
+### Zoning
+
+* Improve zone routing ([#4428](https://github.com/EQEmu/Server/pull/4428)) @Akkadius 2024-07-30
+
+## [22.53.1] 6/16/2024
+
+### Fixes
+
+* Fix trader mode ([#4397](https://github.com/EQEmu/Server/pull/4397)) @joligario 2024-06-17
+
+## [22.53.0] 6/14/2024
+
+### Bug
+
+* Anon players should not show in /who all ([#4392](https://github.com/EQEmu/Server/pull/4392)) @fryguy503 2024-06-14
+* Escape should put player into SOS if owned. ([#4388](https://github.com/EQEmu/Server/pull/4388)) @fryguy503 2024-06-07
+* Prevent Resurrection Spells from being resisted ([#4393](https://github.com/EQEmu/Server/pull/4393)) @fryguy503 2024-06-14
+
+### Code
+
+* Cleanup Account Status Code ([#4376](https://github.com/EQEmu/Server/pull/4376)) @Kinglykrab 2024-06-02
+* Cleanup Body Type Code ([#4366](https://github.com/EQEmu/Server/pull/4366)) @Kinglykrab 2024-06-02
+* Cleanup Object Type Code ([#4375](https://github.com/EQEmu/Server/pull/4375)) @Kinglykrab 2024-06-14
+* Remove unused code in emu_constants.h ([#4384](https://github.com/EQEmu/Server/pull/4384)) @Kinglykrab 2024-06-14
+
+### Fixes
+
+* Fix #goto Target ([#4382](https://github.com/EQEmu/Server/pull/4382)) @Kinglykrab 2024-06-03
+* Fix Swarm Pet Damage Messages ([#4383](https://github.com/EQEmu/Server/pull/4383)) @Kinglykrab 2024-06-04
+* Fix for players having empty bazaar window dropdown list, even though trader is tagged as a trader. ([#4391](https://github.com/EQEmu/Server/pull/4391)) @neckkola 2024-06-14
+* Fix potential trader crash when serialized item not found ([#4386](https://github.com/EQEmu/Server/pull/4386)) @joligario 2024-06-14
+
+### Rules
+
+* Add Invisible Augment Rules ([#4385](https://github.com/EQEmu/Server/pull/4385)) @Kinglykrab 2024-06-14
+* Classic Harm Touch Formula ([#4394](https://github.com/EQEmu/Server/pull/4394)) @fryguy503 2024-06-14
+* Mend/Sneak allow success tuning ([#4390](https://github.com/EQEmu/Server/pull/4390)) @fryguy503 2024-06-14
+* Snare Override Movement Bonus ([#4381](https://github.com/EQEmu/Server/pull/4381)) @fryguy503 2024-06-02
+
 ## [22.52.0] 6/1/2024
 
 ### Code

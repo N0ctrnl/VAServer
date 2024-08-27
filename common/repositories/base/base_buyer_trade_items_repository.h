@@ -9,44 +9,50 @@
  * @docs https://docs.eqemu.io/developer/repositories
  */
 
-#ifndef EQEMU_BASE_SPELL_BUCKETS_REPOSITORY_H
-#define EQEMU_BASE_SPELL_BUCKETS_REPOSITORY_H
+#ifndef EQEMU_BASE_BUYER_TRADE_ITEMS_REPOSITORY_H
+#define EQEMU_BASE_BUYER_TRADE_ITEMS_REPOSITORY_H
 
 #include "../../database.h"
 #include "../../strings.h"
 #include <ctime>
 
-class BaseSpellBucketsRepository {
+class BaseBuyerTradeItemsRepository {
 public:
-	struct SpellBuckets {
-		uint32_t    spell_id;
-		std::string bucket_name;
-		std::string bucket_value;
-		uint8_t     bucket_comparison;
+	struct BuyerTradeItems {
+		uint64_t    id;
+		uint64_t    buyer_buy_lines_id;
+		int32_t     item_id;
+		int32_t     item_qty;
+		int32_t     item_icon;
+		std::string item_name;
 	};
 
 	static std::string PrimaryKey()
 	{
-		return std::string("spell_id");
+		return std::string("id");
 	}
 
 	static std::vector<std::string> Columns()
 	{
 		return {
-			"spell_id",
-			"bucket_name",
-			"bucket_value",
-			"bucket_comparison",
+			"id",
+			"buyer_buy_lines_id",
+			"item_id",
+			"item_qty",
+			"item_icon",
+			"item_name",
 		};
 	}
 
 	static std::vector<std::string> SelectColumns()
 	{
 		return {
-			"spell_id",
-			"bucket_name",
-			"bucket_value",
-			"bucket_comparison",
+			"id",
+			"buyer_buy_lines_id",
+			"item_id",
+			"item_qty",
+			"item_icon",
+			"item_name",
 		};
 	}
 
@@ -62,7 +68,7 @@ public:
 
 	static std::string TableName()
 	{
-		return std::string("spell_buckets");
+		return std::string("buyer_trade_items");
 	}
 
 	static std::string BaseSelect()
@@ -83,35 +89,37 @@ public:
 		);
 	}
 
-	static SpellBuckets NewEntity()
+	static BuyerTradeItems NewEntity()
 	{
-		SpellBuckets e{};
+		BuyerTradeItems e{};
 
-		e.spell_id          = 0;
-		e.bucket_name       = "";
-		e.bucket_value      = "";
-		e.bucket_comparison = 0;
+		e.id                 = 0;
+		e.buyer_buy_lines_id = 0;
+		e.item_id            = 0;
+		e.item_qty           = 0;
+		e.item_icon          = 0;
+		e.item_name          = "0";
 
 		return e;
 	}
 
-	static SpellBuckets GetSpellBuckets(
-		const std::vector<SpellBuckets> &spell_bucketss,
-		int spell_buckets_id
+	static BuyerTradeItems GetBuyerTradeItems(
+		const std::vector<BuyerTradeItems> &buyer_trade_itemss,
+		int buyer_trade_items_id
 	)
 	{
-		for (auto &spell_buckets : spell_bucketss) {
-			if (spell_buckets.spell_id == spell_buckets_id) {
-				return spell_buckets;
+		for (auto &buyer_trade_items : buyer_trade_itemss) {
+			if (buyer_trade_items.id == buyer_trade_items_id) {
+				return buyer_trade_items;
 			}
 		}
 
 		return NewEntity();
 	}
 
-	static SpellBuckets FindOne(
+	static BuyerTradeItems FindOne(
 		Database& db,
-		int spell_buckets_id
+		int buyer_trade_items_id
 	)
 	{
 		auto results = db.QueryDatabase(
@@ -119,18 +127,20 @@ public:
 				"{} WHERE {} = {} LIMIT 1",
 				BaseSelect(),
 				PrimaryKey(),
-				spell_buckets_id
+				buyer_trade_items_id
 			)
 		);
 
 		auto row = results.begin();
 		if (results.RowCount() == 1) {
-			SpellBuckets e{};
+			BuyerTradeItems e{};
 
-			e.spell_id          = row[0] ? static_cast<uint32_t>(strtoul(row[0], nullptr, 10)) : 0;
-			e.bucket_name       = row[1] ? row[1] : "";
-			e.bucket_value      = row[2] ? row[2] : "";
-			e.bucket_comparison = row[3] ? static_cast<uint8_t>(strtoul(row[3], nullptr, 10)) : 0;
+			e.id                 = row[0] ? strtoull(row[0], nullptr, 10) : 0;
+			e.buyer_buy_lines_id = row[1] ? strtoull(row[1], nullptr, 10) : 0;
+			e.item_id            = row[2] ? static_cast<int32_t>(atoi(row[2])) : 0;
+			e.item_qty           = row[3] ? static_cast<int32_t>(atoi(row[3])) : 0;
+			e.item_icon          = row[4] ? static_cast<int32_t>(atoi(row[4])) : 0;
+			e.item_name          = row[5] ? row[5] : "0";
 
 			return e;
 		}
@@ -140,7 +150,7 @@ public:
 
 	static int DeleteOne(
 		Database& db,
-		int spell_buckets_id
+		int buyer_trade_items_id
 	)
 	{
 		auto results = db.QueryDatabase(
@@ -148,7 +158,7 @@ public:
 				"DELETE FROM {} WHERE {} = {}",
 				TableName(),
 				PrimaryKey(),
-				spell_buckets_id
+				buyer_trade_items_id
 			)
 		);
 
@@ -157,17 +167,18 @@ public:
 
 	static int UpdateOne(
 		Database& db,
-		const SpellBuckets &e
+		const BuyerTradeItems &e
 	)
 	{
 		std::vector<std::string> v;
 
 		auto columns = Columns();
 
-		v.push_back(columns[0] + " = " + std::to_string(e.spell_id));
-		v.push_back(columns[1] + " = '" + Strings::Escape(e.bucket_name) + "'");
-		v.push_back(columns[2] + " = '" + Strings::Escape(e.bucket_value) + "'");
-		v.push_back(columns[3] + " = " + std::to_string(e.bucket_comparison));
+		v.push_back(columns[1] + " = " + std::to_string(e.buyer_buy_lines_id));
+		v.push_back(columns[2] + " = " + std::to_string(e.item_id));
+		v.push_back(columns[3] + " = " + std::to_string(e.item_qty));
+		v.push_back(columns[4] + " = " + std::to_string(e.item_icon));
+		v.push_back(columns[5] + " = '" + Strings::Escape(e.item_name) + "'");
 
 		auto results = db.QueryDatabase(
 			fmt::format(
@@ -175,24 +186,26 @@ public:
 				TableName(),
 				Strings::Implode(", ", v),
 				PrimaryKey(),
-				e.spell_id
+				e.id
 			)
 		);
 
 		return (results.Success() ? results.RowsAffected() : 0);
 	}
 
-	static SpellBuckets InsertOne(
+	static BuyerTradeItems InsertOne(
 		Database& db,
-		SpellBuckets e
+		BuyerTradeItems e
 	)
 	{
 		std::vector<std::string> v;
 
-		v.push_back(std::to_string(e.spell_id));
-		v.push_back("'" + Strings::Escape(e.bucket_name) + "'");
-		v.push_back("'" + Strings::Escape(e.bucket_value) + "'");
-		v.push_back(std::to_string(e.bucket_comparison));
+		v.push_back(std::to_string(e.id));
+		v.push_back(std::to_string(e.buyer_buy_lines_id));
+		v.push_back(std::to_string(e.item_id));
+		v.push_back(std::to_string(e.item_qty));
+		v.push_back(std::to_string(e.item_icon));
+		v.push_back("'" + Strings::Escape(e.item_name) + "'");
 
 		auto results = db.QueryDatabase(
 			fmt::format(
@@ -203,7 +216,7 @@ public:
 		);
 
 		if (results.Success()) {
-			e.spell_id = results.LastInsertedID();
+			e.id = results.LastInsertedID();
 			return e;
 		}
 
@@ -214,7 +227,7 @@ public:
 
 	static int InsertMany(
 		Database& db,
-		const std::vector<SpellBuckets> &entries
+		const std::vector<BuyerTradeItems> &entries
 	)
 	{
 		std::vector<std::string> insert_chunks;
@@ -222,10 +235,12 @@ public:
 		for (auto &e: entries) {
 			std::vector<std::string> v;
 
-			v.push_back(std::to_string(e.spell_id));
-			v.push_back("'" + Strings::Escape(e.bucket_name) + "'");
-			v.push_back("'" + Strings::Escape(e.bucket_value) + "'");
-			v.push_back(std::to_string(e.bucket_comparison));
+			v.push_back(std::to_string(e.id));
+			v.push_back(std::to_string(e.buyer_buy_lines_id));
+			v.push_back(std::to_string(e.item_id));
+			v.push_back(std::to_string(e.item_qty));
+			v.push_back(std::to_string(e.item_icon));
+			v.push_back("'" + Strings::Escape(e.item_name) + "'");
 
 			insert_chunks.push_back("(" + Strings::Implode(",", v) + ")");
 		}
@@ -243,9 +258,9 @@ public:
 		return (results.Success() ? results.RowsAffected() : 0);
 	}
 
-	static std::vector<SpellBuckets> All(Database& db)
+	static std::vector<BuyerTradeItems> All(Database& db)
 	{
-		std::vector<SpellBuckets> all_entries;
+		std::vector<BuyerTradeItems> all_entries;
 
 		auto results = db.QueryDatabase(
 			fmt::format(
@@ -257,12 +272,14 @@ public:
 		all_entries.reserve(results.RowCount());
 
 		for (auto row = results.begin(); row != results.end(); ++row) {
-			SpellBuckets e{};
+			BuyerTradeItems e{};
 
-			e.spell_id          = row[0] ? static_cast<uint32_t>(strtoul(row[0], nullptr, 10)) : 0;
-			e.bucket_name       = row[1] ? row[1] : "";
-			e.bucket_value      = row[2] ? row[2] : "";
-			e.bucket_comparison = row[3] ? static_cast<uint8_t>(strtoul(row[3], nullptr, 10)) : 0;
+			e.id                 = row[0] ? strtoull(row[0], nullptr, 10) : 0;
+			e.buyer_buy_lines_id = row[1] ? strtoull(row[1], nullptr, 10) : 0;
+			e.item_id            = row[2] ? static_cast<int32_t>(atoi(row[2])) : 0;
+			e.item_qty           = row[3] ? static_cast<int32_t>(atoi(row[3])) : 0;
+			e.item_icon          = row[4] ? static_cast<int32_t>(atoi(row[4])) : 0;
+			e.item_name          = row[5] ? row[5] : "0";
 
 			all_entries.push_back(e);
 		}
@@ -270,9 +287,9 @@ public:
 		return all_entries;
 	}
 
-	static std::vector<SpellBuckets> GetWhere(Database& db, const std::string &where_filter)
+	static std::vector<BuyerTradeItems> GetWhere(Database& db, const std::string &where_filter)
 	{
-		std::vector<SpellBuckets> all_entries;
+		std::vector<BuyerTradeItems> all_entries;
 
 		auto results = db.QueryDatabase(
 			fmt::format(
@@ -285,12 +302,14 @@ public:
 		all_entries.reserve(results.RowCount());
 
 		for (auto row = results.begin(); row != results.end(); ++row) {
-			SpellBuckets e{};
+			BuyerTradeItems e{};
 
-			e.spell_id          = row[0] ? static_cast<uint32_t>(strtoul(row[0], nullptr, 10)) : 0;
-			e.bucket_name       = row[1] ? row[1] : "";
-			e.bucket_value      = row[2] ? row[2] : "";
-			e.bucket_comparison = row[3] ? static_cast<uint8_t>(strtoul(row[3], nullptr, 10)) : 0;
+			e.id                 = row[0] ? strtoull(row[0], nullptr, 10) : 0;
+			e.buyer_buy_lines_id = row[1] ? strtoull(row[1], nullptr, 10) : 0;
+			e.item_id            = row[2] ? static_cast<int32_t>(atoi(row[2])) : 0;
+			e.item_qty           = row[3] ? static_cast<int32_t>(atoi(row[3])) : 0;
+			e.item_icon          = row[4] ? static_cast<int32_t>(atoi(row[4])) : 0;
+			e.item_name          = row[5] ? row[5] : "0";
 
 			all_entries.push_back(e);
 		}
@@ -360,15 +379,17 @@ public:
 
 	static int ReplaceOne(
 		Database& db,
-		const SpellBuckets &e
+		const BuyerTradeItems &e
 	)
 	{
 		std::vector<std::string> v;
 
-		v.push_back(std::to_string(e.spell_id));
-		v.push_back("'" + Strings::Escape(e.bucket_name) + "'");
-		v.push_back("'" + Strings::Escape(e.bucket_value) + "'");
-		v.push_back(std::to_string(e.bucket_comparison));
+		v.push_back(std::to_string(e.id));
+		v.push_back(std::to_string(e.buyer_buy_lines_id));
+		v.push_back(std::to_string(e.item_id));
+		v.push_back(std::to_string(e.item_qty));
+		v.push_back(std::to_string(e.item_icon));
+		v.push_back("'" + Strings::Escape(e.item_name) + "'");
 
 		auto results = db.QueryDatabase(
 			fmt::format(
@@ -383,7 +404,7 @@ public:
 
 	static int ReplaceMany(
 		Database& db,
-		const std::vector<SpellBuckets> &entries
+		const std::vector<BuyerTradeItems> &entries
 	)
 	{
 		std::vector<std::string> insert_chunks;
@@ -391,10 +412,12 @@ public:
 		for (auto &e: entries) {
 			std::vector<std::string> v;
 
-			v.push_back(std::to_string(e.spell_id));
-			v.push_back("'" + Strings::Escape(e.bucket_name) + "'");
-			v.push_back("'" + Strings::Escape(e.bucket_value) + "'");
-			v.push_back(std::to_string(e.bucket_comparison));
+			v.push_back(std::to_string(e.id));
+			v.push_back(std::to_string(e.buyer_buy_lines_id));
+			v.push_back(std::to_string(e.item_id));
+			v.push_back(std::to_string(e.item_qty));
+			v.push_back(std::to_string(e.item_icon));
+			v.push_back("'" + Strings::Escape(e.item_name) + "'");
 
 			insert_chunks.push_back("(" + Strings::Implode(",", v) + ")");
 		}
@@ -413,4 +436,4 @@ public:
 	}
 };
 
-#endif //EQEMU_BASE_SPELL_BUCKETS_REPOSITORY_H
+#endif //EQEMU_BASE_BUYER_TRADE_ITEMS_REPOSITORY_H

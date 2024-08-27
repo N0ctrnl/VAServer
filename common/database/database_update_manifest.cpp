@@ -5661,6 +5661,79 @@ ALTER TABLE `trader`
 	ADD PRIMARY KEY (`id`),
 	ADD INDEX `charid_slotid` (`char_id`, `slot_id`);
 )"
+	},
+	ManifestEntry{
+		.version     = 9281,
+		.description = "2024_06_24_update_buyer_support.sql",
+		.check       = "SHOW COLUMNS FROM `buyer` LIKE 'id'",
+		.condition   = "empty",
+		.match       = "",
+		.sql         = R"(
+ALTER TABLE `buyer`
+	ADD COLUMN `id` BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT FIRST,
+	CHANGE COLUMN `charid` `char_id` INT(11) UNSIGNED NOT NULL DEFAULT '0' AFTER `id`,
+	ADD COLUMN `char_entity_id` INT(11) UNSIGNED NOT NULL DEFAULT '0' AFTER `char_id`,
+	ADD COLUMN `char_name` VARCHAR(64) NULL DEFAULT NULL AFTER `char_entity_id`,
+	ADD COLUMN `char_zone_id` INT(11) UNSIGNED NOT NULL DEFAULT '0' AFTER `char_name`,
+	ADD COLUMN `char_zone_instance_id` INT(11) UNSIGNED NOT NULL DEFAULT '0' AFTER `char_zone_id`,
+	ADD COLUMN `transaction_date` DATETIME NULL DEFAULT NULL AFTER `char_zone_instance_id`,
+	ADD COLUMN `welcome_message` VARCHAR(256) NULL DEFAULT NULL AFTER `transaction_date`,
+	DROP COLUMN `buyslot`,
+	DROP COLUMN `itemid`,
+	DROP COLUMN `itemname`,
+	DROP COLUMN `quantity`,
+	DROP COLUMN `price`,
+	DROP PRIMARY KEY,
+	ADD PRIMARY KEY (`id`) USING BTREE,
+	ADD INDEX `charid` (`char_id`);
+
+CREATE TABLE `buyer_buy_lines` (
+	`id` BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+	`buyer_id` BIGINT(20) UNSIGNED NOT NULL DEFAULT '0',
+	`char_id` INT(11) UNSIGNED NOT NULL DEFAULT '0',
+	`buy_slot_id` INT(11) NOT NULL DEFAULT '0',
+	`item_id` INT(11) NOT NULL DEFAULT '0',
+	`item_qty` INT(11) NOT NULL DEFAULT '0',
+	`item_price` INT(11) NOT NULL DEFAULT '0',
+	`item_icon` INT(11) UNSIGNED NOT NULL DEFAULT '0',
+	`item_name` VARCHAR(64) NOT NULL DEFAULT '' COLLATE 'latin1_swedish_ci',
+	PRIMARY KEY (`id`) USING BTREE,
+	INDEX `buyerid_charid_buyslotid` (`buyer_id`, `char_id`, `buy_slot_id`) USING BTREE
+)
+COLLATE='latin1_swedish_ci'
+ENGINE=InnoDB
+AUTO_INCREMENT=1;
+
+CREATE TABLE `buyer_trade_items` (
+	`id` BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+	`buyer_buy_lines_id` BIGINT(20) UNSIGNED NOT NULL DEFAULT '0',
+	`item_id` INT(11) NOT NULL DEFAULT '0',
+	`item_qty` INT(11) NOT NULL DEFAULT '0',
+	`item_icon` INT(11) NOT NULL DEFAULT '0',
+	`item_name` VARCHAR(64) NOT NULL DEFAULT '0' COLLATE 'latin1_swedish_ci',
+	PRIMARY KEY (`id`) USING BTREE,
+	INDEX `buyerbuylinesid` (`buyer_buy_lines_id`) USING BTREE
+)
+COLLATE='latin1_swedish_ci'
+ENGINE=InnoDB
+AUTO_INCREMENT=1;
+)"
+	},
+	ManifestEntry{
+		.version = 9282,
+		.description = "2024_08_02_spell_buckets_comparison.sql",
+		.check = "SHOW COLUMNS FROM `spell_buckets` LIKE 'bucket_comparison'",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+ALTER TABLE `spell_buckets`
+CHANGE COLUMN `spellid` `spell_id` int UNSIGNED NOT NULL FIRST,
+CHANGE COLUMN `key` `bucket_name` varchar(100) CHARACTER SET latin1 COLLATE latin1_swedish_ci NOT NULL DEFAULT '' AFTER `spell_id`,
+CHANGE COLUMN `value` `bucket_value` varchar(100) CHARACTER SET latin1 COLLATE latin1_swedish_ci NOT NULL DEFAULT '' AFTER `bucket_name`,
+ADD COLUMN `bucket_comparison` tinyint UNSIGNED NOT NULL DEFAULT 0 AFTER `bucket_value`,
+DROP PRIMARY KEY,
+ADD PRIMARY KEY (`spell_id`) USING BTREE;
+)"
 	}
 // -- template; copy/paste this when you need to create a new entry
 //	ManifestEntry{

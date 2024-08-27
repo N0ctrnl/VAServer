@@ -78,6 +78,7 @@ Copyright (C) 2001-2002 EQEMu Development Team (http://eqemu.org)
 #include "../common/misc_functions.h"
 #include "../common/events/player_event_logs.h"
 #include "../common/repositories/character_corpses_repository.h"
+#include "../common/repositories/spell_buckets_repository.h"
 
 #include "data_bucket.h"
 #include "quest_parser_collection.h"
@@ -3743,6 +3744,18 @@ int Mob::AddBuff(Mob *caster, uint16 spell_id, int duration, int32 level_overrid
 		}
 	}
 
+	//remove associated buffs for certain live spell lines
+	if (IsAegolismSpell(spell_id)) {
+		int buff_count = GetMaxBuffSlots();
+		for (int slot = 0; slot < buff_count; slot++) {
+			if (IsValidSpell(buffs[slot].spellid)) {
+				if (AegolismStackingIsSymbolSpell(buffs[slot].spellid) || AegolismStackingIsArmorClassSpell(buffs[slot].spellid)) {
+					BuffFadeBySlot(slot);
+				}
+			}
+		}
+	}
+
 	buffs[emptyslot].spellid = spell_id;
 	buffs[emptyslot].casterlevel = caster_level;
 	if (caster && !caster->IsAura()) // maybe some other things we don't want to ...
@@ -5315,19 +5328,16 @@ float Mob::ResistSpell(uint8 resist_type, uint16 spell_id, Mob *caster, bool use
 		}
 	}
 
-	if (!CharmTick){
-
+	if (!CharmTick) {
 		//Check for Spell Effect specific resistance chances (ie AA Mental Fortitude)
 		int se_resist_bonuses = GetSpellEffectResistChance(spell_id);
-		if(se_resist_bonuses && zone->random.Roll(se_resist_bonuses))
-		{
+		if (se_resist_bonuses && zone->random.Roll(se_resist_bonuses)) {
 			return 0;
 		}
 
 		// Check for Chance to Resist Spell bonuses (ie Sanctification Discipline)
 		int resist_bonuses = CalcResistChanceBonus();
-		if(resist_bonuses && zone->random.Roll(resist_bonuses))
-		{
+		if (resist_bonuses && zone->random.Roll(resist_bonuses) && !IsResurrectionSicknessSpell(spell_id)) {
 			LogSpells("Resisted spell in sanctification, had [{}] chance to resist", resist_bonuses);
 			return 0;
 		}
@@ -6230,65 +6240,20 @@ bool Client::SpellGlobalCheck(uint16 spell_id, uint32 character_id) {
 	return false;
 }
 
-bool Client::SpellBucketCheck(uint16 spell_id, uint32 character_id) {
-	auto query = fmt::format(
-		"SELECT `key`, value FROM spell_buckets WHERE spellid = {}",
-		spell_id
-	);
-
-	auto results = database.QueryDatabase(query);
-	if (!results.Success()) {
-		return false; // Query failed, do not allow scribing.
+bool Client::SpellBucketCheck(uint16 spell_id, uint32 character_id)
+{
+	const auto& e = SpellBucketsRepository::FindOne(database, spell_id);
+	if (!e.spell_id || e.bucket_name.empty() || e.bucket_value.empty()) {
+		return true;
 	}
 
-	if (!results.RowCount()) {
-		return true; // Spell ID isn't listed in the spell_buckets table, allow scribing.
-	}
+	auto k = GetScopedBucketKeys();
 
-	auto row = results.begin();
-	std::string spell_bucket_name = row[0];
-	std::string spell_bucket_value = row[1];
+	k.key = e.bucket_name;
 
-	if (spell_bucket_name.empty()) {
-		return true; // If the entry in the spell_buckets table has nothing set for the qglobal name, allow scribing.
-	}
+	const auto& b = DataBucket::GetData(k);
 
-	DataBucketKey k = GetScopedBucketKeys();
-	k.key = spell_bucket_name;
-
-	auto b = DataBucket::GetData(k);
-	if (!b.value.empty()) {
-		if (Strings::IsNumber(b.value) && Strings::IsNumber(spell_bucket_value)) {
-			if (Strings::ToInt(b.value) >= Strings::ToInt(spell_bucket_value)) {
-				return true; // If value is greater than or equal to spell bucket value, allow scribing.
-			}
-		} else {
-			if (b.value == spell_bucket_value) {
-				return true; // If value is equal to spell bucket value, allow scribing.
-			}
-		}
-	}
-
-	auto old_bucket_name = fmt::format(
-		"{}-{}",
-		character_id,
-		spell_bucket_name
-	);
-
-	std::string bucket_value = DataBucket::GetData(old_bucket_name);
-	if (!bucket_value.empty()) {
-		if (Strings::IsNumber(bucket_value) && Strings::IsNumber(spell_bucket_value)) {
-			if (Strings::ToInt(bucket_value) >= Strings::ToInt(spell_bucket_value)) {
-				return true; // If value is greater than or equal to spell bucket value, allow scribing.
-			}
-		} else {
-			if (bucket_value == spell_bucket_value) {
-				return true; // If value is equal to spell bucket value, allow scribing.
-			}
-		}
-	}
-
-	return false;
+	return zone->CompareDataBucket(e.bucket_comparison, e.bucket_value, b.value);
 }
 
 // TODO get rid of this

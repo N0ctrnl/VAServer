@@ -203,7 +203,6 @@ Client::Client(EQStreamInterface *ieqs) : Mob(
 	port = ntohs(eqs->GetRemotePort());
 	client_state = CLIENT_CONNECTING;
 	SetTrader(false);
-	Buyer = false;
 	Haste = 0;
 	SetCustomerID(0);
 	SetTraderID(0);
@@ -215,6 +214,7 @@ Client::Client(EQStreamInterface *ieqs) : Mob(
 	guild_id = GUILD_NONE;
 	guildrank = 0;
 	guild_tribute_opt_in = 0;
+	SetGuildListDirty(false);
 	GuildBanker = false;
 	memset(lskey, 0, sizeof(lskey));
 	strcpy(account_name, "");
@@ -240,7 +240,6 @@ Client::Client(EQStreamInterface *ieqs) : Mob(
 	runmode = false;
 	linkdead_timer.Disable();
 	zonesummon_id = 0;
-	zonesummon_instance_id = 0;
 	zonesummon_ignorerestrictions = 0;
 	bZoning              = false;
 	m_lock_save_position = false;
@@ -386,6 +385,8 @@ Client::Client(EQStreamInterface *ieqs) : Mob(
 	m_parcel_merchant_engaged = false;
 	m_parcels.clear();
 
+	m_buyer_id = 0;
+
 	SetBotPulling(false);
 	SetBotPrecombat(false);
 
@@ -410,8 +411,12 @@ Client::~Client() {
 		zone->ClearEXPModifier(this);
 	}
 
-	if(IsInAGuild())
-		guild_mgr.SendGuildMemberUpdateToWorld(GetName(), GuildID(), 0, time(nullptr));
+	if (!IsZoning()) {
+		if(IsInAGuild()) {
+			guild_mgr.UpdateDbMemberOnline(CharacterID(), false);
+			guild_mgr.SendGuildMemberUpdateToWorld(GetName(), GuildID(), 0, time(nullptr));
+		}
+	}
 
 	Mob* horse = entity_list.GetMob(CastToClient()->GetHorseId());
 	if (horse)
@@ -425,8 +430,9 @@ Client::~Client() {
 		TraderEndTrader();
 	}
 
-	if(Buyer)
+	if(IsBuyer()) {
 		ToggleBuyerMode(false);
+	}
 
 	if(conn_state != ClientConnectFinished) {
 		LogDebug("Client [{}] was destroyed before reaching the connected state:", GetName());
@@ -2159,12 +2165,13 @@ void Client::FillSpawnStruct(NewSpawn_Struct* ns, Mob* ForWho)
 	Mob::FillSpawnStruct(ns, ForWho);
 
 	// Populate client-specific spawn information
-	ns->spawn.afk		= AFK;
-	ns->spawn.lfg		= LFG; // afk and lfg are cleared on zoning on live
-	ns->spawn.anon		= m_pp.anon;
-	ns->spawn.gm		= GetGM() ? 1 : 0;
-	ns->spawn.guildID	= GuildID();
-	ns->spawn.trader	= IsTrader();
+	ns->spawn.afk       = AFK;
+	ns->spawn.lfg       = LFG; // afk and lfg are cleared on zoning on live
+	ns->spawn.anon      = m_pp.anon;
+	ns->spawn.gm        = GetGM() ? 1 : 0;
+	ns->spawn.guildID   = GuildID();
+	ns->spawn.trader    = IsTrader();
+	ns->spawn.buyer     = IsBuyer();
 //	ns->spawn.linkdead	= IsLD() ? 1 : 0;
 //	ns->spawn.pvp		= GetPVP(false) ? 1 : 0;
 	ns->spawn.show_name = true;
@@ -3396,6 +3403,11 @@ void Client::ServerFilter(SetServerFilter_Struct* filter){
 	} else { // these clients don't have a 'self only' filter
 		Filter1(FilterHealOverTime);
 	}
+
+	Filter1(FilterItemSpeech);
+	Filter1(FilterStrikethrough);
+	Filter1(FilterStuns);
+	Filter1(FilterBardSongsOnPets);
 }
 
 // this version is for messages with no parameters
@@ -9333,6 +9345,7 @@ void Client::ShowDevToolsMenu()
 	std::string menu_reload_eight;
 	std::string menu_reload_nine;
 	std::string menu_toggle;
+	std::string window_toggle;
 
 	/**
 	 * Search entity commands
@@ -9398,9 +9411,14 @@ void Client::ShowDevToolsMenu()
 	/**
 	 * Show window status
 	 */
-	menu_toggle = Saylink::Silent("#devtools enable", "Enable");
+	menu_toggle = Saylink::Silent("#devtools menu enable", "Enable");
 	if (IsDevToolsEnabled()) {
-		menu_toggle = Saylink::Silent("#devtools disable", "Disable");
+		menu_toggle = Saylink::Silent("#devtools menu disable", "Disable");
+	}
+
+	window_toggle = Saylink::Silent("#devtools window enable", "Enable");
+	if (GetDisplayMobInfoWindow()) {
+		window_toggle = Saylink::Silent("#devtools window disable", "Disable");
 	}
 
 	/**
@@ -9421,8 +9439,16 @@ void Client::ShowDevToolsMenu()
 	Message(
 		Chat::White,
 		fmt::format(
-			"Toggle | {}",
+			"Toggle Menu | {}",
 			menu_toggle
+		).c_str()
+	);
+
+	Message(
+		Chat::White,
+		fmt::format(
+			"Toggle Window | {}",
+			window_toggle
 		).c_str()
 	);
 
@@ -11975,7 +12001,7 @@ void Client::SendPath(Mob* target)
 		target->IsClient() &&
 		(
 			target->CastToClient()->IsTrader() ||
-			target->CastToClient()->Buyer
+			target->CastToClient()->IsBuyer()
 		)
 		) {
 		Message(
@@ -12578,4 +12604,105 @@ void Client::RemoveItemBySerialNumber(uint32 serial_number, uint32 quantity)
 			}
 		}
 	}
+}
+
+void Client::AddMoneyToPPWithOverflow(uint64 copper, bool update_client)
+{
+	//I noticed in the ROF2 client that the client auto updates the currency values using overflow
+	//Therefore, I created this method to ensure that the db matches and clients don't see 10 pp 5 gp
+	//becoming 9pp 15 gold with the current AddMoneyToPP method.
+
+	auto add_pp = copper / 1000;
+	auto add_gp = (copper - add_pp * 1000) / 100;
+	auto add_sp = (copper - add_pp * 1000 - add_gp * 100) / 10;
+	auto add_cp = copper - add_pp * 1000 - add_gp * 100 - add_sp * 10;
+
+	m_pp.copper += add_cp;
+	if (m_pp.copper >= 10) {
+		m_pp.silver += m_pp.copper / 10;
+		m_pp.copper = m_pp.copper % 10;
+	}
+
+	m_pp.silver += add_sp;
+	if (m_pp.silver >= 10) {
+		m_pp.gold += m_pp.silver / 10;
+		m_pp.silver = m_pp.silver % 10;
+	}
+
+	m_pp.gold += add_gp;
+	if (m_pp.gold >= 10) {
+		m_pp.platinum += m_pp.gold / 10;
+		m_pp.gold = m_pp.gold % 10;
+	}
+
+	m_pp.platinum += add_pp;
+
+	if (update_client) {
+		SendMoneyUpdate();
+	}
+
+	RecalcWeight();
+	SaveCurrency();
+
+	LogDebug("Client::AddMoneyToPPWithOverflow() [{}] should have: plat:[{}] gold:[{}] silver:[{}] copper:[{}]",
+			 GetName(),
+			 m_pp.platinum,
+			 m_pp.gold,
+			 m_pp.silver,
+			 m_pp.copper
+	);
+}
+
+bool Client::TakeMoneyFromPPWithOverFlow(uint64 copper, bool update_client)
+{
+	int32 remove_pp = copper / 1000;
+	int32 remove_gp = (copper - remove_pp * 1000) / 100;
+	int32 remove_sp = (copper - remove_pp * 1000 - remove_gp * 100) / 10;
+	int32 remove_cp = copper - remove_pp * 1000 - remove_gp * 100 - remove_sp * 10;
+
+	uint64 current_money = GetCarriedMoney();
+
+	if (copper > current_money) {
+		return false; //client does not have enough money on them
+	}
+
+	m_pp.copper -= remove_cp;
+	if (m_pp.copper < 0) {
+		m_pp.silver -= 1;
+		m_pp.copper = m_pp.copper + 10;
+		if (m_pp.copper >= 10) {
+			m_pp.silver += m_pp.copper / 10;
+			m_pp.copper = m_pp.copper % 10;
+		}
+	}
+
+	m_pp.silver -= remove_sp;
+	if (m_pp.silver < 0) {
+		m_pp.gold -= 1;
+		m_pp.silver = m_pp.silver + 10;
+		if (m_pp.silver >= 10) {
+			m_pp.gold += m_pp.silver / 10;
+			m_pp.silver = m_pp.silver % 10;
+		}
+	}
+
+	m_pp.gold -= remove_gp;
+	if (m_pp.gold < 0) {
+		m_pp.platinum -= 1;
+		m_pp.gold = m_pp.gold + 10;
+		if (m_pp.gold >= 10) {
+			m_pp.platinum += m_pp.gold / 10;
+			m_pp.gold = m_pp.gold % 10;
+		}
+	}
+
+	m_pp.platinum -= remove_pp;
+
+	if (update_client) {
+		SendMoneyUpdate();
+	}
+
+	SaveCurrency();
+	RecalcWeight();
+	return true;
 }

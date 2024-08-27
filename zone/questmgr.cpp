@@ -179,7 +179,12 @@ void QuestManager::ClearAllTimers() {
 //quest perl functions
 void QuestManager::echo(int colour, const char *str) {
 	QuestManagerCurrentQuestVars();
-	entity_list.MessageClose(initiator, false, 200, colour, str);
+
+	if (!owner) {
+		return;
+	}
+
+	entity_list.MessageClose(owner, false, 200, colour, str);
 }
 
 void QuestManager::say(const char *str, Journal::Options &opts) {
@@ -198,9 +203,12 @@ void QuestManager::say(const char *str, Journal::Options &opts) {
 
 void QuestManager::me(const char *str) {
 	QuestManagerCurrentQuestVars();
-	if (!initiator)
+
+	if (!owner) {
 		return;
-	entity_list.MessageClose(initiator, false, 200, 10, str);
+	}
+
+	entity_list.MessageClose(owner, false, 200, 10, str);
 }
 
 void QuestManager::summonitem(uint32 itemid, int16 charges) {
@@ -3243,13 +3251,26 @@ int QuestManager::activespeakactivity(int taskid) {
 	return 0;
 }
 
-int QuestManager::istaskcompleted(int taskid) {
+bool QuestManager::istaskcompleted(int task_id)
+{
 	QuestManagerCurrentQuestVars();
 
-	if(RuleB(TaskSystem, EnableTaskSystem) && initiator)
-		return initiator->IsTaskCompleted(taskid);
+	if (initiator && RuleB(TaskSystem, EnableTaskSystem)) {
+		return initiator->IsTaskCompleted(task_id);
+	}
 
-	return -1;
+	return false;
+}
+
+bool QuestManager::aretaskscompleted(const std::vector<int>& task_ids)
+{
+	QuestManagerCurrentQuestVars();
+
+	if (initiator && RuleB(TaskSystem, EnableTaskSystem)) {
+		return initiator->AreTasksCompleted(task_ids);
+	}
+
+	return false;
 }
 
 int QuestManager::activetasksinset(int taskset) {

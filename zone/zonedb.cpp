@@ -318,6 +318,7 @@ std::unique_ptr<EQ::ItemInstance> ZoneDatabase::LoadSingleTraderItem(uint32 char
 
 	if (results.empty()) {
 		LogTrading("Could not find item serial number {} for character id {}", serial_number, char_id);
+		return nullptr;
 	}
 
 	int item_id = results.at(0).item_id;
@@ -413,24 +414,6 @@ void ZoneDatabase::UpdateTraderItemPrice(int char_id, uint32 item_id, uint32 cha
 			char_id
 		);
 	}
-}
-
-void ZoneDatabase::DeleteBuyLines(uint32 CharID) {
-
-	if(CharID==0) {
-        const std::string query = "DELETE FROM buyer";
-		auto results = QueryDatabase(query);
-        if (!results.Success())
-			LogDebug("[CLIENT] Failed to delete all buyer items data, the error was: [{}]\n",results.ErrorMessage().c_str());
-
-        return;
-	}
-
-    std::string query = StringFormat("DELETE FROM buyer WHERE charid = %i", CharID);
-	auto results = QueryDatabase(query);
-	if (!results.Success())
-			LogDebug("[CLIENT] Failed to delete buyer item data for charid: [{}], the error was: [{}]\n",CharID,results.ErrorMessage().c_str());
-
 }
 
 void ZoneDatabase::AddBuyLine(uint32 CharID, uint32 BuySlot, uint32 ItemID, const char* ItemName, uint32 Quantity, uint32 Price) {

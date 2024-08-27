@@ -112,7 +112,7 @@ int command_init(void)
 		command_add("delpetition", "[petition number] - Delete a petition", AccountStatus::ApprenticeGuide, command_delpetition) ||
 		command_add("depop", "[Start Spawn Timer] - Depop your NPC target and optionally start their spawn timer (false by default)", AccountStatus::Guide, command_depop) ||
 		command_add("depopzone", "[Start Spawn Timers] - Depop the zone and optionally start spawn timers (false by default)", AccountStatus::GMAdmin, command_depopzone) ||
-		command_add("devtools", "[Enable|Disable] - Manages Developer Tools (send no parameter for menu)", AccountStatus::GMMgmt, command_devtools) ||
+		command_add("devtools", "[menu|window] [enable|disable] - Manages Developer Tools (send no parameter for menu)", AccountStatus::GMMgmt, command_devtools) ||
 		command_add("disablerecipe", "[Recipe ID] - Disables a Recipe", AccountStatus::QuestTroupe, command_disablerecipe) ||
 		command_add("disarmtrap", "Analog for ldon disarm trap for the newer clients since we still don't have it working.", AccountStatus::QuestTroupe, command_disarmtrap) ||
 		command_add("door", "Door editing command", AccountStatus::QuestTroupe, command_door) ||
@@ -134,6 +134,7 @@ int command_init(void)
 		command_add("fish", "Fish for an item", AccountStatus::QuestTroupe, command_fish) ||
 		command_add("fixmob", "[race|gender|texture|helm|face|hair|haircolor|beard|beardcolor|heritage|tattoo|detail] [next|prev] - Manipulate appearance of your target", AccountStatus::QuestTroupe, command_fixmob) ||
 		command_add("flagedit", "Edit zone flags on your target. Use #flagedit help for more info.", AccountStatus::GMAdmin, command_flagedit) ||
+		command_add("fleeinfo", "- Gives info about whether a NPC will flee or not, using the command issuer as top hate.", AccountStatus::QuestTroupe, command_fleeinfo) ||
 		command_add("forage", "Forage an item", AccountStatus::QuestTroupe, command_forage) ||
 		command_add("gearup", "Developer tool to quickly equip yourself or your target", AccountStatus::GMMgmt, command_gearup) ||
 		command_add("giveitem", "[itemid] [charges] - Summon an item onto your target's cursor. Charges are optional.", AccountStatus::GMMgmt, command_giveitem) ||
@@ -829,6 +830,7 @@ void command_bot(Client *c, const Seperator *sep)
 #include "gm_commands/fish.cpp"
 #include "gm_commands/fixmob.cpp"
 #include "gm_commands/flagedit.cpp"
+#include "gm_commands/fleeinfo.cpp"
 #include "gm_commands/forage.cpp"
 #include "gm_commands/gearup.cpp"
 #include "gm_commands/giveitem.cpp"

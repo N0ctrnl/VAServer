@@ -34,11 +34,14 @@
 #include "questmgr.h"
 #include "zone.h"
 #include "data_bucket.h"
+#include "../common/events/player_event_logs.h"
+#include "worldserver.h"
 
 #include <cctype>
 
 extern Zone      *zone;
 extern QueryServ *QServ;
+extern WorldServer worldserver;
 
 #ifdef EMBPERL_XS_CLASSES
 
@@ -1273,7 +1276,7 @@ int Perl__tasktimeleft(int task_id)
 	return quest_manager.tasktimeleft(task_id);
 }
 
-int Perl__istaskcompleted(int task_id)
+bool Perl__istaskcompleted(int task_id)
 {
 	return quest_manager.istaskcompleted(task_id);
 }
@@ -5946,7 +5949,33 @@ bool Perl__send_parcel(perl::reference table_ref)
 	e.note       = note;
 	e.sent_date  = std::time(nullptr);
 
-	return CharacterParcelsRepository::InsertOne(database, e).id;
+	auto out = CharacterParcelsRepository::InsertOne(database, e).id;
+	if (out) {
+		Parcel_Struct ps{};
+		ps.item_slot = e.slot_id;
+		strn0cpy(ps.send_to, name.c_str(), sizeof(ps.send_to));
+
+		std::unique_ptr<ServerPacket> server_packet(new ServerPacket(ServerOP_ParcelDelivery, sizeof(Parcel_Struct)));
+		auto                          data = (Parcel_Struct *) server_packet->pBuffer;
+
+		data->item_slot = ps.item_slot;
+		strn0cpy(data->send_to, ps.send_to, sizeof(data->send_to));
+
+		worldserver.SendPacket(server_packet.get());
+	}
+
+	return out;
+}
+
+bool Perl__aretaskscompleted(perl::array task_ids)
+{
+	std::vector<int> v;
+
+	for (const auto& e : task_ids) {
+		v.emplace_back(static_cast<int>(e));
+	}
+
+	return quest_manager.aretaskscompleted(v);
 }
 
 void perl_register_quest()
@@ -6272,6 +6301,7 @@ void perl_register_quest()
 	package.add("addloot", (void(*)(int, int))&Perl__addloot);
 	package.add("addloot", (void(*)(int, int, bool))&Perl__addloot);
 	package.add("addskill", &Perl__addskill);
+	package.add("aretaskscompleted", &Perl__aretaskscompleted);
 	package.add("assigntask", (void(*)(int))&Perl__assigntask);
 	package.add("assigntask", (void(*)(int, bool))&Perl__assigntask);
 	package.add("attack", &Perl__attack);
