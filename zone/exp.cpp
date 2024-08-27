@@ -785,28 +785,28 @@ void Client::SetEXP(ExpSource exp_source, uint64 set_exp, uint64 set_aaxp, bool 
 		//Message(Chat::Yellow, "You now have %d skill points available to spend.", m_pp.aapoints);
 	}
 
-	uint8 max_level = RuleI(Character, MaxExpLevel) + 1;
+	uint8 maxlevel = RuleI(Character, MaxExpLevel) + 1;
 
-	if (max_level <= 1) {
-		max_level = RuleI(Character, MaxLevel) + 1;
+	if (maxlevel <= 1) {
+		maxlevel = RuleI(Character, MaxLevel) + 1;
 	}
 
-	auto client_max_level = GetClientMaxLevel();
-	if (client_max_level) {
-		max_level = client_max_level + 1;
+	auto client_maxlevel = GetClientMaxLevel();
+	if (client_maxlevel) {
+		maxlevel = client_max_level + 1;
 	}
 
-	if (check_level > max_level) {
-		check_level = max_level;
+	if (check_level > maxlevel) {
+		check_level = maxlevel;
 
 		if (RuleB(Character, KeepLevelOverMax)) {
 			set_exp = GetEXPForLevel(GetLevel()+1);
 		} else {
-			set_exp = GetEXPForLevel(max_level);
+			set_exp = GetEXPForLevel(maxlevel);
 		}
 	}
 
-	if ((GetLevel() != check_level) && !(check_level >= max_level)) {
+	if ((GetLevel() != check_level) && !(check_level >= maxlevel)) {
 		char val1[20]={0};
 		if (level_increase) {
 			if (level_count == 1) {
@@ -836,7 +836,7 @@ void Client::SetEXP(ExpSource exp_source, uint64 set_exp, uint64 set_aaxp, bool 
 	}
 
 	//If were at max level then stop gaining experience if we make it to the cap
-	if (GetLevel() == max_level - 1){
+	if (GetLevel() == maxlevel - 1){
 		uint32 expneeded = GetEXPForLevel(maxlevel);
 		if (set_exp > expneeded) {
 			set_exp = expneeded;
@@ -1115,7 +1115,7 @@ uint32 Client::GetEXPForLevel(uint16 check_level)
 	return finalxp;
 }
 
-void Client::AddLevelBasedExp(ExpSource exp_source, uint8 exp_percentage, uint8 max_level, bool ignore_mods)
+void Client::AddLevelBasedExp(ExpSource exp_source, uint8 exp_percentage, uint8 maxlevel, bool ignore_mods)
 {
 	uint64	award;
 	uint64	xp_for_level;
@@ -1125,12 +1125,12 @@ void Client::AddLevelBasedExp(ExpSource exp_source, uint8 exp_percentage, uint8 
 		exp_percentage = 100;
 	}
 
-	if (!max_level || GetLevel() < max_level)
+	if (!maxlevel || GetLevel() < maxlevel)
 	{
-		max_level = GetLevel();
+		maxlevel = GetLevel();
 	}
 
-	xp_for_level = GetEXPForLevel(max_level + 1) - GetEXPForLevel(max_level);
+	xp_for_level = GetEXPForLevel(maxlevel + 1) - GetEXPForLevel(maxlevel);
 	award = xp_for_level * exp_percentage / 100;
 
 	if (RuleB(Zone, LevelBasedEXPMods) && !ignore_mods) {
