@@ -339,6 +339,7 @@ RULE_STRING(World, MOTD, "", "Server MOTD sent on login, change from empty to ha
 RULE_STRING(World, Rules, "", "Server Rules, change from empty to have this be used instead of variables table 'rules' value, lines are pipe (|) separated, example: A|B|C")
 RULE_BOOL(World, EnableAutoLogin, false, "Enables or disables auto login of characters, allowing people to log characters in directly from loginserver to ingame")
 RULE_BOOL(World, EnablePVPRegions, true, "Enables or disables PVP Regions automatically setting your PVP flag")
+RULE_STRING(World, SupportedClients, "", "Comma-delimited list of clients to restrict to. Supported values are Titanium | SoF | SoD | UF | RoF | RoF2. Example: Titanium,RoF2")
 RULE_CATEGORY_END()
 
 RULE_CATEGORY(Zone)
@@ -518,6 +519,7 @@ RULE_BOOL(Spells, SnareOverridesSpeedBonuses, false, "Enabling will allow snares
 RULE_INT(Spells, TargetedAOEMaxTargets, 4, "Max number of targets a Targeted AOE spell can cast on. Set to 0 for no limit.")
 RULE_INT(Spells, PointBlankAOEMaxTargets, 0, "Max number of targets a Point-Blank AOE spell can cast on. Set to 0 for no limit.")
 RULE_INT(Spells, DefaultAOEMaxTargets, 0, "Max number of targets that an AOE spell which does not meet other descriptions can cast on. Set to 0 for no limit.")
+RULE_BOOL(Spells, AllowFocusOnSkillDamageSpells, false, "Allow focus effects 185, 459, and 482 to enhance SkillAttack spell effect 193")
 RULE_CATEGORY_END()
 
 RULE_CATEGORY(Combat)
@@ -679,6 +681,7 @@ RULE_BOOL(NPC, DisableLastNames, false, "Enable to disable NPC Last Names")
 RULE_BOOL(NPC, NPCIgnoreLevelBasedHasteCaps, false, "Ignores hard coded level based haste caps.")
 RULE_INT(NPC, NPCHasteCap, 150, "Haste cap for non-v3(over haste) haste")
 RULE_INT(NPC, NPCHastev3Cap, 25, "Haste cap for v3(over haste) haste")
+RULE_STRING(NPC, ExcludedFaceTargetRaces, "52,72,73,141,233,328,329,372,376,377,378,379,380,381,382,383,404,422,423,424,425,426,428,429,445,449,460,462,463,500,501,502,503,504,505,506,507,508,509,510,511,513,514,515,516,533,534,535,536,537,538,539,540,541,542,543,544,545,546,550,551,552,553,554,555,556,557,567,573,577,586,589,590,591,592,593,595,596,599,601,616,619,621,628,629,630,633,634,635,636,665,683,684,685,691,692,693,694,702,703,705,706,707,710,711,714,720,2250,2254", "Race IDs excluded from facing target when hailed")
 RULE_CATEGORY_END()
 
 RULE_CATEGORY(Aggro)

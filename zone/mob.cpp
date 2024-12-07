@@ -1266,8 +1266,6 @@ void Mob::CreateSpawnPacket(EQApplicationPacket* app, NewSpawn_Struct* ns) {
 	} else {
 		strcpy(ns2->spawn.lastName, ns->spawn.lastName);
 	}
-
-	memset(&app->pBuffer[sizeof(Spawn_Struct)-7], 0xFF, 7);
 }
 
 void Mob::FillSpawnStruct(NewSpawn_Struct* ns, Mob* ForWho)
@@ -2050,19 +2048,19 @@ void Mob::SendStatsWindow(Client* c, bool use_window)
 			case 0: {
 				mod2a_name = "Avoidance";
 				mod2b_name = "Combat Effects";
-				mod2a_cap  = Strings::Commify(RuleI(Character, ItemAvoidanceCap));
-				mod2b_cap  = Strings::Commify(RuleI(Character, ItemCombatEffectsCap));
+				mod2a_cap  = RuleI(Character, ItemAvoidanceCap);
+				mod2b_cap  = RuleI(Character, ItemCombatEffectsCap);
 
 				if (IsBot()) {
-					mod2a = Strings::Commify(CastToBot()->GetAvoidance());
+					mod2a = CastToBot()->GetAvoidance();
 				} else if (IsClient()) {
-					mod2a = Strings::Commify(CastToClient()->GetAvoidance());
+					mod2a = CastToClient()->GetAvoidance();
 				}
 
 				if (IsBot()) {
-					mod2b = Strings::Commify(CastToBot()->GetCombatEffects());
+					mod2b = CastToBot()->GetCombatEffects();
 				} else if (IsClient()) {
-					mod2b = Strings::Commify(CastToClient()->GetCombatEffects());
+					mod2b = CastToClient()->GetCombatEffects();
 				}
 
 				break;
@@ -2070,19 +2068,19 @@ void Mob::SendStatsWindow(Client* c, bool use_window)
 			case 1: {
 				mod2a_name = "Accuracy";
 				mod2b_name = "Strikethrough";
-				mod2a_cap  = Strings::Commify(RuleI(Character, ItemAccuracyCap));
-				mod2b_cap  = Strings::Commify(RuleI(Character, ItemStrikethroughCap));
+				mod2a_cap  = RuleI(Character, ItemAccuracyCap);
+				mod2b_cap  = RuleI(Character, ItemStrikethroughCap);
 
 				if (IsBot()) {
-					mod2a = Strings::Commify(CastToBot()->GetAccuracy());
+					mod2a = CastToBot()->GetAccuracy();
 				} else if (IsClient()) {
-					mod2a = Strings::Commify(CastToClient()->GetAccuracy());
+					mod2a = CastToClient()->GetAccuracy();
 				}
 
 				if (IsBot()) {
-					mod2b = Strings::Commify(CastToBot()->GetStrikeThrough());
+					mod2b = CastToBot()->GetStrikeThrough();
 				} else if (IsClient()) {
-					mod2b = Strings::Commify(CastToClient()->GetStrikeThrough());
+					mod2b = CastToClient()->GetStrikeThrough();
 				}
 
 				break;
@@ -2090,20 +2088,20 @@ void Mob::SendStatsWindow(Client* c, bool use_window)
 			case 2: {
 				mod2a_name = "Shielding";
 				mod2b_name = "Spell Shielding";
-				mod2a_cap  = Strings::Commify(RuleI(Character, ItemShieldingCap));
-				mod2b_cap  = Strings::Commify(RuleI(Character, ItemSpellShieldingCap));
+				mod2a_cap  = RuleI(Character, ItemShieldingCap);
+				mod2b_cap  = RuleI(Character, ItemSpellShieldingCap);
 
 				if (IsBot()) {
-					mod2a = Strings::Commify(CastToBot()->GetShielding());
+					mod2a = CastToBot()->GetShielding();
 				} else if (IsClient()) {
-					mod2a = Strings::Commify(CastToClient()->GetShielding());
+					mod2a = CastToClient()->GetShielding();
 				}
 
 
 				if (IsBot()) {
-					mod2b = Strings::Commify(CastToBot()->GetSpellShield());
+					mod2b = CastToBot()->GetSpellShield();
 				} else if (IsClient()) {
-					mod2b = Strings::Commify(CastToClient()->GetSpellShield());
+					mod2b = CastToClient()->GetSpellShield();
 				}
 
 				break;
@@ -2111,19 +2109,19 @@ void Mob::SendStatsWindow(Client* c, bool use_window)
 			case 3: {
 				mod2a_name = "Stun Resist";
 				mod2b_name = "DOT Shielding";
-				mod2a_cap  = Strings::Commify(RuleI(Character, ItemStunResistCap));
-				mod2b_cap  = Strings::Commify(RuleI(Character, ItemDoTShieldingCap));
+				mod2a_cap  = RuleI(Character, ItemStunResistCap);
+				mod2b_cap  = RuleI(Character, ItemDoTShieldingCap);
 
 				if (IsBot()) {
-					mod2a = Strings::Commify(CastToBot()->GetStunResist());
+					mod2a = CastToBot()->GetStunResist();
 				} else if (IsClient()) {
-					mod2a = Strings::Commify(CastToClient()->GetStunResist());
+					mod2a = CastToClient()->GetStunResist();
 				}
 
 				if (IsBot()) {
-					mod2b = Strings::Commify(CastToBot()->GetDoTShield());
+					mod2b = CastToBot()->GetDoTShield();
 				} else if (IsClient()) {
-					mod2b = Strings::Commify(CastToClient()->GetDoTShield());
+					mod2b = CastToClient()->GetDoTShield();
 				}
 
 				break;
@@ -8584,6 +8582,7 @@ bool Mob::HasBotAttackFlag(Mob* tar) {
 const uint16 scan_close_mobs_timer_moving = 6000; // 6 seconds
 const uint16 scan_close_mobs_timer_idle   = 60000; // 60 seconds
 
+// If the moving timer triggers, lets see if we are moving or idle to restart the appropriate dynamic timer
 void Mob::CheckScanCloseMobsMovingTimer()
 {
 	LogAIScanCloseDetail(
@@ -8593,31 +8592,20 @@ void Mob::CheckScanCloseMobsMovingTimer()
 		m_scan_close_mobs_timer.GetRemainingTime()
 	);
 
-	// If the moving timer triggers, lets see if we are moving or idle to restart the appropriate
-	// dynamic timer
-	if (m_mob_check_moving_timer.Check()) {
-		// If the mob is still moving, restart the moving timer
-		if (moving) {
-			if (m_scan_close_mobs_timer.GetRemainingTime() > scan_close_mobs_timer_moving) {
-				LogAIScanCloseDetail("Mob [{}] Restarting with moving timer", GetCleanName());
-				m_scan_close_mobs_timer.Disable();
-				m_scan_close_mobs_timer.Start(scan_close_mobs_timer_moving);
-				m_scan_close_mobs_timer.Trigger();
-			}
-		}
-		// If the mob is not moving, restart the idle timer
-		else if (m_scan_close_mobs_timer.GetDuration() == scan_close_mobs_timer_moving) {
-			LogAIScanCloseDetail("Mob [{}] Restarting with idle timer", GetCleanName());
+	// If the mob is still moving, restart the moving timer
+	if (moving) {
+		if (m_scan_close_mobs_timer.GetRemainingTime() > scan_close_mobs_timer_moving) {
+			LogAIScanCloseDetail("Mob [{}] Restarting with moving timer", GetCleanName());
 			m_scan_close_mobs_timer.Disable();
-			m_scan_close_mobs_timer.Start(scan_close_mobs_timer_idle);
+			m_scan_close_mobs_timer.Start(scan_close_mobs_timer_moving);
+			m_scan_close_mobs_timer.Trigger();
 		}
 	}
-}
-
-void Mob::ScanCloseMobProcess()
-{
-	if (m_scan_close_mobs_timer.Check()) {
-		entity_list.ScanCloseMobs(this);
+		// If the mob is not moving, restart the idle timer
+	else if (m_scan_close_mobs_timer.GetDuration() == scan_close_mobs_timer_moving) {
+		LogAIScanCloseDetail("Mob [{}] Restarting with idle timer", GetCleanName());
+		m_scan_close_mobs_timer.Disable();
+		m_scan_close_mobs_timer.Start(scan_close_mobs_timer_idle);
 	}
 }
 

@@ -777,6 +777,8 @@ void Client::FinishTrade(Mob* tradingWith, bool finalizer, void* event_entry, st
 				tradingWith->SayString(TRADE_BACK, GetCleanName());
 				PushItemOnCursor(*inst, true);
 			}
+
+			items.clear();
 		}
 		// Only enforce trade rules if the NPC doesn't have an EVENT_TRADE
 		// subroutine.  That overrides all.
@@ -2606,6 +2608,7 @@ void Client::SellToBuyer(const EQApplicationPacket *app)
 				data->zone_id          = GetZoneID();
 				data->slot             = sell_line.slot;
 				data->seller_quantity  = sell_line.seller_quantity;
+				data->purchase_method  = sell_line.purchase_method;
 				strn0cpy(data->item_name, sell_line.item_name, sizeof(data->item_name));
 				strn0cpy(data->buyer_name, sell_line.buyer_name.c_str(), sizeof(data->buyer_name));
 				strn0cpy(data->seller_name, GetCleanName(), sizeof(data->seller_name));
@@ -2912,10 +2915,11 @@ void Client::SendBecomeTraderToWorld(Client *trader, BazaarTraderBarterActions a
 	auto outapp = new ServerPacket(ServerOP_TraderMessaging, sizeof(TraderMessaging_Struct));
 	auto data   = (TraderMessaging_Struct *) outapp->pBuffer;
 
-	data->action    = action;
-	data->entity_id = trader->GetID();
-	data->trader_id = trader->CharacterID();
-	data->zone_id   = trader->GetZoneID();
+	data->action      = action;
+	data->entity_id   = trader->GetID();
+	data->trader_id   = trader->CharacterID();
+	data->zone_id     = trader->GetZoneID();
+	data->instance_id = trader->GetInstanceID();
 	strn0cpy(data->trader_name, trader->GetName(), sizeof(data->trader_name));
 
 	worldserver.SendPacket(outapp);
@@ -3234,7 +3238,10 @@ void Client::SendBulkBazaarTraders()
 
 void Client::DoBazaarInspect(const BazaarInspect_Struct &in)
 {
-	auto items = TraderRepository::GetWhere(database, fmt::format("item_sn = {}", in.serial_number));
+	auto items = TraderRepository::GetWhere(
+		database, fmt::format("`char_id` = '{}' AND `item_sn` = '{}'", in.trader_id, in.serial_number)
+	);
+
 	if (items.empty()) {
 		LogInfo("Failed to find item with serial number [{}]", in.serial_number);
 		return;
@@ -3303,7 +3310,7 @@ std::string Client::DetermineMoneyString(uint64 cp)
 void Client::BuyTraderItemOutsideBazaar(TraderBuy_Struct *tbs, const EQApplicationPacket *app)
 {
 	auto in          = (TraderBuy_Struct *) app->pBuffer;
-	auto trader_item = TraderRepository::GetItemBySerialNumber(database, tbs->serial_number);
+	auto trader_item = TraderRepository::GetItemBySerialNumber(database, tbs->serial_number, tbs->trader_id);
 	if (!trader_item.id) {
 		LogTrading("Attempt to purchase an item outside of the Bazaar trader_id <red>[{}] item serial_number "
 				   "<red>[{}] The Traders data was outdated.",
@@ -3497,7 +3504,7 @@ void Client::BuyTraderItemOutsideBazaar(TraderBuy_Struct *tbs, const EQApplicati
 	ps.item_slot = parcel_out.slot_id;
 	strn0cpy(ps.send_to, GetCleanName(), sizeof(ps.send_to));
 
-	if (trader_item.item_charges <= static_cast<int32>(tbs->quantity)) {
+	if (trader_item.item_charges <= static_cast<int32>(tbs->quantity) || !buy_item->IsStackable()) {
 		TraderRepository::DeleteOne(database, trader_item.id);
 	} else {
 		TraderRepository::UpdateQuantity(
@@ -4250,6 +4257,14 @@ bool Client::DoBarterSellerChecks(BuyerLineSellItem_Struct &sell_line)
 						 sell_line.item_name
 		);
 		Message(Chat::Red, "The item that you are trying to sell is augmented. Please remove augments first");
+	}
+
+	if (sell_item && !sell_item->IsDroppable()) {
+		seller_error = true;
+		LogTradingDetail("Seller item <red>[{}] is non-tradeable therefore cannot be sold.",
+						 sell_line.item_name
+		);
+		Message(Chat::Red, "The item that you are trying to sell is non-tradeable and therefore cannot be sold.");
 	}
 
 	if (seller_error) {

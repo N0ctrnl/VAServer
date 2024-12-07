@@ -601,8 +601,13 @@ bool NPC::Process()
 		DepopSwarmPets();
 	}
 
-	ScanCloseMobProcess();
-	CheckScanCloseMobsMovingTimer();
+	if (m_scan_close_mobs_timer.Check()) {
+		entity_list.ScanCloseMobs(this);
+	}
+
+	if (m_mob_check_moving_timer.Check()) {
+		CheckScanCloseMobsMovingTimer();
+	}
 
 	if (hp_regen_per_second > 0 && hp_regen_per_second_timer.Check()) {
 		if (GetHP() < GetMaxHP()) {
@@ -2151,6 +2156,7 @@ void NPC::FillSpawnStruct(NewSpawn_Struct* ns, Mob* ForWho)
 	UpdateActiveLight();
 	ns->spawn.light = GetActiveLightType();
 	ns->spawn.show_name = NPCTypedata->show_name;
+	ns->spawn.trader = false;
 }
 
 void NPC::PetOnSpawn(NewSpawn_Struct* ns)
@@ -3291,16 +3297,28 @@ uint32 NPC::GetSpawnKillCount()
 	return(0);
 }
 
-void NPC::DoQuestPause(Mob *other) {
-	if(IsMoving() && !IsOnHatelist(other)) {
-		PauseWandering(RuleI(NPC, SayPauseTimeInSec));
-		if (other && !other->sneaking)
-			FaceTarget(other);
-	} else if(!IsMoving()) {
-		if (other && !other->sneaking && GetAppearance() != eaSitting && GetAppearance() != eaDead)
-			FaceTarget(other);
+void NPC::DoQuestPause(Mob* m)
+{
+	if (!m) {
+		return;
 	}
 
+	if (IsMoving() && !IsOnHatelist(m)) {
+		PauseWandering(RuleI(NPC, SayPauseTimeInSec));
+
+		if (FacesTarget() && !m->sneaking) {
+			FaceTarget(m);
+		}
+	} else if (!IsMoving()) {
+		if (
+			FacesTarget() &&
+			!m->sneaking &&
+			GetAppearance() != eaSitting &&
+			GetAppearance() != eaDead
+		) {
+			FaceTarget(m);
+		}
+	}
 }
 
 void NPC::ChangeLastName(std::string last_name)
@@ -4232,3 +4250,17 @@ void NPC::DoNpcToNpcAggroScan()
 		false
 	);
 }
+
+bool NPC::FacesTarget()
+{
+	const std::string& excluded_races_rule = RuleS(NPC, ExcludedFaceTargetRaces);
+
+	if (excluded_races_rule.empty()) {
+		return true;
+	}
+
+	const auto& v = Strings::Split(excluded_races_rule, ",");
+
+	return std::find(v.begin(), v.end(), std::to_string(GetBaseRace())) == v.end();
+}
+

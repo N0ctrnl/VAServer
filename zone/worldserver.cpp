@@ -3942,7 +3942,7 @@ void WorldServer::HandleMessage(uint16 opcode, const EQ::Net::Packet &p)
 					c.second->QueuePacket(outapp);
 					safe_delete(outapp);
 				}
-				if (zone && zone->GetZoneID() == Zones::BAZAAR) {
+				if (zone && zone->GetZoneID() == Zones::BAZAAR && in->instance_id == zone->GetInstanceID()) {
 					if (in->action == TraderOn) {
 						c.second->SendBecomeTrader(TraderOn, in->entity_id);
 					}
@@ -4044,6 +4044,7 @@ void WorldServer::HandleMessage(uint16 opcode, const EQ::Net::Packet &p)
 					sell_line.buyer_name      = in->buyer_name;
 					sell_line.seller_quantity = in->seller_quantity;
 					sell_line.slot            = in->slot;
+					sell_line.purchase_method = in->purchase_method;
 					strn0cpy(sell_line.item_name, in->item_name, sizeof(sell_line.item_name));
 
 					uint64 total_cost = (uint64) sell_line.item_cost * (uint64) sell_line.seller_quantity;
