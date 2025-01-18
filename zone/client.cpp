@@ -329,7 +329,7 @@ Client::Client(EQStreamInterface *ieqs) : Mob(
 	adventure_stats_timer = nullptr;
 	adventure_leaderboard_timer = nullptr;
 	adv_data = nullptr;
-	adv_requested_theme = LDoNThemes::Unused;
+	adv_requested_theme = LDoNTheme::Unused;
 	adv_requested_id = 0;
 	adv_requested_member_count = 0;
 
@@ -1469,7 +1469,7 @@ bool Client::UpdateLDoNPoints(uint32 theme_id, int points)
 	bool is_loss = false;
 
 	switch (theme_id) {
-		case LDoNThemes::Unused: { // No theme, so distribute evenly across all
+		case LDoNTheme::Unused: { // No theme, so distribute evenly across all
 			int split_points = (points / 5);
 
 			int guk_points = (split_points + (points % 5));
@@ -1522,12 +1522,12 @@ bool Client::UpdateLDoNPoints(uint32 theme_id, int points)
 			points -= split_points;
 
 			if (split_points != 0) { // if anything left, recursively loop thru again
-				UpdateLDoNPoints(LDoNThemes::Unused, split_points);
+				UpdateLDoNPoints(LDoNTheme::Unused, split_points);
 			}
 
 			break;
 		}
-		case LDoNThemes::GUK: {
+		case LDoNTheme::GUK: {
 			if (points < 0) {
 				if (m_pp.ldon_points_guk < (0 - points)) {
 					return false;
@@ -1539,7 +1539,7 @@ bool Client::UpdateLDoNPoints(uint32 theme_id, int points)
 			m_pp.ldon_points_guk += points;
 			break;
 		}
-		case LDoNThemes::MIR: {
+		case LDoNTheme::MIR: {
 			if (points < 0) {
 				if (m_pp.ldon_points_mir < (0 - points)) {
 					return false;
@@ -1551,7 +1551,7 @@ bool Client::UpdateLDoNPoints(uint32 theme_id, int points)
 			m_pp.ldon_points_mir += points;
 			break;
 		}
-		case LDoNThemes::MMC: {
+		case LDoNTheme::MMC: {
 			if (points < 0) {
 				if (m_pp.ldon_points_mmc < (0 - points)) {
 					return false;
@@ -1563,7 +1563,7 @@ bool Client::UpdateLDoNPoints(uint32 theme_id, int points)
 			m_pp.ldon_points_mmc += points;
 			break;
 		}
-		case LDoNThemes::RUJ: {
+		case LDoNTheme::RUJ: {
 			if (points < 0) {
 				if (m_pp.ldon_points_ruj < (0 - points)) {
 					return false;
@@ -1575,7 +1575,7 @@ bool Client::UpdateLDoNPoints(uint32 theme_id, int points)
 			m_pp.ldon_points_ruj += points;
 			break;
 		}
-		case LDoNThemes::TAK: {
+		case LDoNTheme::TAK: {
 			if (points < 0) {
 				if (m_pp.ldon_points_tak < (0 - points)) {
 					return false;
@@ -1623,23 +1623,23 @@ bool Client::UpdateLDoNPoints(uint32 theme_id, int points)
 void Client::SetLDoNPoints(uint32 theme_id, uint32 points)
 {
 	switch (theme_id) {
-		case LDoNThemes::GUK: {
+		case LDoNTheme::GUK: {
 			m_pp.ldon_points_guk = points;
 			break;
 		}
-		case LDoNThemes::MIR: {
+		case LDoNTheme::MIR: {
 			m_pp.ldon_points_mir = points;
 			break;
 		}
-		case LDoNThemes::MMC: {
+		case LDoNTheme::MMC: {
 			m_pp.ldon_points_mmc = points;
 			break;
 		}
-		case LDoNThemes::RUJ: {
+		case LDoNTheme::RUJ: {
 			m_pp.ldon_points_ruj = points;
 			break;
 		}
-		case LDoNThemes::TAK: {
+		case LDoNTheme::TAK: {
 			m_pp.ldon_points_tak = points;
 			break;
 		}
@@ -5676,15 +5676,15 @@ uint32 Client::GetLDoNPointsTheme(uint32 t)
 {
 	switch(t)
 	{
-	case LDoNThemes::GUK:
+	case LDoNTheme::GUK:
 		return m_pp.ldon_points_guk;
-	case LDoNThemes::MIR:
+	case LDoNTheme::MIR:
 		return m_pp.ldon_points_mir;
-	case LDoNThemes::MMC:
+	case LDoNTheme::MMC:
 		return m_pp.ldon_points_mmc;
-	case LDoNThemes::RUJ:
+	case LDoNTheme::RUJ:
 		return m_pp.ldon_points_ruj;
-	case LDoNThemes::TAK:
+	case LDoNTheme::TAK:
 		return m_pp.ldon_points_tak;
 	default:
 		return 0;
@@ -5695,15 +5695,15 @@ uint32 Client::GetLDoNWinsTheme(uint32 t)
 {
 	switch(t)
 	{
-	case LDoNThemes::GUK:
+	case LDoNTheme::GUK:
 		return m_pp.ldon_wins_guk;
-	case LDoNThemes::MIR:
+	case LDoNTheme::MIR:
 		return m_pp.ldon_wins_mir;
-	case LDoNThemes::MMC:
+	case LDoNTheme::MMC:
 		return m_pp.ldon_wins_mmc;
-	case LDoNThemes::RUJ:
+	case LDoNTheme::RUJ:
 		return m_pp.ldon_wins_ruj;
-	case LDoNThemes::TAK:
+	case LDoNTheme::TAK:
 		return m_pp.ldon_wins_tak;
 	default:
 		return 0;
@@ -5714,15 +5714,15 @@ uint32 Client::GetLDoNLossesTheme(uint32 t)
 {
 	switch(t)
 	{
-	case LDoNThemes::GUK:
+	case LDoNTheme::GUK:
 		return m_pp.ldon_losses_guk;
-	case LDoNThemes::MIR:
+	case LDoNTheme::MIR:
 		return m_pp.ldon_losses_mir;
-	case LDoNThemes::MMC:
+	case LDoNTheme::MMC:
 		return m_pp.ldon_losses_mmc;
-	case LDoNThemes::RUJ:
+	case LDoNTheme::RUJ:
 		return m_pp.ldon_losses_ruj;
-	case LDoNThemes::TAK:
+	case LDoNTheme::TAK:
 		return m_pp.ldon_losses_tak;
 	default:
 		return 0;
@@ -5731,35 +5731,35 @@ uint32 Client::GetLDoNLossesTheme(uint32 t)
 
 void Client::UpdateLDoNWinLoss(uint32 theme_id, bool win, bool remove) {
 	switch (theme_id) {
-		case LDoNThemes::GUK:
+		case LDoNTheme::GUK:
 			if (win) {
 				m_pp.ldon_wins_guk += (remove ? -1 : 1);
 			} else {
 				m_pp.ldon_losses_guk += (remove ? -1 : 1);
 			}
 			break;
-		case LDoNThemes::MIR:
+		case LDoNTheme::MIR:
 			if (win) {
 				m_pp.ldon_wins_mir += (remove ? -1 : 1);
 			} else {
 				m_pp.ldon_losses_mir += (remove ? -1 : 1);
 			}
 			break;
-		case LDoNThemes::MMC:
+		case LDoNTheme::MMC:
 			if (win) {
 				m_pp.ldon_wins_mmc += (remove ? -1 : 1);
 			} else {
 				m_pp.ldon_losses_mmc += (remove ? -1 : 1);
 			}
 			break;
-		case LDoNThemes::RUJ:
+		case LDoNTheme::RUJ:
 			if (win) {
 				m_pp.ldon_wins_ruj += (remove ? -1 : 1);
 			} else {
 				m_pp.ldon_losses_ruj += (remove ? -1 : 1);
 			}
 			break;
-		case LDoNThemes::TAK:
+		case LDoNTheme::TAK:
 			if (win) {
 				m_pp.ldon_wins_tak += (remove ? -1 : 1);
 			} else {
@@ -6227,7 +6227,7 @@ void Client::NewAdventure(int id, int theme, const char *text, int member_count,
 void Client::ClearPendingAdventureData()
 {
 	adv_requested_id = 0;
-	adv_requested_theme = LDoNThemes::Unused;
+	adv_requested_theme = LDoNTheme::Unused;
 	safe_delete_array(adv_requested_data);
 	adv_requested_member_count = 0;
 }
@@ -10461,27 +10461,15 @@ void Client::SendToInstance(std::string instance_type, std::string zone_short_na
 	MovePC(zone_id, instance_id, x, y, z, heading);
 }
 
-int Client::CountItem(uint32 item_id)
+uint32 Client::CountItem(uint32 item_id)
 {
-	int quantity = 0;
+	uint32 quantity = 0;
 	EQ::ItemInstance *item = nullptr;
-	static const int16 slots[][2] = {
-		{ EQ::invslot::POSSESSIONS_BEGIN, EQ::invslot::POSSESSIONS_END },
-		{ EQ::invbag::GENERAL_BAGS_BEGIN, EQ::invbag::GENERAL_BAGS_END },
-		{ EQ::invbag::CURSOR_BAG_BEGIN, EQ::invbag::CURSOR_BAG_END},
-		{ EQ::invslot::BANK_BEGIN, EQ::invslot::BANK_END },
-		{ EQ::invslot::GUILD_TRIBUTE_BEGIN, EQ::invslot::GUILD_TRIBUTE_END },
-		{ EQ::invbag::BANK_BAGS_BEGIN, EQ::invbag::BANK_BAGS_END },
-		{ EQ::invslot::SHARED_BANK_BEGIN, EQ::invslot::SHARED_BANK_END },
-		{ EQ::invbag::SHARED_BANK_BAGS_BEGIN, EQ::invbag::SHARED_BANK_BAGS_END },
-	};
-	const size_t slot_index_count = sizeof(slots) / sizeof(slots[0]);
-	for (int slot_index = 0; slot_index < slot_index_count; ++slot_index) {
-		for (int slot_id = slots[slot_index][0]; slot_id <= slots[slot_index][1]; ++slot_id) {
-			item = GetInv().GetItem(slot_id);
-			if (item && item->GetID() == item_id) {
-				quantity += (item->IsStackable() ? item->GetCharges() : 1);
-			}
+
+	for (const int16& slot_id : GetInventorySlots()) {
+		item = GetInv().GetItem(slot_id);
+		if (item && item->GetID() == item_id) {
+			quantity += (item->IsStackable() ? item->GetCharges() : 1);
 		}
 	}
 
@@ -10498,30 +10486,26 @@ void Client::ResetItemCooldown(uint32 item_id)
 	int recast_type = item_d->RecastType;
 	bool found_item = false;
 
-	static const int16 slots[][2] = {
-		{ EQ::invslot::POSSESSIONS_BEGIN, EQ::invslot::POSSESSIONS_END },
-		{ EQ::invbag::GENERAL_BAGS_BEGIN, EQ::invbag::GENERAL_BAGS_END },
-		{ EQ::invbag::CURSOR_BAG_BEGIN, EQ::invbag::CURSOR_BAG_END},
-		{ EQ::invslot::BANK_BEGIN, EQ::invslot::BANK_END },
-		{ EQ::invbag::BANK_BAGS_BEGIN, EQ::invbag::BANK_BAGS_END },
-		{ EQ::invslot::SHARED_BANK_BEGIN, EQ::invslot::SHARED_BANK_END },
-		{ EQ::invbag::SHARED_BANK_BAGS_BEGIN, EQ::invbag::SHARED_BANK_BAGS_END },
-	};
-	const size_t slot_index_count = sizeof(slots) / sizeof(slots[0]);
-	for (int slot_index = 0; slot_index < slot_index_count; ++slot_index) {
-		for (int slot_id = slots[slot_index][0]; slot_id <= slots[slot_index][1]; ++slot_id) {
-			item = GetInv().GetItem(slot_id);
-			if (item) {
-				item_d = item->GetItem();
-				if (item_d && item->GetID() == item_id || (item_d->RecastType != RECAST_TYPE_UNLINKED_ITEM && item_d->RecastType == recast_type)) {
-					item->SetRecastTimestamp(0);
-					DeleteItemRecastTimer(item_d->ID);
-					SendItemPacket(slot_id, item, ItemPacketCharmUpdate);
-					found_item = true;
-				}
+	for (const int16& slot_id : GetInventorySlots()) {
+		item = GetInv().GetItem(slot_id);
+		if (item) {
+			item_d = item->GetItem();
+			if (
+				item_d &&
+				item->GetID() == item_id ||
+				(
+					item_d->RecastType != RECAST_TYPE_UNLINKED_ITEM &&
+					item_d->RecastType == recast_type
+				)
+			) {
+				item->SetRecastTimestamp(0);
+				DeleteItemRecastTimer(item_d->ID);
+				SendItemPacket(slot_id, item, ItemPacketCharmUpdate);
+				found_item = true;
 			}
 		}
 	}
+
 	if (!found_item) {
 		DeleteItemRecastTimer(item_id); //We didn't find the item but we still want to remove the timer
 	}
@@ -10556,25 +10540,20 @@ void Client::SetItemCooldown(uint32 item_id, bool use_saved_timer, uint32 in_sec
 		final_time = total_time - current_time;
 	}
 
-	static const int16 slots[][2] = {
-		{ EQ::invslot::POSSESSIONS_BEGIN, EQ::invslot::POSSESSIONS_END },
-		{ EQ::invbag::GENERAL_BAGS_BEGIN, EQ::invbag::GENERAL_BAGS_END },
-		{ EQ::invbag::CURSOR_BAG_BEGIN, EQ::invbag::CURSOR_BAG_END},
-		{ EQ::invslot::BANK_BEGIN, EQ::invslot::BANK_END },
-		{ EQ::invbag::BANK_BAGS_BEGIN, EQ::invbag::BANK_BAGS_END },
-		{ EQ::invslot::SHARED_BANK_BEGIN, EQ::invslot::SHARED_BANK_END },
-		{ EQ::invbag::SHARED_BANK_BAGS_BEGIN, EQ::invbag::SHARED_BANK_BAGS_END },
-	};
-	const size_t slot_index_count = sizeof(slots) / sizeof(slots[0]);
-	for (int slot_index = 0; slot_index < slot_index_count; ++slot_index) {
-		for (int slot_id = slots[slot_index][0]; slot_id <= slots[slot_index][1]; ++slot_id) {
-			item = GetInv().GetItem(slot_id);
-			if (item) {
-				item_d = item->GetItem();
-				if (item_d && item->GetID() == item_id || (item_d->RecastType != RECAST_TYPE_UNLINKED_ITEM && item_d->RecastType == recast_type)) {
-					item->SetRecastTimestamp(total_time);
-					SendItemPacket(slot_id, item, ItemPacketCharmUpdate);
-				}
+	for (const int16& slot_id : GetInventorySlots()) {
+		item = GetInv().GetItem(slot_id);
+		if (item) {
+			item_d = item->GetItem();
+			if (
+				item_d &&
+				item->GetID() == item_id ||
+				(
+					item_d->RecastType != RECAST_TYPE_UNLINKED_ITEM &&
+					item_d->RecastType == recast_type
+				)
+			) {
+				item->SetRecastTimestamp(total_time);
+				SendItemPacket(slot_id, item, ItemPacketCharmUpdate);
 			}
 		}
 	}
@@ -10617,38 +10596,26 @@ uint32 Client::GetItemCooldown(uint32 item_id)
 
 void Client::RemoveItem(uint32 item_id, uint32 quantity)
 {
+	uint32 removed_count = 0;
 	EQ::ItemInstance *item = nullptr;
-	static const int16 slots[][2] = {
-		{ EQ::invslot::POSSESSIONS_BEGIN, EQ::invslot::POSSESSIONS_END },
-		{ EQ::invbag::GENERAL_BAGS_BEGIN, EQ::invbag::GENERAL_BAGS_END },
-		{ EQ::invbag::CURSOR_BAG_BEGIN, EQ::invbag::CURSOR_BAG_END},
-		{ EQ::invslot::BANK_BEGIN, EQ::invslot::BANK_END },
-		{ EQ::invslot::GUILD_TRIBUTE_BEGIN, EQ::invslot::GUILD_TRIBUTE_END },
-		{ EQ::invbag::BANK_BAGS_BEGIN, EQ::invbag::BANK_BAGS_END },
-		{ EQ::invslot::SHARED_BANK_BEGIN, EQ::invslot::SHARED_BANK_END },
-		{ EQ::invbag::SHARED_BANK_BAGS_BEGIN, EQ::invbag::SHARED_BANK_BAGS_END },
-	};
-	int16 removed_count = 0;
-	const size_t slot_index_count = sizeof(slots) / sizeof(slots[0]);
-	for (int slot_index = 0; slot_index < slot_index_count; ++slot_index) {
-		for (int slot_id = slots[slot_index][0]; slot_id <= slots[slot_index][1]; ++slot_id) {
-			if (removed_count == quantity) {
-				break;
-			}
 
-			item = GetInv().GetItem(slot_id);
-			if (item && item->GetID() == item_id) {
-				int16 charges = item->IsStackable() ? item->GetCharges() : 0;
-				int16 stack_size = std::max(charges, static_cast<int16>(1));
-				if ((removed_count + stack_size) <= quantity) {
-					removed_count += stack_size;
-					DeleteItemInInventory(slot_id, charges, true);
-				} else {
-					int16 amount_left = (quantity - removed_count);
-					if (amount_left > 0 && stack_size >= amount_left) {
-						removed_count += amount_left;
-						DeleteItemInInventory(slot_id, amount_left, true);
-					}
+	for (const int16& slot_id : GetInventorySlots()) {
+		if (removed_count == quantity) {
+			break;
+		}
+
+		item = GetInv().GetItem(slot_id);
+		if (item && item->GetID() == item_id) {
+			uint32 charges    = item->IsStackable() ? item->GetCharges() : 0;
+			uint32 stack_size = std::max(charges, static_cast<uint32>(1));
+			if ((removed_count + stack_size) <= quantity) {
+				removed_count += stack_size;
+				DeleteItemInInventory(slot_id, charges, true);
+			} else {
+				uint32 amount_left = (quantity - removed_count);
+				if (amount_left > 0 && stack_size >= amount_left) {
+					removed_count += amount_left;
+					DeleteItemInInventory(slot_id, amount_left, true);
 				}
 			}
 		}
@@ -12820,37 +12787,28 @@ uint16 Client::GetSkill(EQ::skills::SkillType skill_id) const
 void Client::RemoveItemBySerialNumber(uint32 serial_number, uint32 quantity)
 {
 	EQ::ItemInstance *item = nullptr;
-	static const int16 slots[][2] = {
-		{ EQ::invslot::POSSESSIONS_BEGIN, EQ::invslot::POSSESSIONS_END },
-		{ EQ::invbag::GENERAL_BAGS_BEGIN, EQ::invbag::GENERAL_BAGS_END },
-		{ EQ::invbag::CURSOR_BAG_BEGIN, EQ::invbag::CURSOR_BAG_END},
-		{ EQ::invslot::BANK_BEGIN, EQ::invslot::BANK_END },
-		{ EQ::invslot::GUILD_TRIBUTE_BEGIN, EQ::invslot::GUILD_TRIBUTE_END },
-		{ EQ::invbag::BANK_BAGS_BEGIN, EQ::invbag::BANK_BAGS_END },
-		{ EQ::invslot::SHARED_BANK_BEGIN, EQ::invslot::SHARED_BANK_END },
-		{ EQ::invbag::SHARED_BANK_BAGS_BEGIN, EQ::invbag::SHARED_BANK_BAGS_END },
-	};
-	int16 removed_count = 0;
-	const size_t slot_index_count = sizeof(slots) / sizeof(slots[0]);
-	for (int slot_index = 0; slot_index < slot_index_count; ++slot_index) {
-		for (int slot_id = slots[slot_index][0]; slot_id <= slots[slot_index][1]; ++slot_id) {
-			if (removed_count == quantity) {
-				break;
-			}
 
-			item = GetInv().GetItem(slot_id);
-			if (item && item->GetSerialNumber() == serial_number) {
-				int16 charges = item->IsStackable() ? item->GetCharges() : 0;
-				int16 stack_size = std::max(charges, static_cast<int16>(1));
-				if ((removed_count + stack_size) <= quantity) {
-					removed_count += stack_size;
-					DeleteItemInInventory(slot_id, charges, true);
-				} else {
-					int16 amount_left = (quantity - removed_count);
-					if (amount_left > 0 && stack_size >= amount_left) {
-						removed_count += amount_left;
-						DeleteItemInInventory(slot_id, amount_left, true);
-					}
+	uint32 removed_count = 0;
+
+	const auto& slot_ids = GetInventorySlots();
+
+	for (const int16& slot_id : slot_ids) {
+		if (removed_count == quantity) {
+			break;
+		}
+
+		item = GetInv().GetItem(slot_id);
+		if (item && item->GetSerialNumber() == serial_number) {
+			uint32 charges    = item->IsStackable() ? item->GetCharges() : 0;
+			uint32 stack_size = std::max(charges, static_cast<uint32>(1));
+			if ((removed_count + stack_size) <= quantity) {
+				removed_count += stack_size;
+				DeleteItemInInventory(slot_id, charges, true);
+			} else {
+				uint32 amount_left = (quantity - removed_count);
+				if (amount_left > 0 && stack_size >= amount_left) {
+					removed_count += amount_left;
+					DeleteItemInInventory(slot_id, amount_left, true);
 				}
 			}
 		}
@@ -13073,5 +13031,78 @@ void Client::ClientToNpcAggroProcess()
 			npc_scan_count++;
 		}
 		LogAggro("Checking Reverse Aggro (client->npc) scanned_npcs ([{}])", npc_scan_count);
+	}
+}
+
+const std::vector<int16>& Client::GetInventorySlots()
+{
+	static const std::vector<std::pair<int16, int16>> slots = {
+		{EQ::invslot::POSSESSIONS_BEGIN,     EQ::invslot::POSSESSIONS_END},
+		{EQ::invbag::GENERAL_BAGS_BEGIN,     EQ::invbag::GENERAL_BAGS_END},
+		{EQ::invbag::CURSOR_BAG_BEGIN,       EQ::invbag::CURSOR_BAG_END},
+		{EQ::invslot::BANK_BEGIN,            EQ::invslot::BANK_END},
+		{EQ::invbag::BANK_BAGS_BEGIN,        EQ::invbag::BANK_BAGS_END},
+		{EQ::invslot::SHARED_BANK_BEGIN,     EQ::invslot::SHARED_BANK_END},
+		{EQ::invbag::SHARED_BANK_BAGS_BEGIN, EQ::invbag::SHARED_BANK_BAGS_END},
+	};
+
+	static std::vector<int16> slot_ids;
+
+	if (slot_ids.empty()) {
+		for (const auto &[begin, end]: slots) {
+			for (int16 slot_id = begin; slot_id <= end; ++slot_id) {
+				slot_ids.emplace_back(slot_id);
+			}
+		}
+	}
+
+	return slot_ids;
+}
+
+void Client::ShowZoneShardMenu()
+{
+	auto z = GetZone(GetZoneID());
+	if (z && !z->shard_at_player_count) {
+		return;
+	}
+
+	auto results = CharacterDataRepository::GetInstanceZonePlayerCounts(database, GetZoneID());
+	LogZoning("Zone sharding results count [{}]", results.size());
+
+	if (results.empty()) {
+		Message(Chat::White, "No zone shards found.");
+		return;
+	}
+
+	if (!results.empty()) {
+		Message(Chat::White, "Available Zone Shards:");
+	}
+
+	int number = 1;
+	for (auto &e: results) {
+		std::string teleport_link = Saylink::Silent(
+			fmt::format("#zoneshard {} {}", e.zone_id, (e.instance_id == 0 ? -1 : e.instance_id)),
+			"Teleport"
+		);
+
+		std::string yours;
+		if (e.zone_id == GetZoneID() && e.instance_id == GetInstanceID()) {
+			teleport_link = "Teleport";
+			yours         = " (Yours)";
+		}
+
+		Message(
+			Chat::White, fmt::format(
+				" --> [{}] #{} {} ({}) [{}/{}] players {}",
+				teleport_link,
+				number,
+				z->long_name,
+				e.instance_id,
+				e.player_count,
+				z->shard_at_player_count,
+				yours
+			).c_str()
+		);
+		number++;
 	}
 }

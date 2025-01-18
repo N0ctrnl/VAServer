@@ -91,8 +91,6 @@ void WorldServer::Connect()
 	});
 
 	m_connection->OnMessage(std::bind(&WorldServer::HandleMessage, this, std::placeholders::_1, std::placeholders::_2));
-
-	m_keepalive = std::make_unique<EQ::Timer>(1000, true, std::bind(&WorldServer::OnKeepAlive, this, std::placeholders::_1));
 }
 
 bool WorldServer::SendPacket(ServerPacket *pack)
@@ -3644,11 +3642,6 @@ void WorldServer::HandleMessage(uint16 opcode, const EQ::Net::Packet &p)
 		SharedTaskZoneMessaging::HandleWorldMessage(pack);
 		break;
 	}
-	case ServerOP_DataBucketCacheUpdate:
-	{
-		DataBucket::HandleWorldMessage(pack);
-		break;
-	}
 	case ServerOP_GuildTributeUpdate: {
 		GuildTributeUpdate* in = (GuildTributeUpdate*)pack->pBuffer;
 
@@ -3934,12 +3927,14 @@ void WorldServer::HandleMessage(uint16 opcode, const EQ::Net::Packet &p)
 							out->action = 0;
 						}
 					}
-					out->entity_id = in->entity_id;
-					out->zone_id   = in->zone_id;
-					out->trader_id = in->trader_id;
+
+					out->entity_id        = in->entity_id;
+					out->zone_id          = in->zone_id;
+					out->zone_instance_id = in->instance_id;
+					out->trader_id        = in->trader_id;
 					strn0cpy(out->trader_name, in->trader_name, sizeof(out->trader_name));
 
-					c.second->QueuePacket(outapp);
+					c.second->QueuePacket(outapp, true, Mob::CLIENT_CONNECTED);
 					safe_delete(outapp);
 				}
 				if (zone && zone->GetZoneID() == Zones::BAZAAR && in->instance_id == zone->GetInstanceID()) {
@@ -4691,12 +4686,6 @@ void WorldServer::RequestTellQueue(const char *who)
 	SendPacket(pack);
 	safe_delete(pack);
 	return;
-}
-
-void WorldServer::OnKeepAlive(EQ::Timer *t)
-{
-	ServerPacket pack(ServerOP_KeepAlive, 0);
-	SendPacket(&pack);
 }
 
 ZoneEventScheduler *WorldServer::GetScheduler() const

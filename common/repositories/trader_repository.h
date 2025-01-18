@@ -16,6 +16,7 @@ public:
 	struct DistinctTraders_Struct {
 		uint32      trader_id;
 		uint32      zone_id;
+		uint32      zone_instance_id;
 		uint32      entity_id;
 		std::string trader_name;
 	};
@@ -35,18 +36,22 @@ public:
 	GetBazaarSearchResults(
 		SharedDatabase &db,
 		BazaarSearchCriteria_Struct search,
-		uint32 char_zone_id
+		uint32 char_zone_id,
+		int32 char_zone_instance_id
 	);
 
-	static BulkTraders_Struct GetDistinctTraders(Database &db)
+	static BulkTraders_Struct GetDistinctTraders(Database &db, uint32 char_zone_instance_id, uint32 max_results)
 	{
 		BulkTraders_Struct                  all_entries{};
 		std::vector<DistinctTraders_Struct> distinct_traders;
 
-		auto results = db.QueryDatabase(
-			"SELECT DISTINCT(t.char_id), t.char_zone_id, t.char_entity_id, c.name "
+		auto results = db.QueryDatabase(fmt::format(
+			"SELECT DISTINCT(t.char_id), t.char_zone_id, t.char_zone_instance_id, t.char_entity_id, c.name "
 			"FROM trader AS t "
-			"JOIN character_data AS c ON t.char_id = c.id;"
+			"JOIN character_data AS c ON t.char_id = c.id "
+			"ORDER BY t.char_zone_instance_id = {} DESC LIMIT {};",
+			char_zone_instance_id,
+			max_results)
 		);
 
 		distinct_traders.reserve(results.RowCount());
@@ -54,10 +59,11 @@ public:
 		for (auto row: results) {
 			DistinctTraders_Struct e{};
 
-			e.trader_id   = Strings::ToInt(row[0]);
-			e.zone_id     = Strings::ToInt(row[1]);
-			e.entity_id   = Strings::ToInt(row[2]);
-			e.trader_name = row[3] ? row[3] : "";
+			e.trader_id        = Strings::ToInt(row[0]);
+			e.zone_id          = Strings::ToInt(row[1]);
+			e.zone_instance_id = Strings::ToInt(row[2]);
+			e.entity_id        = Strings::ToInt(row[3]);
+			e.trader_name      = row[4] ? row[4] : "";
 			all_entries.name_length += e.trader_name.length() + 1;
 
 			all_entries.traders.push_back(e);

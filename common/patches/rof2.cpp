@@ -433,7 +433,9 @@ namespace RoF2
 					VARSTRUCT_ENCODE_TYPE(uint32, eq, i.item_icon);
 					VARSTRUCT_SKIP_TYPE(uint32, eq);
 				}
+
 				dest->QueuePacket(outapp.get());
+				safe_delete(in);
 				break;
 			}
 			default: {
@@ -468,8 +470,8 @@ namespace RoF2
 				}
 
 				auto p_size = 41 * results.size() + name_size + 14;
-				auto buffer = std::make_unique<char[]>(p_size);
-				auto bufptr = buffer.get();
+				auto buffer = new char[p_size];
+				auto bufptr = buffer;
 
 				VARSTRUCT_ENCODE_TYPE(uint32, bufptr, 0);
 				VARSTRUCT_ENCODE_TYPE(uint16, bufptr, results[0].trader_zone_id);
@@ -487,10 +489,11 @@ namespace RoF2
 					VARSTRUCT_ENCODE_TYPE(uint32, bufptr, i.item_stat);                          //itemstat
 				}
 
-				safe_delete(in->pBuffer);
+				safe_delete_array(in->pBuffer);
 				in->size    = p_size;
-				in->pBuffer = (uchar *) buffer.get();
+				in->pBuffer = (uchar*)buffer;
 				dest->QueuePacket(in);
+				safe_delete(in);
 
 				break;
 			}
@@ -500,21 +503,22 @@ namespace RoF2
 				break;
 			}
 			case WelcomeMessage: {
-				auto buffer = std::make_unique<char[]>(sizeof(structs::BazaarWelcome_Struct));
+				auto buffer = new char[sizeof(structs::BazaarWelcome_Struct)];
 				auto emu    = (BazaarWelcome_Struct *) in->pBuffer;
-				auto eq     = (structs::BazaarWelcome_Struct *) buffer.get();
+				auto eq     = (structs::BazaarWelcome_Struct *) buffer;
 
 				eq->action         = structs::RoF2BazaarTraderBuyerActions::WelcomeMessage;
 				eq->num_of_traders = emu->traders;
 				eq->num_of_items   = emu->items;
 
-				safe_delete(in->pBuffer);
+				safe_delete_array(in->pBuffer);
 				in->SetOpcode(OP_TraderShop);
 				in->size    = sizeof(structs::BazaarWelcome_Struct);
-				in->pBuffer = (uchar *) buffer.get();
+				in->pBuffer = (uchar *)buffer;
 
 				LogTrading("(RoF2) WelcomeMessage action <green>[{}]", action);
 				dest->QueuePacket(in);
+				safe_delete(in);
 
 				break;
 			}
@@ -583,19 +587,21 @@ namespace RoF2
 				auto outapp = new EQApplicationPacket(OP_TraderShop, sizeof(BecomeTrader_Struct));
 				auto eq     = (BecomeTrader_Struct *) outapp->pBuffer;
 
-				eq->action    = emu->action;
-				eq->entity_id = emu->entity_id;
-				eq->trader_id = emu->trader_id;
-				eq->zone_id   = emu->zone_id;
+				eq->action           = emu->action;
+				eq->entity_id        = emu->entity_id;
+				eq->trader_id        = emu->trader_id;
+				eq->zone_id          = emu->zone_id;
+				eq->zone_instance_id = emu->zone_instance_id;
 				strn0cpy(eq->trader_name, emu->trader_name, sizeof(eq->trader_name));
 
 				LogTrading(
-					"(RoF2) AddTraderToBazaarWindow action <green>[{}] trader_id <green>[{}] entity_id <green>[{}] zone_id <green>[{}]",
+					"(RoF2) AddTraderToBazaarWindow action <green>[{}] trader_id <green>[{}] entity_id <green>[{}] "
+					"zone_id <green>[{}] zone_instance_id <green>[{}]",
 					eq->action,
 					eq->trader_id,
 					eq->entity_id,
-					eq->zone_id
-				);
+					eq->zone_id,
+					eq->zone_instance_id);
 				dest->FastQueuePacket(&outapp);
 				break;
 			}
@@ -890,7 +896,9 @@ namespace RoF2
 					VARSTRUCT_ENCODE_TYPE(uint16, eq, b.buyer_zone_instance_id);
 					VARSTRUCT_ENCODE_STRING(eq, b.buyer_name.c_str());
 				}
+
 				dest->QueuePacket(outapp.get());
+				safe_delete(inapp);
 				break;
 			}
 			case Barter_RemoveFromMerchantWindow: {
@@ -961,6 +969,7 @@ namespace RoF2
 				VARSTRUCT_ENCODE_TYPE(uint32, eq, blsi.seller_quantity);
 
 				dest->QueuePacket(outapp.get());
+				safe_delete(inapp);
 				break;
 			}
 			default: {
@@ -1843,11 +1852,11 @@ namespace RoF2
 			}
 		}
 
-		auto outapp     = new EQApplicationPacket(OP_GuildsList);
-		outapp->size    = packet_size;
-		outapp->pBuffer = buffer;
+		safe_delete_array(in->pBuffer);
 
-		dest->FastQueuePacket(&outapp);
+		in->pBuffer = buffer;
+		in->size    = packet_size;
+		dest->FastQueuePacket(&in);
 	}
 
 	ENCODE(OP_GuildTributeDonateItem)
@@ -6218,6 +6227,11 @@ namespace RoF2
 				FINISH_DIRECT_DECODE();
 				break;
 			}
+			case structs::RoF2BazaarTraderBuyerActions::FirstOpenSearch: {
+				__packet->SetOpcode(OP_BazaarSearch);
+				LogTrading("(RoF2) First time opening Bazaar Search since zoning. Action <green>[{}]", action);
+				break;
+			}
 			case structs::RoF2BazaarTraderBuyerActions::WelcomeMessage: {
 				__packet->SetOpcode(OP_BazaarSearch);
 				LogTrading("(RoF2) WelcomeMessage action <green>[{}]", action);
@@ -6358,9 +6372,18 @@ namespace RoF2
 		//sprintf(hdr.unknown000, "06e0002Y1W00");
 		strn0cpy(hdr.unknown000, fmt::format("{:016}\0", inst->GetSerialNumber()).c_str(),sizeof(hdr.unknown000));
 
-		hdr.stacksize =
-			item->ID == PARCEL_MONEY_ITEM_ID ? inst->GetPrice() : (inst->IsStackable() ? ((inst->GetCharges() > 1000)
-				? 0xFFFFFFFF : inst->GetCharges()) : 1);
+		hdr.stacksize = 1;
+
+		if (item->ID == PARCEL_MONEY_ITEM_ID) {
+			hdr.stacksize = inst->GetPrice();
+		} else if (inst->IsStackable()) {
+			if (inst->GetCharges() > std::numeric_limits<int16>::max()) {
+				hdr.stacksize = std::numeric_limits<uint32>::max();
+			} else {
+				hdr.stacksize = inst->GetCharges();
+			}
+		}
+
 		hdr.unknown004 = 0;
 
 		structs::InventorySlot_Struct slot_id{};
