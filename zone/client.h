@@ -339,7 +339,6 @@ public:
 					const char *message9 = nullptr);
 	void Tell_StringID(uint32 string_id, const char *who, const char *message);
 	void SendColoredText(uint32 color, std::string message);
-	void SendBazaarResults(uint32 trader_id, uint32 in_class, uint32 in_race, uint32 item_stat, uint32 item_slot, uint32 item_type, char item_name[64], uint32 min_price, uint32 max_price);
 	void SendTraderItem(uint32 item_id,uint16 quantity, TraderRepository::Trader &trader);
 	void DoBazaarSearch(BazaarSearchCriteria_Struct search_criteria);
 	uint16 FindTraderItem(int32 SerialNumber,uint16 Quantity);
@@ -1140,6 +1139,8 @@ public:
 	uint32 GetTraderCount() { return m_trader_count; }
 	void IncrementTraderCount() { m_trader_count += 1; }
 	void DecrementTraderCount() { m_trader_count > 0 ? m_trader_count -= 1 : m_trader_count = 0; }
+	void SetTraderTransactionDate() { m_trader_transaction_date = time(nullptr); }
+	time_t GetTraderTransactionDate() { return m_trader_transaction_date; }
 
 	eqFilterMode GetFilter(eqFilterType filter_id) const { return ClientFilters[filter_id]; }
 	void SetFilter(eqFilterType filter_id, eqFilterMode filter_mode) { ClientFilters[filter_id] = filter_mode; }
@@ -1977,6 +1978,7 @@ private:
 	uint8 firstlogon;
 	uint32 mercid; // current merc
 	uint8 mercSlot; // selected merc slot
+	time_t                                                         m_trader_transaction_date;
 	uint32                                                         m_trader_count{};
 	uint32                                                         m_buyer_id;
 	uint32                                                         m_barter_time;
