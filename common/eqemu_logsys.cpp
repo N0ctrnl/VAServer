@@ -105,6 +105,8 @@ EQEmuLogSys *EQEmuLogSys::LoadLogSettingsDefaults()
 	log_settings[Logs::QuestErrors].log_to_console          = static_cast<uint8>(Logs::General);
 	log_settings[Logs::EqTime].log_to_console               = static_cast<uint8>(Logs::General);
 	log_settings[Logs::EqTime].log_to_gmsay                 = static_cast<uint8>(Logs::General);
+	log_settings[Logs::NpcHandin].log_to_console            = static_cast<uint8>(Logs::General);
+	log_settings[Logs::NpcHandin].log_to_gmsay              = static_cast<uint8>(Logs::General);
 
 	/**
 	 * RFC 5424
@@ -599,6 +601,8 @@ void EQEmuLogSys::SilenceConsoleLogging()
 		log_settings[log_index].is_category_enabled = 0;
 	}
 
+	log_settings[Logs::MySQLError].log_to_console = static_cast<uint8>(Logs::MySQLError);
+	log_settings[Logs::Error].log_to_console = static_cast<uint8>(Logs::Error);
 	log_settings[Logs::Crash].log_to_console = static_cast<uint8>(Logs::General);
 }
 

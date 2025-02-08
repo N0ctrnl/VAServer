@@ -502,9 +502,6 @@ void Client::AddEXP(ExpSource exp_source, uint64 in_add_exp, uint8 conlevel, boo
 		return;
 	}
 
-
-	EVENT_ITEM_ScriptStopReturn();
-
 	uint64 exp = 0;
 	uint64 aaexp = 0;
 
@@ -934,17 +931,6 @@ void Client::SetLevel(uint8 set_level, bool command)
 
 			RecordPlayerEventLog(PlayerEvent::LEVEL_GAIN, e);
 		}
-
-		if (RuleB(QueryServ, PlayerLogLevels)) {
-			const auto event_desc = fmt::format(
-				"Leveled UP :: to Level:{} from Level:{} in zoneid:{} instid:{}",
-				set_level,
-				m_pp.level,
-				GetZoneID(),
-				GetInstanceID()
-			);
-			QServ->PlayerLogEvent(Player_Log_Levels, CharacterID(), event_desc);
-		}
 	} else if (set_level < m_pp.level) {
 		int levels_lost = (m_pp.level - set_level);
 
@@ -960,17 +946,6 @@ void Client::SetLevel(uint8 set_level, bool command)
 			};
 
 			RecordPlayerEventLog(PlayerEvent::LEVEL_LOSS, e);
-		}
-
-		if (RuleB(QueryServ, PlayerLogLevels)) {
-			const auto event_desc = fmt::format(
-				"Leveled DOWN :: to Level:{} from Level:{} in zoneid:{} instid:{}",
-				set_level,
-				m_pp.level,
-				GetZoneID(),
-				GetInstanceID()
-			);
-			QServ->PlayerLogEvent(Player_Log_Levels, CharacterID(), event_desc);
 		}
 	}
 
