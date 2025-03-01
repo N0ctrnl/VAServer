@@ -311,10 +311,9 @@ namespace DatabaseSchema {
 			"completed_shared_task_members",
 			"completed_shared_tasks",
 			"discord_webhooks",
+			"dynamic_zone_lockouts",
 			"dynamic_zone_members",
 			"dynamic_zones",
-			"expedition_lockouts",
-			"expeditions",
 			"gm_ips",
 			"group_id",
 			"group_leaders",
@@ -351,6 +350,7 @@ namespace DatabaseSchema {
 			"shared_task_dynamic_zones",
 			"shared_task_members",
 			"shared_tasks",
+			"zone_state_spawns",
 		};
 	}
 
