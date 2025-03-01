@@ -549,10 +549,10 @@ void Client::FinishTrade(Mob* tradingWith, bool finalizer, void* event_entry, st
 					}
 				}
 
-				auto               with  = tradingWith->CastToNPC();
-				const EQ::ItemData *item = inst->GetItem();
-
-				if (with->IsPetOwnerClient() && with->CanPetTakeItem(inst)) {
+				auto               with   = tradingWith->CastToNPC();
+				const EQ::ItemData *item  = inst->GetItem();
+				const bool         is_pet = with->IsPetOwnerOfClientBot() || with->IsCharmedPet();
+				if (is_pet && with->CanPetTakeItem(inst)) {
 					// pets need to look inside bags and try to equip items found there
 					if (item->IsClassBag() && item->BagSlots > 0) {
 						// if an item inside the bag can't be given to the pet, keep the bag
@@ -618,15 +618,35 @@ void Client::FinishTrade(Mob* tradingWith, bool finalizer, void* event_entry, st
 			item_list.emplace_back(inst);
 		}
 
+		auto handin_npc = tradingWith->CastToNPC();
+
 		m_external_handin_money_returned = {};
 		m_external_handin_items_returned = {};
 		bool has_aggro = tradingWith->CheckAggro(this);
 		if (parse->HasQuestSub(tradingWith->GetNPCTypeID(), EVENT_TRADE) && !has_aggro) {
+			// This CheckHandin call enables eq.handin and quest::handin to recognize the hand-in context.
+			// It initializes the first hand-in bucket, which is then reused for the EVENT_TRADE subroutine.
+			std::map<std::string, uint32> handin = {
+				{"copper",   trade->cp},
+				{"silver",   trade->sp},
+				{"gold",     trade->gp},
+				{"platinum", trade->pp}
+			};
+
+			for (EQ::ItemInstance *inst: items) {
+				if (!inst || !inst->GetItem()) {
+					continue;
+				}
+
+				std::string item_id = fmt::format("{}", inst->GetItem()->ID);
+				handin[item_id] += inst->GetCharges();
+			}
+
+			handin_npc->CheckHandin(this, handin, {}, items);
+
 			parse->EventNPC(EVENT_TRADE, tradingWith->CastToNPC(), this, "", 0, &item_list);
 			LogNpcHandinDetail("EVENT_TRADE triggered for NPC [{}]", tradingWith->GetNPCTypeID());
 		}
-
-		auto handin_npc = tradingWith->CastToNPC();
 
 		// this is a catch-all return for items that weren't consumed by the EVENT_TRADE subroutine
 		// it's possible we have a quest NPC that doesn't have an EVENT_TRADE subroutine
@@ -1458,12 +1478,13 @@ void Client::BuyTraderItem(TraderBuy_Struct *tbs, Client *Trader, const EQApplic
 			.trader_id            = Trader->CharacterID(),
 			.trader_name          = Trader->GetCleanName(),
 			.price                = tbs->price,
-			.charges              = outtbs->quantity,
+			.quantity             = outtbs->quantity,
+			.charges              = buy_item->GetCharges(),
 			.total_cost           = (tbs->price * outtbs->quantity),
 			.player_money_balance = GetCarriedMoney(),
 		};
 
-        RecordPlayerEventLog(PlayerEvent::TRADER_PURCHASE, e);
+		RecordPlayerEventLog(PlayerEvent::TRADER_PURCHASE, e);
 	}
 
 	if (player_event_logs.IsEventEnabled(PlayerEvent::TRADER_SELL)) {
@@ -1479,7 +1500,8 @@ void Client::BuyTraderItem(TraderBuy_Struct *tbs, Client *Trader, const EQApplic
 			.buyer_id             = CharacterID(),
 			.buyer_name           = GetCleanName(),
 			.price                = tbs->price,
-			.charges              = outtbs->quantity,
+			.quantity             = outtbs->quantity,
+			.charges              = buy_item->GetCharges(),
 			.total_cost           = (tbs->price * outtbs->quantity),
 			.player_money_balance = Trader->GetCarriedMoney(),
 		};
@@ -1960,8 +1982,8 @@ void Client::SellToBuyer(const EQApplicationPacket *app)
 				}
 
 				uint64 total_cost = (uint64) sell_line.item_cost * (uint64) sell_line.seller_quantity;
-				AddMoneyToPPWithOverflow(total_cost, false);
-				buyer->TakeMoneyFromPPWithOverFlow(total_cost, false);
+				AddMoneyToPP(total_cost, false);
+				buyer->TakeMoneyFromPP(total_cost, false);
 
 				if (player_event_logs.IsEventEnabled(PlayerEvent::BARTER_TRANSACTION)) {
 					PlayerEvent::BarterTransaction e{};
@@ -2879,6 +2901,21 @@ void Client::BuyTraderItemOutsideBazaar(TraderBuy_Struct *tbs, const EQApplicati
 		return;
 	}
 
+	auto next_slot = FindNextFreeParcelSlot(CharacterID());
+	if (next_slot == INVALID_INDEX) {
+		LogTrading(
+			"{} attempted to purchase {} from the bazaar with parcel delivery.  Unfortunately their parcel limit was reached.  "
+			"Purchase unsuccessful.",
+			GetCleanName(),
+			buy_item->GetItem()->Name
+		);
+		in->method     = BazaarByParcel;
+		in->sub_action = TooManyParcels;
+		TraderRepository::UpdateActiveTransaction(database, trader_item.id, false);
+		TradeRequestFailed(app);
+		return;
+	}
+
 	LogTrading(
 		"Name: <green>[{}] IsStackable: <green>[{}] Requested Quantity: <green>[{}] Charges on Item <green>[{}]",
 		buy_item->GetItem()->Name,
@@ -2888,23 +2925,24 @@ void Client::BuyTraderItemOutsideBazaar(TraderBuy_Struct *tbs, const EQApplicati
 	);
 
 	// Determine the actual quantity for the purchase
+	int32 charges = static_cast<int32>(tbs->quantity);
 	if (!buy_item->IsStackable()) {
-		tbs->quantity = 1;
-	}
-	else {
-		int32 item_charges = buy_item->GetCharges();
-		if (item_charges <= 0) {
-			tbs->quantity = 1;
+		if (buy_item->GetCharges() <= 0) {
+			charges = 1;
 		}
-		else if (static_cast<uint32>(item_charges) < tbs->quantity) {
-			tbs->quantity = item_charges;
+		else {
+			charges = buy_item->GetCharges();
 		}
 	}
 
-	LogTrading("Actual quantity that will be traded is <green>[{}]", tbs->quantity);
+	LogTrading(
+		"Actual quantity that will be traded is <green>[{}] {}",
+		tbs->quantity,
+		buy_item->GetCharges() ? fmt::format("with {} charges", buy_item->GetCharges()) : ""
+	);
 
-	uint64 total_transaction_value = static_cast<uint64>(tbs->price) * static_cast<uint64>(tbs->quantity);
-	if (total_transaction_value > MAX_TRANSACTION_VALUE) {
+	uint64 total_cost = static_cast<uint64>(tbs->price) * static_cast<uint64>(tbs->quantity);
+	if (total_cost > MAX_TRANSACTION_VALUE) {
 		Message(
 			Chat::Red,
 			"That would exceed the single transaction limit of %u platinum.",
@@ -2915,9 +2953,8 @@ void Client::BuyTraderItemOutsideBazaar(TraderBuy_Struct *tbs, const EQApplicati
 		return;
 	}
 
-	uint32 total_cost = tbs->price * tbs->quantity;
-	uint32 fee        = static_cast<uint32>(std::round((uint32) total_cost * RuleR(Bazaar, ParcelDeliveryCostMod)));
-	if (!TakeMoneyFromPP(total_cost + fee)) {
+	uint64 fee         = std::round(total_cost * RuleR(Bazaar, ParcelDeliveryCostMod));
+	if (!TakeMoneyFromPP(total_cost + fee, false)) {
 		RecordPlayerEventLog(
 			PlayerEvent::POSSIBLE_HACK,
 			PlayerEvent::PossibleHackEvent{
@@ -2951,7 +2988,8 @@ void Client::BuyTraderItemOutsideBazaar(TraderBuy_Struct *tbs, const EQApplicati
 			.trader_id            = tbs->trader_id,
 			.trader_name          = tbs->seller_name,
 			.price                = tbs->price,
-			.charges              = tbs->quantity,
+			.quantity             = tbs->quantity,
+			.charges              = buy_item->IsStackable() ? 1 : charges,
 			.total_cost           = total_cost,
 			.player_money_balance = GetCarriedMoney(),
 		};
@@ -2960,24 +2998,10 @@ void Client::BuyTraderItemOutsideBazaar(TraderBuy_Struct *tbs, const EQApplicati
 	}
 
 	CharacterParcelsRepository::CharacterParcels parcel_out{};
-	auto next_slot = FindNextFreeParcelSlot(CharacterID());
-	if (next_slot == INVALID_INDEX) {
-		LogTrading(
-			"{} attempted to purchase {} from the bazaar with parcel delivery.  Unfortunately their parcel limit was reached.  "
-			"Purchase unsuccessful.",
-			GetCleanName(),
-			buy_item->GetItem()->Name
-		);
-		in->method     = BazaarByParcel;
-		in->sub_action = TooManyParcels;
-		TraderRepository::UpdateActiveTransaction(database, trader_item.id, false);
-		TradeRequestFailed(app);
-		return;
-	}
 	parcel_out.from_name  = tbs->seller_name;
 	parcel_out.note       = "Delivered from a Bazaar Purchase";
 	parcel_out.sent_date  = time(nullptr);
-	parcel_out.quantity   = buy_item->IsStackable() ? tbs->quantity : buy_item->GetCharges();
+	parcel_out.quantity   = charges;
 	parcel_out.item_id    = buy_item->GetItem()->ID;
 	parcel_out.aug_slot_1 = buy_item->GetAugmentItemID(0);
 	parcel_out.aug_slot_2 = buy_item->GetAugmentItemID(1);
@@ -3017,7 +3041,8 @@ void Client::BuyTraderItemOutsideBazaar(TraderBuy_Struct *tbs, const EQApplicati
 		e.augment_4_id     = parcel_out.aug_slot_4;
 		e.augment_5_id     = parcel_out.aug_slot_5;
 		e.augment_6_id     = parcel_out.aug_slot_6;
-		e.quantity         = parcel_out.quantity;
+		e.quantity         = tbs->quantity;
+		e.charges          = buy_item->IsStackable() ? 1 : charges;
 		e.sent_date        = parcel_out.sent_date;
 
 		RecordPlayerEventLog(PlayerEvent::PARCEL_SEND, e);
@@ -3060,6 +3085,8 @@ void Client::BuyTraderItemOutsideBazaar(TraderBuy_Struct *tbs, const EQApplicati
 	strn0cpy(out_data->trader_buy_struct.buyer_name, GetCleanName(), sizeof(out_data->trader_buy_struct.buyer_name));
 
 	worldserver.SendPacket(out_server.get());
+
+	SendMoneyUpdate();
 }
 
 void Client::SetBuyerWelcomeMessage(const char *welcome_message)

@@ -680,7 +680,7 @@ void QuestManager::stoptimer(const std::string& timer_name, Mob* m)
 		return;
 	}
 
-	for (auto e = QTimerList.begin(); e != QTimerList.end();) {
+	for (auto e = QTimerList.begin(); e != QTimerList.end(); ++e) {
 		if (e->mob && e->mob == m) {
 			parse->EventMob(EVENT_TIMER_STOP, m, nullptr, [&]() { return timer_name; });
 
@@ -890,7 +890,7 @@ void QuestManager::resumetimer(const std::string& timer_name, Mob* m)
 		}
 	}
 
-	QTimerList.emplace_back(QuestTimer(milliseconds, m, timer_name));
+	QTimerList.emplace_back(QuestTimer(milliseconds, mob, timer_name));
 
 	parse->EventMob(EVENT_TIMER_RESUME, mob, nullptr, f);
 
@@ -4430,7 +4430,7 @@ int QuestManager::GetRecipeMadeCount(uint32 recipe_id) {
 
 std::string QuestManager::GetRecipeName(uint32 recipe_id) {
 	auto r = TradeskillRecipeRepository::GetWhere(
-		database,
+		content_db,
 		fmt::format("id = {}", recipe_id)
 	);
 
@@ -4605,4 +4605,19 @@ void QuestManager::SpawnGrid(uint32 npc_id, glm::vec4 position, float spacing, u
 			spawned++;
 		}
 	}
+}
+
+bool QuestManager::handin(std::map<std::string, uint32> required) {
+	QuestManagerCurrentQuestVars();
+	if (!owner || !initiator) {
+		LogQuests("QuestManager::handin called with nullptr owner. Probably syntax error in quest file");
+		return false;
+	}
+
+	if (owner && !owner->IsNPC()) {
+		LogQuests("QuestManager::handin called with non-NPC owner. Probably syntax error in quest file");
+		return false;
+	}
+
+	return owner->CastToNPC()->CheckHandin(initiator, {}, required, {});
 }
