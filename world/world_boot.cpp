@@ -27,6 +27,7 @@
 #include "../common/zone_store.h"
 #include "../common/path_manager.h"
 #include "../common/database/database_update.h"
+#include "../common/repositories/zone_state_spawns_repository.h"
 
 extern ZSList      zoneserver_list;
 extern WorldConfig Config;
@@ -99,6 +100,13 @@ bool WorldBoot::HandleCommandInput(int argc, char **argv)
 			std::cout << "Binary Database Version: " << database_version << " : " << bots_database_version << std::endl;
 			return true;
 		}
+	}
+
+	// check if we ran a valid command, this whole CLI handler needs to be improved at a later time
+	std::string arg1 = argc >= 2 ? argv[1] : "";
+	if (argc >= 2 && !Strings::Contains(arg1, ":")) {
+		std::cout << "Invalid command, use --help to see available commands" << std::endl;
+		return true;
 	}
 
 	return false;
@@ -404,6 +412,11 @@ bool WorldBoot::DatabaseLoadRoutines(int argc, char **argv)
 
 	LogInfo("Cleaning up instance corpses");
 	database.CleanupInstanceCorpses();
+
+	if (RuleB(Zone, StateSavingOnShutdown)) {
+		ZoneStateSpawnsRepository::PurgeInvalidZoneStates(database);
+		ZoneStateSpawnsRepository::PurgeOldZoneStates(database);
+	}
 
 	return true;
 }

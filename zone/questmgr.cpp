@@ -208,6 +208,15 @@ void QuestManager::write(const char *file, const char *str) {
 }
 
 Mob* QuestManager::spawn2(int npc_id, int grid, int unused, const glm::vec4& position) {
+	QuestManagerCurrentQuestVars();
+	if (owner && owner->IsNPC()) {
+		auto n = owner->CastToNPC();
+		if (n->IsResumedFromZoneSuspend()) {
+			LogZoneState("NPC [{}] is resuming from zone suspend, skipping quest call", n->GetCleanName());
+			return nullptr;
+		}
+	}
+
 	const NPCType* t = 0;
 	if (t = content_db.LoadNPCTypesData(npc_id)) {
 		auto npc = new NPC(t, nullptr, position, GravityBehavior::Water);
@@ -228,6 +237,15 @@ Mob* QuestManager::spawn2(int npc_id, int grid, int unused, const glm::vec4& pos
 }
 
 Mob* QuestManager::unique_spawn(int npc_type, int grid, int unused, const glm::vec4& position) {
+	QuestManagerCurrentQuestVars();
+	if (owner && owner->IsNPC()) {
+		auto n = owner->CastToNPC();
+		if (n->IsResumedFromZoneSuspend()) {
+			LogZoneState("NPC [{}] is resuming from zone suspend, skipping quest call", n->GetCleanName());
+			return nullptr;
+		}
+	}
+
 	Mob *other = entity_list.GetMobByNpcTypeID(npc_type);
 	if(other != nullptr) {
 		return other;
@@ -1623,10 +1641,10 @@ void QuestManager::setsky(uint8 new_sky) {
 	safe_delete(outapp);
 }
 
-void QuestManager::setguild(uint32 new_guild_id, uint8 new_rank) {
+void QuestManager::SetGuild(uint32 new_guild_id, uint8 new_rank) {
 	QuestManagerCurrentQuestVars();
 	if (initiator) {
-		guild_mgr.SetGuild(initiator->CharacterID(), new_guild_id, new_rank);
+		guild_mgr.SetGuild(initiator, new_guild_id, new_rank);
 	}
 }
 
@@ -1681,7 +1699,7 @@ void QuestManager::CreateGuild(const char *guild_name, const char *leader) {
 					gid
 				).c_str()
 			);
-			if (!guild_mgr.SetGuild(character_id, gid, GUILD_LEADER)) {
+			if (!guild_mgr.SetGuild(initiator, gid, GUILD_LEADER)) {
 				worldserver.SendEmoteMessage(
 					0,
 					0,

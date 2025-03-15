@@ -3410,6 +3410,7 @@ void WorldServer::HandleMessage(uint16 opcode, const EQ::Net::Packet &p)
 	case ServerOP_DzRemoveAllMembers:
 	case ServerOP_DzDurationUpdate:
 	case ServerOP_DzGetMemberStatuses:
+	case ServerOP_DzGetBulkMemberStatuses:
 	case ServerOP_DzSetCompass:
 	case ServerOP_DzSetSafeReturn:
 	case ServerOP_DzSetZoneIn:
@@ -3785,6 +3786,13 @@ void WorldServer::HandleMessage(uint16 opcode, const EQ::Net::Packet &p)
 				return;
 			}
 
+			if (trader_pc->IsThereACustomer()) {
+				auto customer = entity_list.GetClientByID(trader_pc->GetCustomerID());
+				if (customer) {
+					customer->CancelTraderTradeWindow();
+				}
+			}
+
 			auto item_sn = Strings::ToUnsignedBigInt(in->trader_buy_struct.serial_number);
 			auto outapp  = std::make_unique<EQApplicationPacket>(OP_Trader, sizeof(TraderBuy_Struct));
 			auto data    = (TraderBuy_Struct *) outapp->pBuffer;
@@ -3799,7 +3807,7 @@ void WorldServer::HandleMessage(uint16 opcode, const EQ::Net::Packet &p)
 
 			auto item = trader_pc->FindTraderItemBySerialNumber(item_sn);
 
-			if (player_event_logs.IsEventEnabled(PlayerEvent::TRADER_SELL)) {
+			if (item && player_event_logs.IsEventEnabled(PlayerEvent::TRADER_SELL)) {
 				auto e = PlayerEvent::TraderSellEvent{
 					.item_id              = item ? item->GetID() : 0,
 					.augment_1_id         = item->GetAugmentItemID(0),
@@ -3979,6 +3987,12 @@ void WorldServer::HandleMessage(uint16 opcode, const EQ::Net::Packet &p)
 						in->sub_action = Barter_BuyerCouldNotBeFound;
 						worldserver.SendPacket(pack);
 						return;
+					}
+					if (buyer->IsThereACustomer()) {
+						auto customer = entity_list.GetClientByID(buyer->GetCustomerID());
+						if (customer) {
+							customer->CancelBuyerTradeWindow();
+						}
 					}
 
 					BuyerLineSellItem_Struct sell_line{};
@@ -4500,13 +4514,6 @@ void WorldServer::QueueReload(ServerReload::Request r)
 	m_reload_mutex.lock();
 	int64_t reload_at = r.reload_at_unix - std::time(nullptr);
 
-	// If the reload is set to happen now, process it immediately versus queuing it
-	if (reload_at <= 0) {
-		ProcessReload(r);
-		m_reload_mutex.unlock();
-		return;
-	}
-
 	LogInfo(
 		"Queuing reload for [{}] ({}) to reload in [{}]",
 		ServerReload::GetName(r.type),
@@ -4668,16 +4675,20 @@ void WorldServer::ProcessReload(const ServerReload::Request& request)
 			break;
 
 		case ServerReload::Type::WorldRepop:
-			entity_list.ClearAreas();
 			parse->ReloadQuests();
-			zone->Repop();
+			if (zone && zone->IsLoaded()) {
+				entity_list.ClearAreas();
+				zone->Repop();
+			}
 			break;
 
 		case ServerReload::Type::WorldWithRespawn:
-			entity_list.ClearAreas();
 			parse->ReloadQuests();
-			zone->Repop();
-			zone->ClearSpawnTimers();
+			if (zone && zone->IsLoaded()) {
+				entity_list.ClearAreas();
+				zone->Repop();
+				zone->ClearSpawnTimers();
+			}
 			break;
 
 		case ServerReload::Type::ZonePoints:

@@ -1465,7 +1465,7 @@ void Client::BuyTraderItem(TraderBuy_Struct *tbs, Client *Trader, const EQApplic
 
 	Trader->AddMoneyToPP(copper, silver, gold, platinum, true);
 
-	if (player_event_logs.IsEventEnabled(PlayerEvent::TRADER_PURCHASE)) {
+	if (buy_item && player_event_logs.IsEventEnabled(PlayerEvent::TRADER_PURCHASE)) {
 		auto e = PlayerEvent::TraderPurchaseEvent{
 			.item_id              = buy_item->GetID(),
 			.augment_1_id         = buy_item->GetAugmentItemID(0),
@@ -1487,7 +1487,7 @@ void Client::BuyTraderItem(TraderBuy_Struct *tbs, Client *Trader, const EQApplic
 		RecordPlayerEventLog(PlayerEvent::TRADER_PURCHASE, e);
 	}
 
-	if (player_event_logs.IsEventEnabled(PlayerEvent::TRADER_SELL)) {
+	if (buy_item && player_event_logs.IsEventEnabled(PlayerEvent::TRADER_SELL)) {
 		auto e = PlayerEvent::TraderSellEvent{
 			.item_id              = buy_item->GetID(),
 			.augment_1_id         = buy_item->GetAugmentItemID(0),
@@ -1892,6 +1892,13 @@ void Client::SellToBuyer(const EQApplicationPacket *app)
 						Barter_Failure
 					);
 					break;
+				}
+
+				if (sell_line.purchase_method == BarterInBazaar && buyer->IsThereACustomer()) {
+					auto customer = entity_list.GetClientByID(buyer->GetCustomerID());
+					if (customer) {
+						customer->CancelBuyerTradeWindow();
+					}
 				}
 
 				if (!DoBarterBuyerChecks(sell_line)) {
@@ -2975,7 +2982,7 @@ void Client::BuyTraderItemOutsideBazaar(TraderBuy_Struct *tbs, const EQApplicati
 	Message(Chat::Red, fmt::format("You paid {} for the parcel delivery.", DetermineMoneyString(fee)).c_str());
 	LogTrading("Customer <green>[{}] Paid: <green>[{}] in Copper", CharacterID(), total_cost);
 
-	if (player_event_logs.IsEventEnabled(PlayerEvent::TRADER_PURCHASE)) {
+	if (buy_item && player_event_logs.IsEventEnabled(PlayerEvent::TRADER_PURCHASE)) {
 		auto e = PlayerEvent::TraderPurchaseEvent{
 			.item_id              = buy_item->GetID(),
 			.augment_1_id         = buy_item->GetAugmentItemID(0),
@@ -3824,4 +3831,19 @@ bool Client::DoBarterSellerChecks(BuyerLineSellItem_Struct &sell_line)
 	}
 
 	return true;
+}
+
+void Client::CancelBuyerTradeWindow()
+{
+	auto end_session = new EQApplicationPacket(OP_Barter, sizeof(BuyerRemoveItemFromMerchantWindow_Struct));
+	auto data        = reinterpret_cast<BuyerRemoveItemFromMerchantWindow_Struct *>(end_session->pBuffer);
+	data->action     = Barter_BuyerInspectBegin;
+
+	FastQueuePacket(&end_session);
+}
+
+void Client::CancelTraderTradeWindow()
+{
+	auto end_session = new EQApplicationPacket(OP_ShopEnd);
+	FastQueuePacket(&end_session);
 }

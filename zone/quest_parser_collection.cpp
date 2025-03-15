@@ -435,6 +435,10 @@ int QuestParserCollection::EventNPC(
 	std::vector<std::any>* extra_pointers
 )
 {
+	if (npc->IsResumedFromZoneSuspend() && npc->IsQueuedForCorpse()) {
+		return 0;
+	}
+
 	const int local_return   = EventNPCLocal(event_id, npc, init, data, extra_data, extra_pointers);
 	const int global_return  = EventNPCGlobal(event_id, npc, init, data, extra_data, extra_pointers);
 	const int default_return = DispatchEventNPC(event_id, npc, init, data, extra_data, extra_pointers);
