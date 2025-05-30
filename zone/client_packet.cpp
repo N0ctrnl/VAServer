@@ -807,22 +807,42 @@ void Client::CompleteConnect()
 	m_last_position_before_bulk_update = GetPosition();
 
 	/* This sub event is for if a player logs in for the first time since entering world. */
-	if (firstlogon == 1) {
+	if (ingame) {
+		auto e = CharacterDataRepository::FindOne(
+			database,
+			CharacterID()
+		);
+
+		bool is_first_login = e.first_login == 0;
+
 		RecordPlayerEventLog(PlayerEvent::WENT_ONLINE, PlayerEvent::EmptyEvent{});
 
 		if (parse->PlayerHasQuestSub(EVENT_CONNECT)) {
-			parse->EventPlayer(EVENT_CONNECT, this, "", 0);
+			const std::string& export_string = fmt::format(
+				"{} {} {}",
+				e.last_login,
+				time(nullptr) - e.last_login,
+				is_first_login ? 1 : 0
+			);
+			parse->EventPlayer(EVENT_CONNECT, this, export_string, 0);
 		}
 
-		/**
-		 * Update last login since this doesn't get updated until a late save later so we can update online status
-		 */
-		database.QueryDatabase(
-			StringFormat(
-				"UPDATE `character_data` SET `last_login` = UNIX_TIMESTAMP() WHERE id = %u",
+		if (is_first_login) {
+			e.first_login = time(nullptr);
+			TraderRepository::DeleteWhere(database, fmt::format("`char_id` = '{}'", CharacterID()));
+			BuyerRepository::DeleteBuyer(database, CharacterID());
+			LogTradingDetail(
+				"Removed trader abd buyer entries for Character ID {} on first logon to ensure table consistency.",
 				CharacterID()
-			)
-		);
+			);
+		}
+
+		e.last_login = time(nullptr);
+
+		const int updated = CharacterDataRepository::UpdateOne(database, e);
+		if (!updated) {
+			LogError("Failed to update login time for character_id [{}]", CharacterID());
+		}
 
 		if (IsPetNameChangeAllowed() && !RuleB(Pets, AlwaysAllowPetRename)) {
 			InvokeChangePetName(false);
@@ -871,7 +891,7 @@ void Client::CompleteConnect()
 		entity_list.SendFindableNPCList(this);
 
 	if (IsInAGuild()) {
-		if (firstlogon == 1) {
+		if (ingame) {
 			guild_mgr.UpdateDbMemberOnline(CharacterID(), true);
 			SendGuildMembersList();
 		}
@@ -1307,14 +1327,14 @@ void Client::Handle_Connect_OP_ZoneEntry(const EQApplicationPacket *app)
 
 	/* Load Character Data */
 	query = fmt::format(
-		"SELECT `lfp`, `lfg`, `xtargets`, `firstlogon`, `guild_id`, `rank`, `exp_enabled`, `tribute_enable`, `extra_haste`, `illusion_block` FROM `character_data` LEFT JOIN `guild_members` ON `id` = `char_id` WHERE `id` = {}",
+		"SELECT `lfp`, `lfg`, `xtargets`, `first_login`, `guild_id`, `rank`, `exp_enabled`, `tribute_enable`, `extra_haste`, `illusion_block`, `ingame` FROM `character_data` LEFT JOIN `guild_members` ON `id` = `char_id` WHERE `id` = {}",
 		cid
 	);
 	auto results = database.QueryDatabase(query);
 	for (auto row : results) {
 		if (row[4] && Strings::ToInt(row[4]) > 0) {
-			guild_id = Strings::ToInt(row[4]);
-			guildrank = row[5] ? Strings::ToInt(row[5]) : GUILD_RANK_NONE;
+			guild_id             = Strings::ToInt(row[4]);
+			guildrank            = row[5] ? Strings::ToInt(row[5]) : GUILD_RANK_NONE;
 			guild_tribute_opt_in = row[7] ? Strings::ToBool(row[7]) : 0;
 		}
 
@@ -1322,10 +1342,21 @@ void Client::Handle_Connect_OP_ZoneEntry(const EQApplicationPacket *app)
 		SetExtraHaste(Strings::ToInt(row[8]), false);
 		SetIllusionBlock(Strings::ToBool(row[9]));
 
-		if (LFP) { LFP = Strings::ToInt(row[0]); }
-		if (LFG) { LFG = Strings::ToInt(row[1]); }
-		if (row[3])
-			firstlogon = Strings::ToInt(row[3]);
+		if (LFP) {
+			LFP = Strings::ToInt(row[0]);
+		}
+
+		if (LFG) {
+			LFG = Strings::ToInt(row[1]);
+		}
+
+		if (row[3]) {
+			first_login = Strings::ToUnsignedInt(row[3]);
+		}
+
+		if (row[10]) {
+			ingame = Strings::ToBool(row[10]);
+		}
 	}
 
 	if (RuleB(Character, SharedBankPlat))
@@ -1350,6 +1381,7 @@ void Client::Handle_Connect_OP_ZoneEntry(const EQApplicationPacket *app)
 	database.LoadCharacterLeadershipAbilities(cid, &m_pp); /* Load Character Leadership AA's */
 	database.LoadCharacterTribute(this); /* Load CharacterTribute */
 	database.LoadCharacterEXPModifier(this); /* Load Character EXP Modifier */
+	database.LoadCharacterTitleSets(this); /* Load Character Title Sets */
 
 	// this pattern is strange
 	// this is remnants of the old way of doing things
@@ -1713,7 +1745,7 @@ void Client::Handle_Connect_OP_ZoneEntry(const EQApplicationPacket *app)
 
 				// Taunt persists when zoning on newer clients, overwrite default.
 				if (m_ClientVersionBit & EQ::versions::maskUFAndLater) {
-					if (!firstlogon) {
+					if (!ingame) {
 						pet->SetTaunting(m_petinfo.taunting);
 					}
 				}
@@ -4351,6 +4383,14 @@ void Client::Handle_OP_CastSpell(const EQApplicationPacket *app)
 
 	m_TargetRing = glm::vec3(castspell->x_pos, castspell->y_pos, castspell->z_pos);
 
+	if (castspell->spell_id && IsValidSpell(castspell->spell_id)) {
+		bool is_non_combat_zone = !zone->CanDoCombat() || zone->BuffTimersSuspended();
+		bool is_excluded_reset  = is_non_combat_zone && IsBardSong(castspell->spell_id);
+		if (!is_excluded_reset) {
+			ResetAFKTimer();
+		}
+	}
+
 	LogSpells("OP CastSpell: slot [{}] spell [{}] target [{}] inv [{}]", castspell->slot, castspell->spell_id, castspell->target_id, (unsigned long)castspell->inventoryslot);
 	CastingSlot slot = static_cast<CastingSlot>(castspell->slot);
 
@@ -4532,6 +4572,12 @@ void Client::Handle_OP_ChannelMessage(const EQApplicationPacket *app)
 	if (app->size < sizeof(ChannelMessage_Struct)) {
 		LogDebug("Size mismatch in OP_ChannelMessage expected [{}] got [{}]", sizeof(ChannelMessage_Struct), app->size);
 		return;
+	}
+
+	// reject automatic AFK messages from resetting /afk
+	std::string message = cm->message;
+	if (!Strings::Contains(message, "Sorry, I am A.F.K.")) {
+		ResetAFKTimer();
 	}
 
 	if (IsAIControlled() && !GetGM()) {
@@ -4959,6 +5005,10 @@ void Client::Handle_OP_ClientUpdate(const EQApplicationPacket *app) {
 	}
 
 	SetMoving(!(cy == m_Position.y && cx == m_Position.x));
+
+	if (RuleB(Character, EnableAutoAFK)) {
+		CheckAutoIdleAFK(ppu);
+	}
 
 	CheckClientToNpcAggroTimer();
 
@@ -10760,6 +10810,8 @@ void Client::Handle_OP_MoveItem(const EQApplicationPacket *app)
 		return;
 	}
 
+	ResetAFKTimer();
+
 	BenchTimer bench;
 
 	MoveItem_Struct* mi = (MoveItem_Struct*) app->pBuffer;
@@ -14714,7 +14766,9 @@ void Client::Handle_OP_SpawnAppearance(const EQApplicationPacket *app)
 	}
 	else if (sa->type == AppearanceType::AFK) {
 		if (afk_toggle_timer.Check()) {
-			AFK = (sa->parameter == 1);
+			m_is_afk = (sa->parameter == 1);
+			m_is_manual_afk = (sa->parameter == 1);
+			ResetAFKTimer();
 			entity_list.QueueClients(this, app, true);
 		}
 	}
@@ -15533,6 +15587,14 @@ void Client::Handle_OP_TradeRequest(const EQApplicationPacket *app)
 
 	// Pass trade request on to recipient
 	if (tradee && tradee->IsClient()) {
+		// if we are idling we need to sync client positions otherwise clients will not be aware of each other
+		if (m_is_idle) {
+			SyncWorldPositionsToClient(true);
+		}
+		if (tradee->CastToClient()->IsIdle()) {
+			tradee->CastToClient()->SyncWorldPositionsToClient(true);
+		}
+
 		tradee->CastToClient()->QueuePacket(app);
 	}
 	else if (tradee && (tradee->IsNPC() || tradee->IsBot())) {
@@ -15562,6 +15624,14 @@ void Client::Handle_OP_TradeRequestAck(const EQApplicationPacket *app)
 	Mob* tradee = entity_list.GetMob(msg->to_mob_id);
 
 	if (tradee && tradee->IsClient()) {
+		// if we are idling we need to sync client positions otherwise clients will not be aware of each other
+		if (m_is_idle) {
+			SyncWorldPositionsToClient(true);
+		}
+		if (tradee->CastToClient()->IsIdle()) {
+			tradee->CastToClient()->SyncWorldPositionsToClient(true);
+		}
+
 		trade->Start(msg->to_mob_id);
 		tradee->CastToClient()->QueuePacket(app);
 	}
@@ -15581,7 +15651,9 @@ void Client::Handle_OP_TraderShop(const EQApplicationPacket *app)
 	switch (in->Code) {
 		case ClickTrader: {
 			LogTrading("Handle_OP_TraderShop case ClickTrader [{}]", in->Code);
-			auto outapp        = std::make_unique<EQApplicationPacket>(OP_TraderShop, sizeof(TraderClick_Struct));
+			auto outapp =
+				std::make_unique<EQApplicationPacket>(OP_TraderShop, static_cast<uint32>(sizeof(TraderClick_Struct))
+			);
 			auto data          = (TraderClick_Struct *) outapp->pBuffer;
 			auto trader_client = entity_list.GetClientByID(in->TraderID);
 
@@ -17144,5 +17216,155 @@ void Client::Handle_OP_EvolveItem(const EQApplicationPacket *app)
 		}
 		default: {
 		}
+	}
+}
+
+bool Client::IsFilteredAFKPacket(const EQApplicationPacket *p)
+{
+	if (p->GetOpcode() == OP_ClientUpdate) {
+		return true;
+	}
+
+	return false;
+}
+
+void Client::CheckAutoIdleAFK(PlayerPositionUpdateClient_Struct *p)
+{
+	if (!RuleB(Character, EnableAutoAFK)) {
+		return;
+	}
+
+	bool is_non_combat_zone = !zone->CanDoCombat() || zone->BuffTimersSuspended();
+
+	int seconds_before_afk =
+			is_non_combat_zone ?
+				RuleI(Character, SecondsBeforeAFKNonCombatZone) :
+				RuleI(Character, SecondsBeforeAFKCombatZone);
+
+	int seconds_before_idle =
+			is_non_combat_zone ?
+				RuleI(Character, SecondsBeforeIdleNonCombatZone) :
+				RuleI(Character, SecondsBeforeIdleCombatZone);
+
+	// seconds_before_idle can't be greater than seconds_before_afk
+	if (seconds_before_idle > seconds_before_afk) {
+		seconds_before_idle = seconds_before_afk;
+	}
+
+	bool has_moved =
+			 m_Position.x != p->x_pos ||
+			 m_Position.y != p->y_pos ||
+			 m_Position.z != p->z_pos ||
+			 m_Position.w != EQ12toFloat(p->heading);
+
+	bool triggered_reset = m_afk_reset;
+	bool was_idle        = m_is_idle;
+	bool is_idle_or_afk  = m_is_idle || m_is_afk;
+
+	if (!has_moved && (!m_is_idle || !m_is_afk)) {
+		auto now              = std::chrono::steady_clock::now();
+		auto since_last_moved = now - m_last_moved;
+
+		if (!m_is_manual_afk && !m_is_afk && since_last_moved > std::chrono::seconds(seconds_before_afk)) {
+			bool is_client_excluded_from_afk = (IsBuyer() || IsTrader() || GetGM());
+			if (is_client_excluded_from_afk) {
+				return;
+			}
+
+			LogInfo(
+				"Client [{}] has been AFK for [{}] seconds",
+				GetCleanName(),
+				std::chrono::duration_cast<std::chrono::seconds>(since_last_moved).count()
+			);
+			SetAFK(true);
+			return;
+		}
+		else if (!m_is_idle && since_last_moved > std::chrono::seconds(seconds_before_idle)) {
+			bool is_client_excluded_from_idle = GetGM() && !is_non_combat_zone;
+			if (is_client_excluded_from_idle) {
+				return;
+			}
+
+			LogInfo(
+				"Client [{}] has been idle for [{}] seconds",
+				GetCleanName(),
+				std::chrono::duration_cast<std::chrono::seconds>(since_last_moved).count()
+			);
+			m_is_idle = true;
+			Message(Chat::Yellow, "You are now idle. Updates will be sent to you less frequently.");
+			return;
+		}
+	}
+
+	// if we triggered a reset, but didn't move, we are still idling but not AFK
+	if (triggered_reset && was_idle) {
+		m_is_idle = true;
+	}
+
+	// if we moved or triggered reset through other actions, we are no longer AFK.
+	// we could trigger resetting AFK status through actions like message, cast, attack etc but still by idle until we move
+	if (!m_is_manual_afk && (has_moved || triggered_reset) && m_is_afk) {
+		LogInfo("AFK [{}] is no longer idle, syncing positions", GetCleanName());
+		SetAFK(false);
+		ResetAFKTimer();
+	}
+
+	// we could be not AFK and idle at the same time
+	if (has_moved && m_is_idle) {
+		LogInfo("Idle [{}] is no longer idle, syncing positions", GetCleanName());
+		m_is_idle = false;
+		Message(Chat::Yellow, "You are no longer idle.");
+		SyncWorldPositionsToClient();
+		ResetAFKTimer();
+	}
+
+	m_afk_reset = false;
+}
+
+void Client::SyncWorldPositionsToClient(bool ignore_idle)
+{
+	// if we are idle currently, we need to force updates (which bypasses idle status) and reset idle status
+	bool reset_idle = false;
+	if (ignore_idle && m_is_idle) {
+		m_is_idle = false;
+		reset_idle = true;
+	}
+
+	LogInfo("Syncing positions for client [{}]", GetCleanName());
+	CheckSendBulkNpcPositions(true);
+
+	static EQApplicationPacket cu(OP_ClientUpdate, sizeof(PlayerPositionUpdateServer_Struct));
+
+	for (auto &e: entity_list.GetClientList()) {
+		auto c = e.second;
+
+		// skip if not in range
+		if (Distance(c->GetPosition(), GetPosition()) > RuleI(Range, ClientPositionUpdates)) {
+			continue;
+		}
+
+		// skip self
+		if (c == this) {
+			continue;
+		}
+
+		auto *spu = (PlayerPositionUpdateServer_Struct *) cu.pBuffer;
+
+		memset(spu, 0x00, sizeof(PlayerPositionUpdateServer_Struct));
+		spu->spawn_id      = c->GetID();
+		spu->x_pos         = FloatToEQ19(c->GetX());
+		spu->y_pos         = FloatToEQ19(c->GetY());
+		spu->z_pos         = FloatToEQ19(c->GetZ());
+		spu->heading       = FloatToEQ12(c->GetHeading());
+		spu->delta_x       = FloatToEQ13(0);
+		spu->delta_y       = FloatToEQ13(0);
+		spu->delta_z       = FloatToEQ13(0);
+		spu->delta_heading = FloatToEQ10(0);
+		spu->animation     = 0;
+		QueuePacket(&cu);
+	}
+
+	if (ignore_idle && reset_idle) {
+		m_is_idle = false;
 	}
 }

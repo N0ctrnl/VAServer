@@ -73,6 +73,7 @@ namespace EQ
 #include "../common/guild_base.h"
 #include "../common/repositories/buyer_buy_lines_repository.h"
 #include "../common/repositories/character_evolving_items_repository.h"
+#include "../common/repositories/player_titlesets_repository.h"
 
 #include "bot_structs.h"
 
@@ -500,9 +501,19 @@ public:
 	void Kick(const std::string &reason);
 	void WorldKick();
 	inline uint8 GetAnon() const { return m_pp.anon; }
-	inline uint8 GetAFK() const { return AFK; }
+	inline uint8 GetAFK() const { return m_is_afk; }
 	void SetAnon(uint8 anon_flag);
+	inline Client* ResetAFKTimer() {
+		if (!RuleB(Character, EnableAutoAFK)) {
+			return this;
+		}
+
+		m_afk_reset = true;
+		m_last_moved = std::chrono::steady_clock::now();
+		return this;
+	};
 	void SetAFK(uint8 afk_flag);
+	inline bool IsIdle() { return m_is_idle; }
 	inline PlayerProfile_Struct& GetPP() { return m_pp; }
 	inline ExtendedProfile_Struct& GetEPP() { return m_epp; }
 	inline EQ::InventoryProfile& GetInv() { return m_inv; }
@@ -1255,9 +1266,10 @@ public:
 	void ResetAllCastbarCooldowns();
 	void ResetCastbarCooldownBySpellID(uint32 spell_id);
 
-	bool CheckTitle(int titleset);
-	void EnableTitle(int titleset);
-	void RemoveTitle(int titleset);
+	bool CheckTitle(int title_set);
+	void EnableTitle(int title_set, bool insert = true);
+	const std::vector<PlayerTitlesetsRepository::PlayerTitlesets>& GetTitles() { return m_player_title_sets; };
+	void RemoveTitle(int title_set);
 
 	void EnteringMessages(Client* client);
 	void SendRules();
@@ -2060,7 +2072,8 @@ private:
 	uint8 LFGToLevel;
 	bool LFGMatchFilter;
 	char LFGComments[64];
-	bool AFK;
+	bool m_is_afk = false;
+	bool m_is_manual_afk = false;
 	bool auto_attack;
 	bool auto_fire;
 	bool runmode;
@@ -2080,7 +2093,8 @@ private:
 	uint16 trader_id;
 	uint16 customer_id;
 	uint32 account_creation;
-	uint8 firstlogon;
+	bool first_login;
+	bool ingame;
 	uint32 mercid; // current merc
 	uint8 mercSlot; // selected merc slot
 	time_t                                                         m_trader_transaction_date;
@@ -2213,7 +2227,12 @@ private:
 	glm::vec4 m_last_position_before_bulk_update;
 	Timer     m_client_bulk_npc_pos_update_timer;
 	Timer     m_position_update_timer;
-	void      CheckSendBulkNpcPositions();
+	void      CheckSendBulkNpcPositions(bool force = false);
+
+	// afk
+	bool                                  m_is_idle    = false;
+	bool                                  m_afk_reset  = false; // used to trigger next-tic afk reset
+	std::chrono::steady_clock::time_point m_last_moved = std::chrono::steady_clock::now();
 
 	void BulkSendInventoryItems();
 
@@ -2257,6 +2276,7 @@ private:
 	bool m_exp_enabled;
 
 	std::vector<EXPModifier> m_exp_modifiers;
+	std::vector<PlayerTitlesetsRepository::PlayerTitlesets> m_player_title_sets;
 
 	//Anti Spam Stuff
 	Timer *KarmaUpdateTimer;
@@ -2406,6 +2426,9 @@ public:
 	const std::string &GetMailKey() const;
 	void ShowZoneShardMenu();
 	void Handle_OP_ChangePetName(const EQApplicationPacket *app);
+	bool IsFilteredAFKPacket(const EQApplicationPacket *p);
+	void CheckAutoIdleAFK(PlayerPositionUpdateClient_Struct *p);
+	void SyncWorldPositionsToClient(bool ignore_idle = false);
 };
 
 #endif

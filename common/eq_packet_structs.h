@@ -324,6 +324,8 @@ union
 	bool guild_show;
 	bool trader;
 	bool buyer;
+	bool untargetable;
+	uint32 npc_tint_id;
 };
 
 struct PlayerState_Struct {
