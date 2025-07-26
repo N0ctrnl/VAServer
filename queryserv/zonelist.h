@@ -6,15 +6,22 @@
 #include <vector>
 #include <memory>
 #include <list>
+#include "zoneserver.h"
 
 class WorldTCPConnection;
-class ZoneServer;
 
 class ZSList {
 public:
-	std::list<std::unique_ptr<ZoneServer>> &GetZsList() { return zone_server_list; }
-	void Add(ZoneServer *zoneserver);
-	void Remove(const std::string &uuid);
+	std::list<std::unique_ptr<ZoneServer>>& GetZsList() { return zone_server_list; }
+	void                                    Add(ZoneServer* zoneserver);
+	void                                    Remove(const std::string& uuid);
+	void                                    SendPlayerEventLogSettings();
+
+	static ZSList* Instance()
+	{
+		static ZSList instance;
+		return &instance;
+	}
 
 private:
 	std::list<std::unique_ptr<ZoneServer>> zone_server_list;

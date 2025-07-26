@@ -36,9 +36,6 @@
 #include "../common/zone_store.h"
 #include <set>
 
-extern WebInterfaceList web_interface;
-
-extern ZSList			zoneserver_list;
 uint32 numplayers = 0;	//this really wants to be a member variable of ClientList...
 
 ClientList::ClientList()
@@ -234,7 +231,7 @@ void ClientList::DisconnectByIP(uint32 in_ip) {
 				strn0cpy(skp->adminname, "SessionLimit", sizeof(skp->adminname));
 				strn0cpy(skp->name, cle->name(), sizeof(skp->name));
 				skp->adminrank = 255;
-				zoneserver_list.SendPacket(pack);
+				ZSList::Instance()->SendPacket(pack);
 				safe_delete(pack);
 			}
 			cle->SetOnline(CLE_Status::Offline);
@@ -553,7 +550,7 @@ void ClientList::SendOnlineGuildMembers(uint32 FromID, uint32 GuildID)
 
 		Iterator.Advance();
 	}
-	zoneserver_list.SendPacket(from->zone(), from->instance(), pack);
+	ZSList::Instance()->SendPacket(from->zone(), from->instance(), pack);
 	safe_delete(pack);
 }
 
@@ -1318,7 +1315,7 @@ void ClientList::RemoveCLEReferances(ClientListEntry* cle) {
 
 bool ClientList::SendPacket(const char* to, ServerPacket* pack) {
 	if (to == 0 || to[0] == 0) {
-		zoneserver_list.SendPacket(pack);
+		ZSList::Instance()->SendPacket(pack);
 		return true;
 	}
 	else if (to[0] == '*') {
@@ -1334,7 +1331,7 @@ bool ClientList::SendPacket(const char* to, ServerPacket* pack) {
 			}
 			return false;
 		} else {
-			ZoneServer* zs = zoneserver_list.FindByName(to);
+			ZoneServer* zs = ZSList::Instance()->FindByName(to);
 			if (zs != nullptr) {
 				zs->SendPacket(pack);
 				return true;
@@ -1439,7 +1436,7 @@ void ClientList::SendClientVersionSummary(const char *Name)
 	);
 
 	if (client_count[EQ::versions::ClientVersion::Titanium]) {
-		zoneserver_list.SendEmoteMessage(
+		ZSList::Instance()->SendEmoteMessage(
 			Name,
 			0,
 			AccountStatus::Player,
@@ -1452,7 +1449,7 @@ void ClientList::SendClientVersionSummary(const char *Name)
 	}
 
 	if (client_count[EQ::versions::ClientVersion::SoF]) {
-		zoneserver_list.SendEmoteMessage(
+		ZSList::Instance()->SendEmoteMessage(
 			Name,
 			0,
 			AccountStatus::Player,
@@ -1465,7 +1462,7 @@ void ClientList::SendClientVersionSummary(const char *Name)
 	}
 
 	if (client_count[EQ::versions::ClientVersion::SoD]) {
-		zoneserver_list.SendEmoteMessage(
+		ZSList::Instance()->SendEmoteMessage(
 			Name,
 			0,
 			AccountStatus::Player,
@@ -1478,7 +1475,7 @@ void ClientList::SendClientVersionSummary(const char *Name)
 	}
 
 	if (client_count[EQ::versions::ClientVersion::UF]) {
-		zoneserver_list.SendEmoteMessage(
+		ZSList::Instance()->SendEmoteMessage(
 			Name,
 			0,
 			AccountStatus::Player,
@@ -1491,7 +1488,7 @@ void ClientList::SendClientVersionSummary(const char *Name)
 	}
 
 	if (client_count[EQ::versions::ClientVersion::RoF]) {
-		zoneserver_list.SendEmoteMessage(
+		ZSList::Instance()->SendEmoteMessage(
 			Name,
 			0,
 			AccountStatus::Player,
@@ -1504,7 +1501,7 @@ void ClientList::SendClientVersionSummary(const char *Name)
 	}
 
 	if (client_count[EQ::versions::ClientVersion::RoF2]) {
-		zoneserver_list.SendEmoteMessage(
+		ZSList::Instance()->SendEmoteMessage(
 			Name,
 			0,
 			AccountStatus::Player,
@@ -1517,7 +1514,7 @@ void ClientList::SendClientVersionSummary(const char *Name)
 	}
 
 
-	zoneserver_list.SendEmoteMessage(
+	ZSList::Instance()->SendEmoteMessage(
 		Name,
 		0,
 		AccountStatus::Player,
@@ -1613,7 +1610,7 @@ void ClientList::OnTick(EQ::Timer *t)
 		Iterator.Advance();
 	}
 
-	web_interface.SendEvent(out);
+	WebInterfaceList::Instance()->SendEvent(out);
 }
 
 /**

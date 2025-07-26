@@ -631,7 +631,7 @@ bool Client::SummonItem(uint32 item_id, int16 charges, uint32 aug1, uint32 aug2,
 		}
 	}
 
-	if (player_event_logs.IsEventEnabled(PlayerEvent::ITEM_CREATION)) {
+	if (PlayerEventLogs::Instance()->IsEventEnabled(PlayerEvent::ITEM_CREATION)) {
 		auto e = PlayerEvent::ItemCreationEvent{};
 		e.item_id      = item->ID;
 		e.item_name    = item->Name;
@@ -688,7 +688,7 @@ void Client::DropItem(int16 slot_id, bool recurse)
 			LogInventory("Error in InventoryProfile::CheckNoDrop() - returned 'true' for empty slot");
 		}
 		else {
-			if (LogSys.log_settings[Logs::Inventory].is_category_enabled) {
+			if (EQEmuLogSys::Instance()->log_settings[Logs::Inventory].is_category_enabled) {
 				LogInventory("DropItem() Hack detected - full item parse:");
 				LogInventory("depth: 0, Item: [{}] (id: [{}]), IsDroppable: [{}]",
 					(invalid_drop->GetItem() ? invalid_drop->GetItem()->Name : "null data"), invalid_drop->GetID(), (invalid_drop->IsDroppable(false) ? "true" : "false"));
@@ -720,7 +720,7 @@ void Client::DropItem(int16 slot_id, bool recurse)
 	// Take control of item in client inventory
 	auto* inst = m_inv.PopItem(slot_id);
 	if (inst) {
-		if (LogSys.log_settings[Logs::Inventory].is_category_enabled) {
+		if (EQEmuLogSys::Instance()->log_settings[Logs::Inventory].is_category_enabled) {
 			LogInventory("DropItem() Processing - full item parse:");
 			LogInventory(
 				"depth: 0, Item: [{}] (id: [{}]), IsDroppable: [{}]",
@@ -763,7 +763,7 @@ void Client::DropItem(int16 slot_id, bool recurse)
 
 		int i = 0;
 
-		if (inst && player_event_logs.IsEventEnabled(PlayerEvent::DROPPED_ITEM)) {
+		if (inst && PlayerEventLogs::Instance()->IsEventEnabled(PlayerEvent::DROPPED_ITEM)) {
 			auto e = PlayerEvent::DroppedItemEvent{
 				.item_id      = inst->GetID(),
 				.augment_1_id = inst->GetAugmentItemID(0),
@@ -1037,7 +1037,7 @@ bool Client::PushItemOnCursor(const EQ::ItemInstance& inst, bool client_update)
 {
 	LogInventory("Putting item [{}] ([{}]) on the cursor", inst.GetItem()->Name, inst.GetItem()->ID);
 
-	evolving_items_manager.DoLootChecks(CharacterID(), EQ::invslot::slotCursor, inst);
+	EvolvingItemsManager::Instance()->DoLootChecks(CharacterID(), EQ::invslot::slotCursor, inst);
 	m_inv.PushCursor(inst);
 
 	if (client_update) {
@@ -1059,7 +1059,7 @@ bool Client::PutItemInInventory(int16 slot_id, const EQ::ItemInstance& inst, boo
 		return PushItemOnCursor(inst, client_update);
 	}
 
-	evolving_items_manager.DoLootChecks(CharacterID(), slot_id, inst);
+	EvolvingItemsManager::Instance()->DoLootChecks(CharacterID(), slot_id, inst);
 	m_inv.PutItem(slot_id, inst);
 
 	if (client_update)
@@ -1087,7 +1087,7 @@ void Client::PutLootInInventory(int16 slot_id, const EQ::ItemInstance &inst, Loo
 
 	bool cursor_empty = m_inv.CursorEmpty();
 
-	evolving_items_manager.DoLootChecks(CharacterID(), slot_id, inst);
+	EvolvingItemsManager::Instance()->DoLootChecks(CharacterID(), slot_id, inst);
 
 	if (slot_id == EQ::invslot::slotCursor) {
 		m_inv.PushCursor(inst);
@@ -1655,7 +1655,7 @@ bool Client::SwapItem(MoveItem_Struct* move_in) {
 
 				DeleteItemInInventory(EQ::invslot::slotCursor, 0, true);
 
-				if (test_inst && player_event_logs.IsEventEnabled(PlayerEvent::ITEM_DESTROY)) {
+				if (test_inst && PlayerEventLogs::Instance()->IsEventEnabled(PlayerEvent::ITEM_DESTROY)) {
 					auto e = PlayerEvent::DestroyItemEvent{
 						.item_id      = test_inst->GetItem()->ID,
 						.item_name    = test_inst->GetItem()->Name,
@@ -1685,7 +1685,7 @@ bool Client::SwapItem(MoveItem_Struct* move_in) {
 			EQ::ItemInstance *inst = m_inv.GetItem(EQ::invslot::slotCursor);
 
 			if (inst) {
-				if (player_event_logs.IsEventEnabled(PlayerEvent::ITEM_DESTROY)) {
+				if (PlayerEventLogs::Instance()->IsEventEnabled(PlayerEvent::ITEM_DESTROY)) {
 					auto e = PlayerEvent::DestroyItemEvent{
 						.item_id      = inst->GetItem()->ID,
 						.item_name    = inst->GetItem()->Name,

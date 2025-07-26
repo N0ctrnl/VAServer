@@ -21,10 +21,11 @@
 #include <string.h>
 #include <time.h>
 
+#include "zonelist.h"
+
 extern WorldServer           worldserver;
 extern const queryservconfig *Config;
 extern QSDatabase            qs_database;
-extern LFGuildManager        lfguildmanager;
 
 WorldServer::WorldServer()
 {
@@ -76,8 +77,9 @@ void WorldServer::HandleMessage(uint16 opcode, const EQ::Net::Packet &p)
 		case ServerOP_ServerReloadRequest: {
 			auto o = (ServerReload::Request*) p.Data();
 			if (o->type == ServerReload::Type::Logs) {
-				LogSys.LoadLogDatabaseSettings();
-				player_event_logs.ReloadSettings();
+				EQEmuLogSys::Instance()->LoadLogDatabaseSettings();
+				PlayerEventLogs::Instance()->ReloadSettings();
+				ZSList::Instance()->SendPlayerEventLogSettings();
 			}
 
 			break;
@@ -112,7 +114,7 @@ void WorldServer::HandleMessage(uint16 opcode, const EQ::Net::Packet &p)
 					pack.pBuffer = (uchar *) p.Data();
 					pack.opcode  = opcode;
 					pack.size    = (uint32) p.Length();
-					lfguildmanager.HandlePacket(&pack);
+					LFGuildManager::Instance()->HandlePacket(&pack);
 					pack.pBuffer = nullptr;
 					break;
 				}

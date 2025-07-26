@@ -57,7 +57,7 @@ void NPC::AddLootTable(uint32 loottable_id, bool is_global)
 		.content_flags_disabled = l->content_flags_disabled
 	};
 
-	if (!content_service.DoesPassContentFiltering(content_flags)) {
+	if (!WorldContentService::Instance()->DoesPassContentFiltering(content_flags)) {
 		return;
 	}
 
@@ -292,7 +292,7 @@ void NPC::AddLootDrop(
 
 	auto item = new LootItem;
 
-	if (LogSys.log_settings[Logs::Loot].is_category_enabled == 1) {
+	if (EQEmuLogSys::Instance()->log_settings[Logs::Loot].is_category_enabled == 1) {
 		EQ::SayLinkEngine linker;
 		linker.SetLinkType(EQ::saylink::SayLinkItemData);
 		linker.SetItemData(item2);

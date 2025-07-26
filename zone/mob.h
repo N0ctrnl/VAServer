@@ -20,7 +20,7 @@
 #define MOB_H
 
 #include "common.h"
-#include "data_bucket.h"
+#include "../common/data_bucket.h"
 #include "entity.h"
 #include "hate_list.h"
 #include "pathfinder_interface.h"
@@ -207,6 +207,11 @@ public:
 	Timer                              m_scan_close_mobs_timer;
 	Timer                              m_see_close_mobs_timer;
 	Timer                              m_mob_check_moving_timer;
+
+	uint16 m_last_wearchange_race_id = 0;
+	// client_id -> slot_id -> key
+	std::unordered_map<uint32_t, std::unordered_map<uint8_t, uint64_t>> m_last_seen_wearchange;
+	Timer m_clear_wearchange_cache_timer;
 
 	// Bot attack flag
 	Timer bot_attack_flag_timer;
@@ -1504,6 +1509,7 @@ public:
 	void CalcHeroicBonuses(StatBonuses* newbon);
 
 	DataBucketKey GetScopedBucketKeys();
+	bool LoadDataBucketsCache();
 
 	bool IsCloseToBanker();
 

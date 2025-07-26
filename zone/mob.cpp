@@ -24,7 +24,7 @@
 #include "../common/repositories/bot_data_repository.h"
 #include "../common/repositories/character_data_repository.h"
 
-#include "data_bucket.h"
+#include "../common/data_bucket.h"
 #include "quest_parser_collection.h"
 #include "string_ids.h"
 #include "worldserver.h"
@@ -133,6 +133,7 @@ Mob::Mob(
 	m_see_close_mobs_timer(1000),
 	m_mob_check_moving_timer(1000),
 	bot_attack_flag_timer(10000),
+	m_clear_wearchange_cache_timer(60 * 10 * 1000), // 10 minutes
 	m_destroying(false)
 {
 	mMovementManager = &MobMovementManager::Get();
@@ -8771,4 +8772,24 @@ bool Mob::IsGuildmaster() const {
 		default:
 			return false;
 	}
+}
+
+bool Mob::LoadDataBucketsCache()
+{
+	const uint32 id = GetMobTypeIdentifier();
+
+	if (!id) {
+		return false;
+	}
+
+	if (IsBot()) {
+		DataBucket::BulkLoadEntitiesToCache(DataBucketLoadType::Bot, {id});
+	}
+	else if (IsClient()) {
+		uint32 account_id = CastToClient()->AccountID();
+		DataBucket::BulkLoadEntitiesToCache(DataBucketLoadType::Account, {account_id});
+		DataBucket::BulkLoadEntitiesToCache(DataBucketLoadType::Client, {id});
+	}
+
+	return true;
 }

@@ -387,7 +387,7 @@ public:
 			entity_list.MessageStatus(
 				0,
 				AccountStatus::QuestTroupe,
-				LogSys.GetGMSayColorFromCategory(log_category),
+				EQEmuLogSys::Instance()->GetGMSayColorFromCategory(log_category),
 				message_split[0].c_str()
 			);
 
@@ -395,7 +395,7 @@ public:
 				entity_list.MessageStatus(
 					0,
 					AccountStatus::QuestTroupe,
-					LogSys.GetGMSayColorFromCategory(log_category),
+					EQEmuLogSys::Instance()->GetGMSayColorFromCategory(log_category),
 					fmt::format(
 						"--- {}",
 						message_split[iter]
@@ -407,7 +407,7 @@ public:
 			entity_list.MessageStatus(
 				0,
 				AccountStatus::QuestTroupe,
-				LogSys.GetGMSayColorFromCategory(log_category),
+				EQEmuLogSys::Instance()->GetGMSayColorFromCategory(log_category),
 				fmt::format("[{}] [{}] {}", Logs::LogCategoryName[log_category], func, message).c_str()
 			);
 		}
@@ -418,11 +418,11 @@ public:
 	static void DiscordWebhookMessageHandler(uint16 log_category, int webhook_id, const std::string &message)
 	{
 		std::string message_prefix;
-		if (!LogSys.origination_info.zone_short_name.empty()) {
+		if (!EQEmuLogSys::Instance()->origination_info.zone_short_name.empty()) {
 			message_prefix = fmt::format(
 				"[**{}**] **Zone** [**{}**] ",
 				Logs::LogCategoryName[log_category],
-				LogSys.origination_info.zone_short_name
+				EQEmuLogSys::Instance()->origination_info.zone_short_name
 			);
 		}
 
@@ -485,6 +485,24 @@ public:
 	void SaveZoneState();
 	static void ClearZoneState(uint32 zone_id, uint32 instance_id);
 	void ReloadMaps();
+
+	void Signal(int signal_id);
+	void SendPayload(int payload_id, std::string payload_value);
+
+	struct PausedZoneTimer {
+		std::string name;
+		uint32      remaining_time;
+	};
+
+	uint32 GetTimerDuration(std::string name);
+	uint32 GetTimerRemainingTime(std::string name);
+	bool HasTimer(std::string name);
+	bool IsPausedTimer(std::string name);
+	void PauseTimer(std::string name);
+	void ResumeTimer(std::string name);
+	void SetTimer(std::string name, uint32 duration);
+	void StopTimer(std::string name);
+	void StopAllTimers();
 
 private:
 	bool      allow_mercs;
@@ -552,6 +570,18 @@ private:
 	std::vector<BaseDataRepository::BaseData> m_base_data = { };
 
 	uint32_t m_zone_server_id = 0;
+
+	class ZoneTimer {
+	public:
+		inline ZoneTimer(std::string _name, uint32 duration)
+			: name(_name), timer_(duration) { timer_.Start(duration, false); }
+		std::string name;
+		Timer       timer_;
+	};
+
+	std::vector<ZoneTimer> zone_timers;
+	std::vector<PausedZoneTimer> paused_zone_timers;
+	std::deque<int> m_zone_signals;
 };
 
 #endif

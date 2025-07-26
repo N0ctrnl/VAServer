@@ -20,8 +20,6 @@
 #include "cliententry.h"
 #include "world_config.h"
 
-extern ZSList        zoneserver_list;
-extern ClientList    client_list;
 extern uint32        numzones;
 extern uint32        numplayers;
 extern volatile bool RunLoops;
@@ -108,7 +106,7 @@ void LoginServer::ProcessUsertoWorldReqLeg(uint16_t opcode, EQ::Net::Packet &p)
 	}
 
 	if (RuleB(World, EnforceCharacterLimitAtLogin)) {
-		if (client_list.IsAccountInGame(utwr->lsaccountid)) {
+		if (ClientList::Instance()->IsAccountInGame(utwr->lsaccountid)) {
 			LogDebug("User already online account_id [{0}]", utwr->lsaccountid);
 			utwrs->response = UserToWorldStatusAlreadyOnline;
 			SendPacket(&outpack);
@@ -189,7 +187,7 @@ void LoginServer::ProcessUsertoWorldReq(uint16_t opcode, EQ::Net::Packet &p)
 	}
 
 	if (RuleB(World, EnforceCharacterLimitAtLogin)) {
-		if (client_list.IsAccountInGame(utwr->lsaccountid)) {
+		if (ClientList::Instance()->IsAccountInGame(utwr->lsaccountid)) {
 			LogDebug("User already online account_id [{0}]", utwr->lsaccountid);
 			utwrs->response = UserToWorldStatusAlreadyOnline;
 			SendPacket(&outpack);
@@ -221,7 +219,7 @@ void LoginServer::ProcessLSClientAuthLegacy(uint16_t opcode, EQ::Net::Packet &p)
 			r.is_client_from_local_network
 		);
 
-		client_list.CLEAdd(
+		ClientList::Instance()->CLEAdd(
 			r.loginserver_account_id,
 			"eqemu",
 			r.loginserver_account_name,
@@ -256,7 +254,7 @@ void LoginServer::ProcessLSClientAuth(uint16_t opcode, EQ::Net::Packet &p)
 			r.is_client_from_local_network
 		);
 
-		client_list.CLEAdd(
+		ClientList::Instance()->CLEAdd(
 			r.loginserver_account_id,
 			r.loginserver_name,
 			r.account_name,
@@ -312,7 +310,7 @@ void LoginServer::ProcessSystemwideMessage(uint16_t opcode, EQ::Net::Packet &p)
 	LogNetcode("Received ServerPacket from LS OpCode {:#04x}", opcode);
 
 	ServerSystemwideMessage *swm = (ServerSystemwideMessage *) p.Data();
-	zoneserver_list.SendEmoteMessageRaw(
+	ZSList::Instance()->SendEmoteMessageRaw(
 		0,
 		0,
 		AccountStatus::Player,
@@ -376,7 +374,7 @@ bool LoginServer::Connect()
 
 					SendInfo();
 					SendStatus();
-					zoneserver_list.SendLSZones();
+					ZSList::Instance()->SendLSZones();
 
 					m_statusupdate_timer = std::make_unique<EQ::Timer>(
 						LoginServer_StatusUpdateInterval, true, [this](EQ::Timer *t) {
@@ -485,7 +483,7 @@ bool LoginServer::Connect()
 					);
 					SendInfo();
 					SendStatus();
-					zoneserver_list.SendLSZones();
+					ZSList::Instance()->SendLSZones();
 
 					m_statusupdate_timer = std::make_unique<EQ::Timer>(
 						LoginServer_StatusUpdateInterval, true, [this](EQ::Timer *t) {

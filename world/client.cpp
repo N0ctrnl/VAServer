@@ -36,6 +36,7 @@
 #include "../common/shareddb.h"
 #include "../common/opcodemgr.h"
 #include "../common/data_verification.h"
+#include "../common/data_bucket.h"
 
 #include "client.h"
 #include "worlddb.h"
@@ -88,10 +89,6 @@
 std::vector<RaceClassAllocation> character_create_allocations;
 std::vector<RaceClassCombos> character_create_race_class_combos;
 
-extern ZSList zoneserver_list;
-extern LoginServerList loginserverlist;
-extern ClientList client_list;
-extern EQ::Random emu_random;
 extern uint32 numclients;
 extern volatile bool RunLoops;
 extern volatile bool UCSServerAvailable_;
@@ -135,6 +132,8 @@ Client::Client(EQStreamInterface* ieqs)
 }
 
 Client::~Client() {
+	ClearDataBucketsCache();
+
 	if (RunLoops && cle && zone_id == 0)
 		cle->SetOnline(CLE_Status::Offline);
 
@@ -476,7 +475,9 @@ bool Client::HandleSendLoginInfoPacket(const EQApplicationPacket *app)
 
 	LogClientLogin("Checking authentication id [{}]", id);
 
-	if ((cle = client_list.CheckAuth(id, password))) {
+	if ((cle = ClientList::Instance()->CheckAuth(id, password))) {
+		LoadDataBucketsCache();
+
 		LogClientLogin("Checking authentication id [{}] passed", id);
 		if (!is_player_zoning) {
 			// Track who is in and who is out of the game
@@ -514,7 +515,7 @@ bool Client::HandleSendLoginInfoPacket(const EQApplicationPacket *app)
 			ServerLSPlayerJoinWorld_Struct* join =(ServerLSPlayerJoinWorld_Struct*)pack->pBuffer;
 			strcpy(join->key,GetLSKey());
 			join->lsaccount_id = GetLSID();
-			loginserverlist.SendPacket(pack);
+			LoginServerList::Instance()->SendPacket(pack);
 			safe_delete(pack);
 		}
 
@@ -797,7 +798,7 @@ bool Client::HandleEnterWorldPacket(const EQApplicationPacket *app) {
 		RuleB(World, EnableIPExemptions) ||
 		RuleI(World, MaxClientsPerIP) > 0
 	) {
-		client_list.GetCLEIP(GetIP()); //Check current CLE Entry IPs against incoming connection
+		ClientList::Instance()->GetCLEIP(GetIP()); //Check current CLE Entry IPs against incoming connection
 	}
 
 	auto ew = (EnterWorld_Struct *) app->pBuffer;
@@ -817,7 +818,7 @@ bool Client::HandleEnterWorldPacket(const EQApplicationPacket *app) {
 		return true;
 	}
 
-	auto r = content_service.FindZone(zone_id, instance_id);
+	auto r = WorldContentService::Instance()->FindZone(zone_id, instance_id);
 	if (r.zone_id && r.instance.id != instance_id) {
 		LogInfo(
 			"Zone [{}] has been remapped to instance_id [{}] from instance_id [{}] for client [{}]",
@@ -984,7 +985,7 @@ bool Client::HandleEnterWorldPacket(const EQApplicationPacket *app) {
 	safe_delete(outapp);
 
 	// set mailkey - used for duration of character session
-	int mail_key = emu_random.Int(1, INT_MAX);
+	int mail_key = EQ::Random::Instance()->Int(1, INT_MAX);
 
 	database.SetMailKey(charid, GetIP(), mail_key);
 	if (UCSServerAvailable_) {
@@ -1097,7 +1098,7 @@ bool Client::HandlePacket(const EQApplicationPacket *app) {
 		OpcodeManager::EmuToName(app->GetOpcode()),
 		o->EmuToEQ(app->GetOpcode()) == 0 ? app->GetProtocolOpcode() : o->EmuToEQ(app->GetOpcode()),
 		app->Size(),
-		(LogSys.IsLogEnabled(Logs::Detail, Logs::PacketClientServer) ? DumpPacketToString(app) : "")
+		(EQEmuLogSys::Instance()->IsLogEnabled(Logs::Detail, Logs::PacketClientServer) ? DumpPacketToString(app) : "")
 	);
 
 	if (!eqs->CheckState(ESTABLISHED)) {
@@ -1246,7 +1247,7 @@ bool Client::Process() {
 			ServerLSPlayerLeftWorld_Struct* logout =(ServerLSPlayerLeftWorld_Struct*)pack->pBuffer;
 			strcpy(logout->key,GetLSKey());
 			logout->lsaccount_id = GetLSID();
-			loginserverlist.SendPacket(pack);
+			LoginServerList::Instance()->SendPacket(pack);
 			safe_delete(pack);
 		}
 		LogInfo("Client disconnected (not active in process)");
@@ -1412,18 +1413,18 @@ void Client::EnterWorld(bool TryBootup) {
 			return;
 		}
 
-		zone_server = zoneserver_list.FindByInstanceID(instance_id);
+		zone_server = ZSList::Instance()->FindByInstanceID(instance_id);
 	}
 	else
 	{
-		zone_server = zoneserver_list.FindByZoneID(zone_id);
+		zone_server = ZSList::Instance()->FindByZoneID(zone_id);
 	}
 
 	const char *zone_name = ZoneName(zone_id, true);
 	if (zone_server) {
 		if (false == enter_world_triggered) {
 			//Drop any clients we own in other zones.
-			zoneserver_list.DropClient(GetLSID(), zone_server);
+			ZSList::Instance()->DropClient(GetLSID(), zone_server);
 
 			// warn the zone we're coming
 			zone_server->IncomingClient(this);
@@ -1436,7 +1437,7 @@ void Client::EnterWorld(bool TryBootup) {
 		if (TryBootup) {
 			LogInfo("Attempting autobootup of [{}] [{}] [{}]", zone_name, zone_id, instance_id);
 			autobootup_timeout.Start();
-			zone_waiting_for_bootup = zoneserver_list.TriggerBootup(zone_id, instance_id);
+			zone_waiting_for_bootup = ZSList::Instance()->TriggerBootup(zone_id, instance_id);
 			if (zone_waiting_for_bootup == 0) {
 				LogInfo("No zoneserver available to boot up");
 				TellClientZoneUnavailable();
@@ -1452,7 +1453,7 @@ void Client::EnterWorld(bool TryBootup) {
 
 	zone_waiting_for_bootup = 0;
 
-	if (GetAdmin() < 80 && zoneserver_list.IsZoneLocked(zone_id)) {
+	if (GetAdmin() < 80 && ZSList::Instance()->IsZoneLocked(zone_id)) {
 		LogInfo("Enter world failed. Zone is locked");
 		TellClientZoneUnavailable();
 		return;
@@ -1498,11 +1499,11 @@ void Client::Clearance(int8 response)
 	ZoneServer* zs = nullptr;
 	if(instance_id > 0)
 	{
-		zs = zoneserver_list.FindByInstanceID(instance_id);
+		zs = ZSList::Instance()->FindByInstanceID(instance_id);
 	}
 	else
 	{
-		zs = zoneserver_list.FindByZoneID(zone_id);
+		zs = ZSList::Instance()->FindByZoneID(zone_id);
 	}
 
 	if(zs == 0 || response == -1 || response == 0)
@@ -2171,7 +2172,7 @@ void Client::SetClassStartingSkills(PlayerProfile_Struct *pp)
 				i == EQ::skills::SkillAlcoholTolerance || i == EQ::skills::SkillBindWound)
 				continue;
 
-			pp->skills[i] = skill_caps.GetSkillCap(pp->class_, (EQ::skills::SkillType)i, 1).cap;
+			pp->skills[i] = SkillCaps::Instance()->GetSkillCap(pp->class_, (EQ::skills::SkillType)i, 1).cap;
 		}
 	}
 
@@ -2369,7 +2370,7 @@ bool Client::StoreCharacter(
 		return false;
 	}
 
-	const std::string& zone_name = zone_store.GetZoneName(p_player_profile_struct->zone_id, true);
+	const std::string& zone_name = ZoneStore::Instance()->GetZoneName(p_player_profile_struct->zone_id, true);
 	if (Strings::EqualFold(zone_name, "UNKNOWN")) {
 		p_player_profile_struct->zone_id = Zones::QEYNOS;
 	}
@@ -2427,7 +2428,7 @@ bool Client::StoreCharacter(
 
 void Client::RecordPossibleHack(const std::string& message)
 {
-	if (player_event_logs.IsEventEnabled(PlayerEvent::POSSIBLE_HACK)) {
+	if (PlayerEventLogs::Instance()->IsEventEnabled(PlayerEvent::POSSIBLE_HACK)) {
 		auto event = PlayerEvent::PossibleHackEvent{.message = message};
 		std::stringstream ss;
 		{
@@ -2517,4 +2518,20 @@ void Client::SendUnsupportedClientPacket(const std::string& message)
 	e->Enabled     = 0;
 
 	QueuePacket(&packet);
+}
+
+void Client::LoadDataBucketsCache()
+{
+	DataBucket::BulkLoadEntitiesToCache(DataBucketLoadType::Account, {GetAccountID()});
+	const auto ids = CharacterDataRepository::GetCharacterIDsByAccountID(database, GetAccountID());
+	DataBucket::BulkLoadEntitiesToCache(DataBucketLoadType::Client, ids);
+}
+
+void Client::ClearDataBucketsCache()
+{
+	DataBucket::DeleteFromCache(GetAccountID(), DataBucketLoadType::Account);
+	auto ids = CharacterDataRepository::GetCharacterIDsByAccountID(database, GetAccountID());
+	for (const auto& id : ids) {
+		DataBucket::DeleteFromCache(id, DataBucketLoadType::Client);
+	}
 }

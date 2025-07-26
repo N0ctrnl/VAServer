@@ -73,9 +73,11 @@ public:
 		return BuildPlayerEventPacket(c);
 	}
 
-	[[nodiscard]] const PlayerEventLogSettingsRepository::PlayerEventLogSettings *GetSettings() const;
-	bool IsEventDiscordEnabled(int32_t event_type_id);
-	std::string GetDiscordWebhookUrlFromEventType(int32_t event_type_id);
+	[[nodiscard]] const PlayerEventLogSettingsRepository::PlayerEventLogSettings * GetSettings() const;
+	bool                                                                           IsEventDiscordEnabled(int32_t event_type_id);
+	std::string                                                                    GetDiscordWebhookUrlFromEventType(int32_t event_type_id);
+
+	void LoadPlayerEventSettingsFromQS(const std::vector<PlayerEventLogSettingsRepository::PlayerEventLogSettings>& settings);
 
 	static std::string GetDiscordPayloadFromEvent(const PlayerEvent::PlayerEventContainer &e);
 
@@ -93,6 +95,12 @@ public:
 		std::vector<PlayerEventKilledRaidNpcRepository::PlayerEventKilledRaidNpc>       killed_raid_npc;
 		std::vector<PlayerEventAaPurchaseRepository::PlayerEventAaPurchase>             aa_purchase;
 	};
+
+	static PlayerEventLogs* Instance()
+	{
+		static PlayerEventLogs instance;
+		return &instance;
+	}
 
 private:
 	struct EtlSettings {
@@ -126,7 +134,5 @@ private:
 public:
 	std::map<PlayerEvent::EventType, EtlSettings> &GetEtlSettings() { return m_etl_settings;}
 };
-
-extern PlayerEventLogs player_event_logs;
 
 #endif //EQEMU_PLAYER_EVENT_LOGS_H

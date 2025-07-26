@@ -29,7 +29,6 @@
 #include "../common/database/database_update.h"
 #include "../common/repositories/zone_state_spawns_repository.h"
 
-extern ZSList      zoneserver_list;
 extern WorldConfig Config;
 
 auto mutex = new Mutex;
@@ -53,11 +52,11 @@ void WorldBoot::GMSayHookCallBackProcessWorld(uint16 log_category, const char *f
 		auto message_split = Strings::Split(message, '\n');
 
 		for (size_t iter = 0; iter < message_split.size(); ++iter) {
-			zoneserver_list.SendEmoteMessage(
+			ZSList::Instance()->SendEmoteMessage(
 				0,
 				0,
 				AccountStatus::QuestTroupe,
-				LogSys.GetGMSayColorFromCategory(log_category),
+				EQEmuLogSys::Instance()->GetGMSayColorFromCategory(log_category),
 				fmt::format(
 					" {}{}",
 					(iter == 0 ? " ---" : ""),
@@ -69,11 +68,11 @@ void WorldBoot::GMSayHookCallBackProcessWorld(uint16 log_category, const char *f
 		return;
 	}
 
-	zoneserver_list.SendEmoteMessage(
+	ZSList::Instance()->SendEmoteMessage(
 		0,
 		0,
 		AccountStatus::QuestTroupe,
-		LogSys.GetGMSayColorFromCategory(log_category),
+		EQEmuLogSys::Instance()->GetGMSayColorFromCategory(log_category),
 		"%s",
 		fmt::format("[{}] [{}] {}", Logs::LogCategoryName[log_category], func, message).c_str()
 	);
@@ -83,12 +82,12 @@ bool WorldBoot::HandleCommandInput(int argc, char **argv)
 {
 	// command handler
 	if (argc > 1) {
-		LogSys.SilenceConsoleLogging();
-		path.LoadPaths();
+		EQEmuLogSys::Instance()->SilenceConsoleLogging();
+		PathManager::Instance()->Init();
 		WorldConfig::LoadConfig();
 		LoadDatabaseConnections();
 		RuleManager::Instance()->LoadRules(&database, "default", false);
-		LogSys.EnableConsoleLogging();
+		EQEmuLogSys::Instance()->EnableConsoleLogging();
 		WorldserverCLI::CommandHandler(argc, argv);
 	}
 
@@ -183,15 +182,13 @@ int get_file_size(const std::string &filename) // path to file
 	return size;
 }
 
-extern LoginServerList loginserverlist;
-
 void WorldBoot::RegisterLoginservers()
 {
 	const auto c = EQEmuConfig::get();
 
 	if (c->LoginCount == 0) {
 		if (c->LoginHost.length()) {
-			loginserverlist.Add(
+			LoginServerList::Instance()->Add(
 				c->LoginHost.c_str(),
 				c->LoginPort,
 				c->LoginAccount.c_str(),
@@ -207,7 +204,7 @@ void WorldBoot::RegisterLoginservers()
 		iterator.Reset();
 		while (iterator.MoreElements()) {
 			if (iterator.GetData()->LoginHost.length()) {
-				loginserverlist.Add(
+				LoginServerList::Instance()->Add(
 					iterator.GetData()->LoginHost.c_str(),
 					iterator.GetData()->LoginPort,
 					iterator.GetData()->LoginAccount.c_str(),
@@ -226,18 +223,14 @@ void WorldBoot::RegisterLoginservers()
 	}
 }
 
-extern SharedTaskManager   shared_task_manager;
-extern AdventureManager    adventure_manager;
-extern WorldEventScheduler event_scheduler;
-
 bool WorldBoot::DatabaseLoadRoutines(int argc, char **argv)
 {
 	// logging system init
-	auto logging = LogSys.SetDatabase(&database)
-		->SetLogPath(path.GetLogPath())
+	auto logging = EQEmuLogSys::Instance()->SetDatabase(&database)
+		->SetLogPath(PathManager::Instance()->GetLogPath())
 		->LoadLogDatabaseSettings();
 
-	LogSys.SetDiscordHandler(&WorldBoot::DiscordWebhookMessageHandler);
+	EQEmuLogSys::Instance()->SetDiscordHandler(&WorldBoot::DiscordWebhookMessageHandler);
 
 	const auto c = EQEmuConfig::get();
 	if (c->auto_database_updates) {
@@ -279,9 +272,9 @@ bool WorldBoot::DatabaseLoadRoutines(int argc, char **argv)
 
 	LogInfo("Loading zones");
 
-	zone_store.LoadZones(content_db);
+	ZoneStore::Instance()->LoadZones(content_db);
 
-	if (zone_store.GetZones().empty()) {
+	if (ZoneStore::Instance()->GetZones().empty()) {
 		LogError("Failed to load zones data, check your schema for possible errors");
 		return 1;
 	}
@@ -357,20 +350,20 @@ bool WorldBoot::DatabaseLoadRoutines(int argc, char **argv)
 	TimeOfDay_Struct eqTime{};
 	time_t           realtime;
 	eqTime = database.LoadTime(realtime);
-	zoneserver_list.worldclock.SetCurrentEQTimeOfDay(eqTime, realtime);
+	ZSList::Instance()->worldclock.SetCurrentEQTimeOfDay(eqTime, realtime);
 
 	LogInfo("Deleted [{}] stale player corpses from database", database.DeleteStalePlayerCorpses());
 
 	LogInfo("Loading adventures");
-	if (!adventure_manager.LoadAdventureTemplates()) {
+	if (!AdventureManager::Instance()->LoadAdventureTemplates()) {
 		LogInfo("Unable to load adventure templates");
 	}
 
-	if (!adventure_manager.LoadAdventureEntries()) {
+	if (!AdventureManager::Instance()->LoadAdventureEntries()) {
 		LogInfo("Unable to load adventure templates");
 	}
 
-	adventure_manager.LoadLeaderboardInfo();
+	AdventureManager::Instance()->LoadLeaderboardInfo();
 
 	LogInfo("Purging expired dynamic zones and members");
 	dynamic_zone_manager.PurgeExpiredDynamicZones();
@@ -393,22 +386,22 @@ bool WorldBoot::DatabaseLoadRoutines(int argc, char **argv)
 	content_db.LoadCharacterCreateCombos();
 
 	LogInfo("Initializing [EventScheduler]");
-	event_scheduler.SetDatabase(&database)->LoadScheduledEvents();
+	WorldEventScheduler::Instance()->SetDatabase(&database)->LoadScheduledEvents();
 
 	LogInfo("Initializing [WorldContentService]");
-	content_service.SetDatabase(&database)
+	WorldContentService::Instance()->SetDatabase(&database)
 		->SetContentDatabase(&content_db)
 		->SetExpansionContext()
 		->ReloadContentFlags();
 
 	LogInfo("Initializing [SharedTaskManager]");
-	shared_task_manager.SetDatabase(&database)
+	SharedTaskManager::Instance()->SetDatabase(&database)
 		->SetContentDatabase(&content_db)
 		->LoadTaskData()
 		->LoadSharedTaskState();
 
 	LogInfo("Purging expired shared tasks");
-	shared_task_manager.PurgeExpiredSharedTasks();
+	SharedTaskManager::Instance()->PurgeExpiredSharedTasks();
 
 	LogInfo("Cleaning up instance corpses");
 	database.CleanupInstanceCorpses();
@@ -628,14 +621,14 @@ void WorldBoot::Shutdown()
 
 void WorldBoot::SendDiscordMessage(int webhook_id, const std::string &message)
 {
-	if (UCSLink.IsConnected()) {
+	if (UCSConnection::Instance()->IsConnected()) {
 		auto pack = new ServerPacket(ServerOP_DiscordWebhookMessage, sizeof(DiscordWebhookMessage_Struct) + 1);
 		auto *q   = (DiscordWebhookMessage_Struct *) pack->pBuffer;
 
 		strn0cpy(q->message, message.c_str(), 2000);
 		q->webhook_id = webhook_id;
 
-		UCSLink.SendPacket(pack);
+		UCSConnection::Instance()->SendPacket(pack);
 
 		safe_delete(pack);
 	}

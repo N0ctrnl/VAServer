@@ -708,6 +708,20 @@ const std::string Database::GetNPCNameByID(uint32 npc_id)
 	return e.id ? e.name : std::string();
 }
 
+template<typename InputIterator, typename OutputIterator>
+inline auto CleanMobName(InputIterator first, InputIterator last, OutputIterator result)
+{
+	for (; first != last; ++first) {
+		if (*first == '_') {
+			*result = ' ';
+		}
+		else if (isalpha(*first) || *first == '`') {
+			*result = *first;
+		}
+	}
+	return result;
+}
+
 const std::string Database::GetCleanNPCNameByID(uint32 npc_id)
 {
 	const auto& e = NpcTypesRepository::FindOne(*this, npc_id);
@@ -2230,7 +2244,7 @@ void Database::PurgeCharacterParcels()
 		pel.event_data = ss.str();
 		pel.created_at = std::time(nullptr);
 
-		player_event_logs.AddToQueue(pel);
+		PlayerEventLogs::Instance()->AddToQueue(pel);
 
 		ss.str("");
 		ss.clear();

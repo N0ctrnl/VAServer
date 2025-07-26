@@ -55,7 +55,6 @@ extern Zone *zone;
 extern volatile bool is_zone_loaded;
 extern WorldServer worldserver;
 extern uint32 numclients;
-extern PetitionList petition_list;
 
 extern char errorname[32];
 
@@ -742,6 +741,11 @@ void EntityList::AddNPC(NPC *npc, bool send_spawn_packet, bool dont_queue)
 
 	if (parse->HasQuestSub(ZONE_CONTROLLER_NPC_ID, EVENT_SPAWN_ZONE)) {
 		npc->DispatchZoneControllerEvent(EVENT_SPAWN_ZONE, npc, "", 0, nullptr);
+	}
+
+	if (parse->ZoneHasQuestSub(EVENT_SPAWN_ZONE)) {
+		std::vector<std::any> args = { npc };
+		parse->EventZone(EVENT_SPAWN_ZONE, zone, "", 0, &args);
 	}
 
 	if (zone->HasMap() && zone->HasWaterMap()) {
@@ -3447,7 +3451,7 @@ void EntityList::SendPetitionToAdmins(Petition *pet)
 		strcpy(pcus->accountid, pet->GetAccountName());
 		strcpy(pcus->charname, pet->GetCharName());
 	}
-	pcus->quetotal = petition_list.GetTotalPetitions();
+	pcus->quetotal = PetitionList::Instance()->GetTotalPetitions();
 	auto it = client_list.begin();
 	while (it != client_list.end()) {
 		if (it->second->CastToClient()->Admin() >= AccountStatus::QuestTroupe) {
@@ -3472,7 +3476,7 @@ void EntityList::ClearClientPetitionQueue()
 	strcpy(pet->accountid, "");
 	strcpy(pet->gmsenttoo, "");
 	strcpy(pet->charname, "");
-	pet->quetotal = petition_list.GetTotalPetitions();
+	pet->quetotal = PetitionList::Instance()->GetTotalPetitions();
 	auto it = client_list.begin();
 	while (it != client_list.end()) {
 		if (it->second->CastToClient()->Admin() >= AccountStatus::GMAdmin) {
@@ -4175,10 +4179,6 @@ void EntityList::ProcessProximitySay(const char *message, Client *c, uint8 langu
 
 void EntityList::SaveAllClientsTaskState()
 {
-	if (!task_manager) {
-		return;
-	}
-
 	auto it = client_list.begin();
 	while (it != client_list.end()) {
 		Client *client = it->second;
@@ -4192,9 +4192,6 @@ void EntityList::SaveAllClientsTaskState()
 
 void EntityList::ReloadAllClientsTaskState(int task_id)
 {
-	if (!task_manager)
-		return;
-
 	auto it = client_list.begin();
 	while (it != client_list.end()) {
 		Client *client = it->second;
@@ -4205,7 +4202,7 @@ void EntityList::ReloadAllClientsTaskState(int task_id)
 				Log(Logs::General, Logs::Tasks, "[CLIENTLOAD] Reloading Task State For Client %s", client->GetName());
 				client->RemoveClientTaskState();
 				client->LoadClientTaskState();
-				task_manager->SendActiveTasksToClient(client);
+				TaskManager::Instance()->SendActiveTasksToClient(client);
 			}
 		}
 		++it;

@@ -37,14 +37,11 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "dynamic_zone_manager.h"
 #include "ucs.h"
 #include "clientlist.h"
+#include "queryserv.h"
 #include "../common/repositories/trader_repository.h"
 #include "../common/repositories/buyer_repository.h"
 
 extern uint32 numzones;
-extern EQ::Random emu_random;
-extern WebInterfaceList web_interface;
-extern SharedTaskManager shared_task_manager;
-extern ClientList client_list;
 volatile bool UCSServerAvailable_ = false;
 void CatchSignal(int sig_num);
 
@@ -694,7 +691,7 @@ void ZSList::RebootZone(const char* ip1, uint16 port, const char* ip2, uint32 sk
 		safe_delete_array(tmp);
 		return;
 	}
-	uint32 z = emu_random.Int(0, y - 1);
+	uint32 z = EQ::Random::Instance()->Int(0, y - 1);
 
 	auto pack = new ServerPacket(ServerOP_ZoneReboot, sizeof(ServerZoneReboot_Struct));
 	ServerZoneReboot_Struct* s = (ServerZoneReboot_Struct*)pack->pBuffer;
@@ -890,7 +887,7 @@ void ZSList::OnTick(EQ::Timer *t)
 		out["data"].append(outzone);
 	}
 
-	web_interface.SendEvent(out);
+	WebInterfaceList::Instance()->SendEvent(out);
 }
 
 const std::list<std::unique_ptr<ZoneServer>> &ZSList::getZoneServerList() const
@@ -912,7 +909,7 @@ bool ZSList::SendPacketToBootedZones(ServerPacket* pack)
 
 bool ZSList::SendPacketToZonesWithGuild(uint32 guild_id, ServerPacket* pack)
 {
-	auto servers = client_list.GetGuildZoneServers(guild_id);
+	auto servers = ClientList::Instance()->GetGuildZoneServers(guild_id);
 	for (auto const& z : zone_server_list) {
 		for (auto const& server_id : servers) {
 			if (z->GetID() == server_id && z->GetZoneID() > 0) {
@@ -926,7 +923,7 @@ bool ZSList::SendPacketToZonesWithGuild(uint32 guild_id, ServerPacket* pack)
 
 bool ZSList::SendPacketToZonesWithGMs(ServerPacket* pack)
 {
-	auto servers = client_list.GetZoneServersWithGMs();
+	auto servers = ClientList::Instance()->GetZoneServersWithGMs();
 	for (auto const &z: zone_server_list) {
 		for (auto const &server_id: servers) {
 			if (z->GetID() == server_id && z->GetZoneID() > 0) {
@@ -978,15 +975,16 @@ void ZSList::SendServerReload(ServerReload::Type type, uchar *packet)
 	} else if (type == ServerReload::Type::Rules) {
 		RuleManager::Instance()->LoadRules(&database, RuleManager::Instance()->GetActiveRuleset(), true);
 	} else if (type == ServerReload::Type::SkillCaps) {
-		skill_caps.ReloadSkillCaps();
+		SkillCaps::Instance()->ReloadSkillCaps();
 	} else if (type == ServerReload::Type::ContentFlags) {
-		content_service.SetExpansionContext()->ReloadContentFlags();
+		WorldContentService::Instance()->SetExpansionContext()->ReloadContentFlags();
 	} else if (type == ServerReload::Type::Logs) {
-		LogSys.LoadLogDatabaseSettings();
-		player_event_logs.ReloadSettings();
-		UCSLink.SendPacket(&pack);
+		EQEmuLogSys::Instance()->LoadLogDatabaseSettings();
+		PlayerEventLogs::Instance()->ReloadSettings();
+		UCSConnection::Instance()->SendPacket(&pack);
+		QueryServConnection::Instance()->SendPacket(&pack);
 	} else if (type == ServerReload::Type::Tasks) {
-		shared_task_manager.LoadTaskData();
+		SharedTaskManager::Instance()->LoadTaskData();
 	} else if (type == ServerReload::Type::DzTemplates) {
 		dynamic_zone_manager.LoadTemplates();
 	}

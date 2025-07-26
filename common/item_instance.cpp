@@ -574,7 +574,7 @@ EQ::ItemInstance* EQ::ItemInstance::GetOrnamentationAugment() const
 uint32 EQ::ItemInstance::GetOrnamentHeroModel(int32 material_slot) const
 {
 	// Not a Hero Forge item.
-	if (m_ornament_hero_model == 0 || material_slot < 0) {
+	if (m_ornament_hero_model == 0) {
 		return 0;
 	}
 
@@ -1799,7 +1799,7 @@ std::vector<std::string> EQ::ItemInstance::GetAugmentNames() const
 
 	for (uint8 slot_id = invaug::SOCKET_BEGIN; slot_id <= invaug::SOCKET_END; slot_id++) {
 		const auto augment = GetAugment(slot_id);
-		augment_names.push_back(augment ? augment->GetItem()->Name : "None");
+		augment_names.push_back(augment ? augment->GetItem()->Name : "");
 	}
 
 	return augment_names;
